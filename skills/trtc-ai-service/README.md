@@ -104,7 +104,7 @@ To get the customer service agent running, you need 3 cloud service credentials.
 
 | Key | Purpose | Where to find it |
 |-----|---------|-----------------|
-| Key 1: TRTC Application Credentials | Lets the agent make calls and do voice chat | https://console.trtc.io/ (register & create an **RTC Engine** app — supports Conversational AI) |
+| Key 1: TRTC Application Credentials | Lets the agent make calls and do voice chat | https://console.trtc.io/?quickclaim=engine_trial (register & create an **RTC Engine** app — supports Conversational AI) |
 | Key 2: Tencent Cloud API Key | Proves you have permission to use Tencent Cloud voice & calling services (login syncs with your TRTC account) | https://console.tencentcloud.com/cam/capi |
 | Key 3: LLM API Key | Lets the agent "think" — understand queries and respond | Your registered AI service website (e.g. OpenAI, DeepSeek, etc.) |
 

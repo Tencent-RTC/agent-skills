@@ -18,7 +18,56 @@
 
 ## 安装
 
-使用 npx 安装器。在项目根目录执行：
+**Claude Code**
+
+```bash
+# 第一步 — 添加 TRTC 插件市场
+/plugin marketplace add Tencent-RTC/agent-skills
+
+# 第二步 — 安装插件
+/plugin install trtc-agent-skills@trtc-marketplace
+
+# 第三步 — 无需重启，直接激活
+/reload-plugins
+```
+
+**Cursor**
+
+克隆仓库并安装到 Cursor 本地插件目录：
+
+```bash
+git clone https://github.com/Tencent-RTC/agent-skills.git ~/.cursor/plugins/local/trtc-agent-skills
+```
+
+然后按 **`Cmd+Shift+P`**（Mac）/ **`Ctrl+Shift+P`**（Windows/Linux）→ 输入 `Reload Window` 回车（或直接重启 Cursor）。
+
+**Codex CLI**
+
+```bash
+# 第一步 — 添加 TRTC 插件市场
+codex plugin marketplace add Tencent-RTC/agent-skills
+
+# 第二步 — 在 Codex CLI 中打开插件浏览器：
+/plugins
+# 选择 "TRTC Agent Skills" 标签页 → 选择 trtc-agent-skills → 按 Enter 安装
+```
+
+**CodeBuddy CLI**
+
+```bash
+# 第一步 — 添加 TRTC 插件市场
+/plugin marketplace add Tencent-RTC/agent-skills
+
+# 第二步 — 安装插件
+/plugin install trtc-agent-skills@trtc-marketplace
+
+# 第三步 — 无需重启，直接激活
+/reload-plugins
+```
+
+### 通过 npx 安装（任意 IDE，无需插件市场）
+
+如果你所在的 IDE 没有插件市场，或者你希望把安装范围限定在某个具体项目里，可以用 npx 安装器。在项目根目录执行：
 
 ```bash
 # 默认 — 自动检测已安装的 IDE（~/.{claude,cursor,codebuddy,codex}/）
@@ -34,6 +83,21 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --ide cursor
 # 重装前先清理旧的安装
 npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 ```
+
+## 配置 MCP
+
+本 Skill 只调用 **一个** 可选的 MCP Server：`tencent-rtc-skill-tool`（包
+[`@tencent-rtc/skill-tool`](https://www.npmjs.com/package/@tencent-rtc/skill-tool)），
+仅用于轻量的、即发即忘的使用情况上报。没有它 Skill 也能完整工作——未配置时自动跳过上报。
+
+本 Skill **不会** 从任何 MCP 读取你的 TRTC 凭证，也 **不会** 替你生成 `userSig`。
+你在被询问时提供 **SDKAppID**，并自行到 TRTC 控制台获取 **测试 UserSig**：
+
+> 在[控制台（国际站）](https://console.trtc.io) / [控制台（中国站）](https://console.cloud.tencent.com)
+> 的应用详情页获取 `YOUR_SDKAPPID`，并通过「快速跑通 / UserSig 生成&校验」生成测试 UserSig。
+> 控制台签发的 UserSig 仅用于开发联调且会过期；生产环境必须由你自己的后端签发，SecretKey 务必只保留在服务端。
+
+通过 `npx` 安装时，`tencent-rtc-skill-tool` 工具服务会自动注册到对应 IDE 的 MCP 配置，无需手动配置；如果是通过 IDE 插件市场安装，则需按各 IDE 的文档手动配置 MCP（具体 server entry 见 `bin/cli.js`）。
 
 ---
 
@@ -59,7 +123,7 @@ Skill 会在项目中保存你的进度。关掉工具下次回来，可以从�
 | **Conference** | 视频会议——多人会议、屏幕共享、会中聊天 | Web ✅ |
 | **Conversational AI** | 语音优先的 AI 客服智能体——语音对话、知识库检索、人工转接、工具调用、会话摘要 | Web ✅ |
 | **Live** | 互动直播——主播/观众、连麦、弹幕、礼物、美颜 | 即将支持 |
-| **Chat** | 即时通信——消息、会话、群组、用户资料 | Web ✅ |
+| **Chat** | 即时通信——消息、会话、群组、用户资料 | 即将支持 |
 | **Call** | 音视频通话——1v1 和群组通话 | 即将支持 |
 | **RTC Engine** | 实时音视频引擎——进房、推流、拉流 | 即将支持 |
 

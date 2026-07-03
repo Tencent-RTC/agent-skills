@@ -104,7 +104,7 @@ git clone https://github.com/Tencent-RTC/agent-skills.git
 
 | キー | 目的 | 入手先 |
 |-----|---------|-----------------|
-| キー 1：TRTC アプリケーション認証情報 | エージェントが通話や音声チャットを実行可能にします | https://console.trtc.io/（登録して **RTC Engine** アプリを作成 — Conversational AI 対応） |
+| キー 1：TRTC アプリケーション認証情報 | エージェントが通話や音声チャットを実行可能にします | https://console.trtc.io/?quickclaim=engine_trial（登録して **RTC Engine** アプリを作成 — Conversational AI 対応） |
 | キー 2：Tencent Cloud API キー | Tencent Cloud 音声・通話サービスを使用する権限を証明します（TRTC アカウントとログインが同期されます） | https://console.tencentcloud.com/cam/capi |
 | キー 3：LLM API キー | エージェントが「考え」— 問い合わせを理解して応答できるようにします | 登録している AI サービス Web サイト（OpenAI、DeepSeek など） |
 

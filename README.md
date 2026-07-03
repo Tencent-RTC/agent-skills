@@ -18,7 +18,56 @@ You can use it to build scenarios like video conferencing, live streaming rooms,
 
 ## Installation
 
-Use the npx installer. Run it inside your project directory:
+**Claude Code**
+
+```bash
+# Step 1 — add the TRTC plugin marketplace
+/plugin marketplace add Tencent-RTC/agent-skills
+
+# Step 2 — install the plugin
+/plugin install trtc-agent-skills@trtc-marketplace
+
+# Step 3 — activate without restarting
+/reload-plugins
+```
+
+**Cursor**
+
+Clone the repo into Cursor's local plugin directory:
+
+```bash
+git clone https://github.com/Tencent-RTC/agent-skills.git ~/.cursor/plugins/local/trtc-agent-skills
+```
+
+Then press **`Cmd+Shift+P`** (Mac) / **`Ctrl+Shift+P`** (Windows/Linux) → `Reload Window` (or restart Cursor).
+
+**Codex CLI**
+
+```bash
+# Step 1 — add the TRTC plugin marketplace
+codex plugin marketplace add Tencent-RTC/agent-skills
+
+# Step 2 — open the plugin browser inside Codex CLI:
+/plugins
+# Select the "TRTC Agent Skills" tab → select trtc-agent-skills → press Enter to install
+```
+
+**CodeBuddy CLI**
+
+```bash
+# Step 1 — add the TRTC plugin marketplace
+/plugin marketplace add Tencent-RTC/agent-skills
+
+# Step 2 — install the plugin
+/plugin install trtc-agent-skills@trtc-marketplace
+
+# Step 3 — activate without restarting
+/reload-plugins
+```
+
+### Install via npx (any IDE, no plugin marketplace required)
+
+If your IDE doesn't have a plugin marketplace, or you'd rather pin the install to a specific project, use the npx installer. Run it inside your project directory:
 
 ```bash
 # Default — auto-detect installed IDEs (~/.{claude,cursor,codebuddy,codex}/)
@@ -34,6 +83,25 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --ide cursor
 # Wipe a previous install before re-installing
 npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 ```
+
+## Using with MCP
+
+This skill calls **one** optional MCP server: `tencent-rtc-skill-tool` (package
+[`@tencent-rtc/skill-tool`](https://www.npmjs.com/package/@tencent-rtc/skill-tool)),
+used only for lightweight, fire-and-forget usage telemetry. The skill works fully
+without it — if it is not configured, reporting is simply skipped.
+
+The skill does **not** read your TRTC credentials from any MCP server and does
+**not** generate `userSig` for you. You provide your **SDKAppID** when asked, and
+you obtain a **test UserSig** from the TRTC console:
+
+> Find `YOUR_SDKAPPID` and generate a test UserSig on the application details
+> page in the [console (International)](https://console.trtc.io) or
+> [console (China)](https://console.cloud.tencent.com). A console-issued UserSig
+> is for development only and expires; for production, issue UserSig from your own
+> backend and keep your SecretKey on the server.
+
+The `tencent-rtc-skill-tool` tool server is registered automatically when you install via `npx` — no manual MCP configuration needed. If you installed via the IDE plugin marketplace instead, follow the manual MCP setup steps in your IDE's docs (see `bin/cli.js` for the exact server entry).
 
 ---
 
@@ -59,7 +127,7 @@ The skill saves your progress in the project. If you close the tool and come bac
 | **Conference** | Video conferencing — multi-party meetings, screen sharing, in-meeting chat | Web ✅ |
 | **Conversational AI** | Voice-first AI customer service agent — voice agent, knowledge base lookup, human handoff, tool calling, session summary | Web ✅ |
 | **Live** | Interactive live streaming — anchor/audience roles, co-hosting, barrage, gifts, beauty filters | Coming soon |
-| **Chat** | Instant messaging — messages, conversations, groups, user profiles | Web ✅ |
+| **Chat** | Instant messaging — messages, conversations, groups, user profiles | Coming soon |
 | **Call** | Audio/video calling — 1-on-1 and group calls | Coming soon |
 | **RTC Engine** | Low-level real-time audio/video engine — room management, publishing, subscribing | Coming soon |
 

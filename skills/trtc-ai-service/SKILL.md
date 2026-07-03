@@ -231,7 +231,7 @@ Send each key's value through the chat, and I'll write them into the `.env` file
 # ==========================================
 
 # --- Key 1: TRTC Application Credentials ---
-# Get them here: https://console.trtc.io/ (register & create an RTC Engine application — supports Conversational AI)
+# Get them here: https://console.trtc.io/?quickclaim=engine_trial (register & create an RTC Engine application — supports Conversational AI)
 # (China-region accounts use: https://console.cloud.tencent.com/trtc)
 TRTC_SDK_APP_ID=yourSDKAppID (e.g., 1400000000)
 TRTC_SDK_SECRET_KEY=yourSDKSecretKey (64-character string)
@@ -258,7 +258,7 @@ LLM_MODEL_NAME=yourModelName (e.g., gpt-4o / deepseek-chat / claude-3-opus)
 > Let's start with Key 1 — TRTC Application Credentials. This is the foundation of the whole system: the application that powers the voice channel — it lets the customer service agent make voice calls and chat with voice.
 >
 > To get it, we'll go to the **TRTC standalone site** (Tencent RTC's international site) and create an RTC Engine application (supports Conversational AI) there:
-> 1. Open this page: https://console.trtc.io/ and register an account / log in (China-region accounts can use https://console.cloud.tencent.com/trtc instead)
+> 1. Open this page: https://console.trtc.io/?quickclaim=engine_trial and register an account / log in (China-region accounts can use https://console.cloud.tencent.com/trtc instead)
 > 2. After logging in, create an **RTC Engine** application (supports Conversational AI — this is the voice agent you'll be using)
 > 3. Once the application is created, you'll find two pieces of information inside it:
 >    - **SDKAppID**: a string of numbers

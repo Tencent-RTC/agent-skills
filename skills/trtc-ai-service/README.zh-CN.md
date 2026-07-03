@@ -102,7 +102,7 @@ git clone https://github.com/Tencent-RTC/agent-skills.git
 
 | 密钥 | 用途 | 获取地址 |
 |------|------|---------|
-| 密钥 1：TRTC 应用凭证 | 让智能体能够拨打电话和进行语音聊天 | https://console.trtc.io/（注册并创建 **RTC Engine** 应用，支持 Conversational AI） |
+| 密钥 1：TRTC 应用凭证 | 让智能体能够拨打电话和进行语音聊天 | https://console.trtc.io/?quickclaim=engine_trial（注册并创建 **RTC Engine** 应用，支持 Conversational AI） |
 | 密钥 2：Tencent Cloud API Key | 证明你有权限使用 TRTC 语音和通话服务（登录态与 TRTC 账号自动同步） | https://console.tencentcloud.com/cam/capi |
 | 密钥 3：LLM API Key | 让智能体能够"思考"——理解用户问题并回复 | 你注册的 AI 服务网站（如 OpenAI、DeepSeek 等） |
 
