@@ -1,0 +1,86 @@
+# =====================================================================
+# Path A 默认配方 —— AI 口语陪练
+# 由 SKILL.md Path A SOP 逐条执行；用户不直接运行本文件。
+# =====================================================================
+apiVersion: ai-oral-coach/v1
+kind: Recipe
+metadata:
+  name: speaking-coach-default
+  scenario: speaking-coach
+  version: "1.0.0"
+  description: "三屏 SPA：场景陪练 + 单句纠正 + 接话建议 + 4 维报告"
+  language: both          # UI 中英双语；陪练对话固定英语
+
+# ---------------------------------------------------------------------------
+# 能力装配清单
+# Path A Step 2 执行：
+#   python3 scripts/add-capability.py scenario-roleplay quick-correct \
+#       reply-suggestion ability-report --apply --json
+# ---------------------------------------------------------------------------
+capabilities:
+  required:
+    - { name: conversation-core, role: skeleton }     # 骨架，仓库自带，无需装配
+  install:
+    - { name: scenario-roleplay,  adapter: default }  # 内置题库 + LLM 角色随机
+    - { name: quick-correct,      adapter: default }
+    - { name: reply-suggestion,   adapter: default }
+    - { name: ability-report,     adapter: default }
+  optional:                                            # Path A 不装，Path B 可选
+    - { name: custom-learning-kb }
+  excluded: []
+
+# ---------------------------------------------------------------------------
+# Agent 运行配置
+# ---------------------------------------------------------------------------
+agent_runtime:
+  conversation_lang: en          # 陪练对话固定英语
+  default_scenario: travel       # 默认进 travel 场景
+  default_level: intermediate
+  default_style: friend
+  voice_id: ""                   # 空 → conversation-core 按语言选默认音色
+
+# ---------------------------------------------------------------------------
+# UI overlay —— 三屏 SPA (Setup → Practice → Report)
+# ---------------------------------------------------------------------------
+ui_overlay:
+  source_root: "scenarios/speaking-coach/ui"
+  target: "$PROJECT_ROOT/ai-oral-coach-demo"
+  files:
+    - coach.html            # 三屏 SPA 模板（自包含脚本，未引用 app.js，故不再随包）
+    - i18n.js               # 多语言：zh/en 主推，ja/ko 已内置（F4）
+    - tokens.css            # 设计变量（design-specs.md 落地）
+    - practice-scenarios.json   # Setup 屏本地兜底题库；正常路径走后端 GetSceneCandidates
+    - avatars/              # friend / listener / local
+
+# ---------------------------------------------------------------------------
+# 内置数据（mock；Path B 用户自带）
+# ---------------------------------------------------------------------------
+sample_data:
+  scenarios_file: "ui/practice-scenarios.json"
+  description: "4 场景(travel/work/study/free) × 3 难度的题库"
+
+# ---------------------------------------------------------------------------
+# 启动后自检
+# ---------------------------------------------------------------------------
+post_assembly:
+  health_check:
+    url: "http://localhost:8000/api/v1/health"
+    expect_field: status
+    expect_value: ok
+
+# ---------------------------------------------------------------------------
+# 设计标准（Path A UI 必须遵守）
+# ---------------------------------------------------------------------------
+design:
+  tokens_file: "../../references/design-specs.md"
+  no_emoji: true                  # 渲染层完全禁止 emoji
+  font: "Inter, SF Pro Display, Helvetica Neue, system-ui"
+  spacing_grid: 4                 # 4px 基础网格
+
+# ---------------------------------------------------------------------------
+# 上生产指引（仅文档）
+# ---------------------------------------------------------------------------
+go_production_guide: |
+  - 换大脑：改 .env 的 REPORT_LLM_*；或覆盖 src/prompts/<task>.txt 自定义评估标准
+  - 接自有教研库：Path B 选 custom-learning-kb，配 Dify/Coze key
+  - HTTPS：bash start.sh --https（WebRTC 麦克风非 localhost 必须）

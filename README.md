@@ -46,6 +46,7 @@ The skill activates automatically when you mention TRTC or describe a real-time 
 | **Get started** | Guides you through demo setup, SDK integration, troubleshooting, or adding a new feature — step by step | • *"I want to add video conferencing to my web app"*<br>• *"I'm getting error 6206 when users join"*<br>• *"Conference is working — now I want to add screen sharing"* |
 | **Scenario walkthrough** | Loads a complete feature scenario and walks you through each capability in order, with code and checkpoints | • *"Walk me through building a complete conference room from scratch"*<br>• *"Guide me through a 1-on-1 video consultation end to end"* |
 | **AI customer service** | Builds a voice-first AI customer service agent from scratch — or wires the AI backend into your existing app. Covers credential setup, capability assembly (knowledge base, human handoff, tool calling, session summary), and launch | • *"Build me an AI customer service agent with TRTC"*<br>• *"I want to integrate AI customer service into my existing Node.js backend"*<br>• *"Help me set up TRTC Conversational AI"* |
+| **AI oral coach** | Builds a voice-first AI oral English speaking coach from scratch — or wires the AI backend into your existing app. Covers credential setup, capability assembly (scenario roleplay, quick correction, reply suggestions, ability report, custom learning KB), and launch | • *"Build me an AI oral English coach with TRTC"*<br>• *"I want to integrate AI speaking practice into my existing app"*<br>• *"Help me set up an AI speaking coach"* |
 | **Docs & lookup** | Answers factual questions from the official knowledge base with cited sources | • *"What does error code 6206 mean?"*<br>• *"How much does Conference cost per participant minute?"*<br>• *"What's the max number of participants?"* |
 
 The skill saves your progress in the project. If you close the tool and come back later, it picks up where you left off.
@@ -57,7 +58,7 @@ The skill saves your progress in the project. If you close the tool and come bac
 | Product | Description | Availability |
 |---------|-------------|--------------|
 | **Conference** | Video conferencing — multi-party meetings, screen sharing, in-meeting chat | Web ✅ |
-| **Conversational AI** | Voice-first AI customer service agent — voice agent, knowledge base lookup, human handoff, tool calling, session summary | Web ✅ |
+| **Conversational AI** | Voice-first AI agents — AI customer service (voice agent, knowledge base, human handoff, tool calling, session summary) and AI oral coach (scenario roleplay, quick correction, reply suggestions, ability report) | Web ✅ |
 | **Live** | Interactive live streaming — anchor/audience roles, co-hosting, barrage, gifts, beauty filters | Coming soon |
 | **Chat** | Instant messaging — messages, conversations, groups, user profiles | Web ✅ |
 | **Call** | Audio/video calling — 1-on-1 and group calls | Coming soon |
@@ -76,7 +77,7 @@ When you describe what you want to build, the skill:
 - **Walks through** one capability at a time with production-ready code, waits for you to confirm it works, then moves to the next step
 - **Saves your progress** to `.trtc-session.yaml` in your project root (auto-added to `.gitignore`) so you can resume in a later session without re-explaining what you're building
 
-Step-by-step integration is currently available for **Conference on Web** and **Conversational AI (AI customer service)**. The Conversational AI skill uses its own capability model — it does not follow the slice/scenario pipeline; instead it guides you through credential setup, capability selection, and launch in a self-contained flow. Docs lookup, error code search, and pricing questions work across all TRTC products.
+Step-by-step integration is currently available for **Conference on Web**, **Chat on Web**, and **Conversational AI (AI customer service & AI oral coach)**. The Conversational AI skills use their own capability model — they do not follow the slice/scenario pipeline; instead they guide you through credential setup, capability selection, and launch in a self-contained flow. Docs lookup, error code search, and pricing questions work across all TRTC products.
 
 ### Knowledge base: Slices and Scenarios
 

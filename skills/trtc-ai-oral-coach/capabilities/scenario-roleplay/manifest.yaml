@@ -1,0 +1,54 @@
+# scenario-roleplay —— 场景×难度×风格 → prompt 组装 + Setup 屏场景候选
+name: scenario-roleplay
+version: "1.0.0"
+type: capability
+description: "把场景/难度/风格组装成 in-character system prompt；Setup 屏具体场景候选：内置题库，装了 custom-learning-kb 则改用外接知识库（自动降级）。"
+
+dependencies:
+  - { name: conversation-core, version: ">=1.0.0,<2.0.0" }
+  # custom-learning-kb 是可选依赖：装了就会被 scenario_source.py 消费，用于产出场景候选；
+  # 不装则纯用内置 data/practice-scenarios.json 题库，行为不受影响。
+  - { name: custom-learning-kb, version: ">=1.0.0,<2.0.0", optional: true }
+
+extensions:
+  - inject_at: agent.system_prompt
+    inline_code: |
+      # [scenario-roleplay] 组装 in-character system prompt
+      from ._capability_loader import try_load_capability
+      _sr = try_load_capability("scenario-roleplay", "src/compose.py")
+      if _sr is not None:
+          system_prompt = _sr.compose(system_prompt, ctx)   # ctx: scenario/level/style/role
+  - inject_at: server.router_extension
+    inline_code: |
+      from ._capability_loader import try_load_capability as _try
+      _m = _try("scenario-roleplay", "src/router.py")
+      if _m is not None and hasattr(_m, "router"):
+          app.include_router(_m.router, prefix="/api/v1/scene", tags=["scenario-roleplay"])
+
+config:
+  scenarios_file: { default: "data/practice-scenarios.json" }
+  adapter:        { default: "default", env: "SCENE_ADAPTER" }   # default=内置 Evaluator
+
+endpoints:
+  - method: POST
+    path: /api/v1/scene/candidates
+    description: "Setup 屏具体场景候选：没配 custom-learning-kb → 内置题库；配了 → 查询/提炼外接知识库，失败静默降级回内置题库。"
+
+# 评估类能力 —— 共用 Evaluator Port（见 references/evaluator-port.md）
+business_contract:
+  port_class: "src.ports.evaluator.Evaluator"
+  default_adapter: "src.adapters.default.LLMEvaluator"
+  customization_sop: "references/evaluator-port.md#1-evaluator-port"
+  external_apis:
+    - name: scene.candidates
+      direction: inbound          # 我们暴露给前端调（非连外部系统；连外部系统的是 custom-learning-kb）
+      method: POST
+      path: /api/v1/scene/candidates
+      request_schema:  { scenario: string, level: string }
+      response_schema: { candidates: "[{id, topic, hint, opening, aiRole, myRole}]" }
+
+acceptance:
+  - "选场景/难度/风格后能组出 in-character system prompt"
+  - "GetSceneCandidates 未装 custom-learning-kb 时返回内置题库候选"
+  - "装了 custom-learning-kb 且配好 key 时返回外接知识库候选；检索/提炼失败静默降级回内置题库"
+

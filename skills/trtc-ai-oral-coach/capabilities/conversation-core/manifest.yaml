@@ -1,0 +1,46 @@
+# conversation-core —— 跨场景通用骨架（与 AI 客服 Skill 共用一份）
+name: conversation-core
+version: "1.0.0"
+type: skeleton
+description: "进房语音对话核心：签 UserSig 三套 + 转 TRTC OpenAPI + 4 类自定义消息。零 LLM。"
+
+# 骨架无依赖；它是 base。
+
+# 骨架预留的「插座」—— 能力靠 inject_at 插进来，加能力不改 core
+provides_extension_points:
+  - agent.compose_conversation # scenario-roleplay 组装 system_prompt/welcome/speed
+  - agent.before_push_text     # TTS 前拦截/替换文本
+  - agent.after_start          # 启动后钩子
+  - server.router_extension    # 挂载能力子路由
+
+# 共享评估基座（F1）：core 提供 report_llm 工具 + REPORT_LLM_* 配置，
+# 供 4 个评估能力（scenario-roleplay/quick-correct/reply-suggestion/ability-report）复用。
+# core 对**实时对话**仍零 LLM（那是 TRTC 云端），此处仅作为共享 LLM 客户端 utility。
+shared_utilities:
+  - src/core/report_llm.py     # Evaluator 基座：_call_llm / 重试 / json 安全序列化
+
+config:
+  port:          { default: 8000, env: PORT }
+  default_voice: { default: "",   env: COACH_VOICE_ID }
+  region:        { default: intl, env: TRTC_REGION }     # intl | cn
+
+endpoints:
+  - { method: GET,  path: /api/v1/config,         description: "签发 UserSig 三套 + 下发前端配置" }
+  - { method: POST, path: /api/v1/agent/start,    description: "进房并启动 voice agent（组装 prompt 后调 OpenAPI）" }
+  - { method: POST, path: /api/v1/agent/stop,     description: "兜底停止" }
+  - { method: POST, path: /api/v1/agent/farewell, description: "告别语 + StopAfterPlay 一站式结束" }
+  - { method: POST, path: /api/v1/agent/invoke,   description: "push-to-talk：手动触发 AI 回复（InvokeLLM）" }
+  - { method: GET,  path: /api/v1/health,         description: "三 LED 自检 (tencent_cloud/trtc/llm)" }
+  - { method: POST, path: /action,                description: "兼容 facade（F2）：定稿 Demo UI 用 Action 头调用，内部转发到上述路由 + 各能力" }
+
+# 媒体面自定义消息（前后端约定，非 HTTP）
+custom_messages:
+  - { cmd: 10000, dir: "cloud->client", desc: 字幕 }
+  - { cmd: 10001, dir: "cloud->client", desc: "AI 状态" }
+  - { cmd: 20000, dir: "client->cloud", desc: "文字输入（跳过 ASR）" }
+  - { cmd: 20001, dir: "client->cloud", desc: 手动打断 }
+
+acceptance:
+  - "/api/v1/health 三 LED 全绿"
+  - "/api/v1/agent/start 返回 TaskId / SessionId"
+  - "进房后能语音对话、字幕上屏"

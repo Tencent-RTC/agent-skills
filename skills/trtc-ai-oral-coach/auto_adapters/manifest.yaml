@@ -1,0 +1,27 @@
+# auto_adapters index manifest
+# For add-capability CLI / Agent to parse adapter-to-tech-stack mappings.
+
+version: "1.0.0"
+description: "Tech-stack adapter library — generates API integration code (NOT UI components). Outbound (custom-learning-kb) spec-only."
+
+default_variables:
+  SKELETON_BASE_URL: "http://localhost:8000"
+  API_PREFIX: "/api/v1"
+  PORT: "8000"
+
+adapters:
+  - name: "web"
+    path: "web"
+    tech_stack: ["web", "javascript", "typescript", "react", "vue", "next", "svelte"]
+    description: "Headless oral coach client — TRTC room entry + full API wrapper (JS/TS). No UI components."
+    target_role: "frontend"
+
+  - name: "python"
+    path: "python"
+    tech_stack: ["python", "fastapi", "flask", "django"]
+    description: "Python client wrapper — full oral coach API coverage for backend aggregation."
+    target_role: "backend"
+
+fallback_templates:
+  generic_integration: "integration_templates/generic-integration.md"
+  kb_custom_sample: "integration_templates/custom-learning-kb-sample.md"

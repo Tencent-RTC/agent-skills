@@ -62,6 +62,7 @@ const SKILL_ALLOWLIST = new Set([
   "trtc-docs",
   "trtc-conference",
   "trtc-ai-service",
+  "trtc-ai-oral-coach",
   "trtc-chat",
 ]);
 
@@ -351,13 +352,14 @@ function printHelp() {
 
 function listSkills() {
   const descriptions = {
-    "trtc":             "Entry router — detects product/platform, routes to sub-skills",
-    "trtc-ai-service":  "AI customer service scenarios (TRTC Conversational AI)",
-    "trtc-onboarding":  "Get-started / integration / troubleshooting flow",
-    "trtc-docs":        "Docs & error-code lookup",
-    "trtc-topic":       "Step-by-step scenario walkthrough",
-    "trtc-search":      "Internal slice lookup (AI-facing)",
-    "trtc-apply":       "Internal compile/integration quality gate",
+    "trtc":               "Entry router — detects product/platform, routes to sub-skills",
+    "trtc-ai-service":    "AI customer service scenarios (TRTC Conversational AI)",
+    "trtc-ai-oral-coach": "AI oral speaking coach / 口语陪练 (TRTC Conversational AI)",
+    "trtc-onboarding":    "Get-started / integration / troubleshooting flow",
+    "trtc-docs":          "Docs & error-code lookup",
+    "trtc-topic":         "Step-by-step scenario walkthrough",
+    "trtc-search":        "Internal slice lookup (AI-facing)",
+    "trtc-apply":         "Internal compile/integration quality gate",
   };
   console.log(`\n  ${c.bold("Skills shipped in this package:")}\n`);
   for (const name of getSkillNames()) {

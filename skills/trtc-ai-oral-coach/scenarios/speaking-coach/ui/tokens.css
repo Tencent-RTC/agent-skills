@@ -1,0 +1,100 @@
+/* =====================================================================
+   tokens.css - 全局 UI 设计变量
+   - 设计风格：梦幻玻璃拟态、紫色/粉色柔和流体渐变
+   - 严格遵循：design-specs.md 全局硬约束
+   ===================================================================== */
+
+:root {
+    /* —— 4px 基础网格间距 (Grid spacing) —— */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+
+    /* —— 圆角约束 (Border Radius) —— */
+    --radius-sm: 8px;   /* 按钮等小组件 */
+    --radius-md: 12px;  /* 卡片、气泡、小容器 */
+    --radius-lg: 20px;  /* 大容器外层圆角 */
+    --radius-pill: 999px;
+
+    /* —— 字体系统 (Font-family & sizes) —— */
+    --font-body: 'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-display: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+    /* —— 调色板 (Color Palette) —— */
+    /* 磨砂玻璃层与边框 */
+    --glass-bg: rgba(255, 255, 255, 0.45);
+    --glass-bg-hover: rgba(255, 255, 255, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.5);
+    --glass-border-strong: rgba(255, 255, 255, 0.7);
+    --glass-shadow: 0 12px 40px -10px rgba(142, 102, 235, 0.12);
+    --glass-shadow-hover: 0 16px 48px -8px rgba(142, 102, 235, 0.18);
+
+    /* 文本色 (Text Colors) - 使用温润的紫深灰与浅色调 */
+    --text-primary: #2d264d;       /* 深紫灰，替代原本的 #3c3c3c */
+    --text-secondary: #6e658c;     /* 中紫灰 */
+    --text-muted: #a69ebd;         /* 浅紫灰 */
+    
+    /* 向后兼容原本代码语义的 CSS 变量名 */
+    --text: var(--text-primary);
+    --border: var(--glass-border);
+    --border-strong: var(--glass-border-strong);
+    --bg-card: var(--glass-bg);
+    --bg-soft: rgba(255, 255, 255, 0.25);
+
+    /* 梦幻主色调 (Pink & Purple Accent) */
+    --primary-purple: #9c82ff;
+    --primary-purple-hover: #8666ff;
+    --primary-pink: #f472b6;
+    --primary-pink-hover: #ec4899;
+    --primary-blue: #60a5fa;
+
+    /* 向后兼容 app.py/app.js 旧逻辑的语义别名 */
+    --primary: var(--primary-purple);
+    --primary-hover: var(--primary-purple-hover);
+    --primary-light: rgba(156, 130, 255, 0.1);
+    --primary-dark: var(--primary-purple-hover);
+
+    --accent: var(--primary-pink);
+    --accent-light: rgba(244, 114, 182, 0.1);
+    
+    --warn: #fbbf24;
+    --warn-light: rgba(251, 191, 36, 0.1);
+    
+    --error: #f87171;
+    --error-dark: #ef4444;
+    --error-light: rgba(248, 113, 113, 0.1);
+
+    /* 教练反馈高亮色 (磨砂高亮，文字对比度 ≥ 4.5:1) */
+    --feedback-bg: rgba(52, 211, 153, 0.12);   --feedback-fg: #047857; /* 绿 */
+    --correction-bg: rgba(248, 113, 113, 0.12); --correction-fg: #b91c1c; /* 红 */
+    --better-bg: rgba(251, 191, 36, 0.12);      --better-fg: #b45309; /* 橙 */
+    --followup-bg: rgba(96, 165, 250, 0.12);    --followup-fg: #1d4ed8; /* 蓝 */
+
+    /* —— 三屏状态机背景渐变 (Screen Gradients) —— */
+    /* Setup 暖色/中性选择态 (微粉-浅紫暖柔渐变) */
+    --setup-gradient: radial-gradient(at 0% 0%, rgba(254, 242, 242, 0.7) 0px, transparent 50%),
+                      radial-gradient(at 100% 0%, rgba(245, 243, 255, 0.8) 0px, transparent 50%),
+                      radial-gradient(at 50% 100%, rgba(236, 253, 245, 0.6) 0px, transparent 50%),
+                      #faf9ff;
+    /* Practice 活泼对话态 (高饱和优雅紫-亮粉) */
+    --practice-gradient: radial-gradient(at 0% 0%, rgba(245, 243, 255, 0.9) 0px, transparent 50%),
+                        radial-gradient(at 100% 0%, rgba(250, 232, 255, 0.9) 0px, transparent 50%),
+                        radial-gradient(at 50% 100%, rgba(253, 242, 248, 0.8) 0px, transparent 50%),
+                        #fbf8ff;
+    /* Report 沉静成就态 (沉静蓝紫绿优雅总结渐变) */
+    --report-gradient: radial-gradient(at 0% 0%, rgba(238, 242, 255, 0.9) 0px, transparent 50%),
+                      radial-gradient(at 100% 0%, rgba(224, 231, 255, 0.9) 0px, transparent 50%),
+                      radial-gradient(at 50% 100%, rgba(236, 253, 245, 0.8) 0px, transparent 50%),
+                      #f8faff;
+}
+
+/* 磨砂玻璃降级支持 */
+@supports not (backdrop-filter: blur(20px)) {
+    :root {
+        --glass-bg: rgba(255, 255, 255, 0.95);
+        --glass-bg-hover: rgba(255, 255, 255, 0.98);
+        --glass-border: rgba(224, 220, 240, 0.8);
+    }
+}

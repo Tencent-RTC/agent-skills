@@ -6,7 +6,7 @@
 
 ## Demo
 
-https://github.com/user-attachments/assets/a2e076ce-38c9-4bd8-a40a-e4e09d4ce360
+https://github.com/user-attachments/assets/a2ad1d81-7282-42d1-b5ae-a0b9ec73933b
 
 ## About Tencent RTC
 
@@ -52,43 +52,22 @@ You never open a terminal or run a script manually.
 
 ### Installation
 
-#### Codex CLI
+Install via `npx` — works with any IDE, no plugin marketplace required. Run it inside your project directory:
 
-**User-level** (recommended — available across all projects):
 ```bash
-/skills install https://github.com/Tencent-RTC/agent-skills
+# Default — auto-detect installed IDEs (~/.{claude,cursor,codebuddy,codex}/)
+# and install for each one found. Falls back to claude if none detected.
+npx -y @tencent-rtc/trtc-agent-skills@latest add
+
+# Force install for every supported IDE (even ones you don't have)
+npx -y @tencent-rtc/trtc-agent-skills@latest add --ide all
+
+# Install only for one specific IDE
+npx -y @tencent-rtc/trtc-agent-skills@latest add --ide cursor
+
+# Wipe a previous install before re-installing
+npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 ```
-
-**Project-level** (only available in the current project):
-```bash
-# The skill will be installed to ./.codex/skills/ (Cmd+Shift+. to show hidden folders in Finder)
-/skills install --project https://github.com/Tencent-RTC/agent-skills
-```
-
-#### Claude Code CLI
-
-**User-level** (recommended — available across all projects):
-```bash
-mkdir -p ~/.claude/skills
-git clone https://github.com/Tencent-RTC/agent-skills.git ~/.claude/skills/agent-skills
-```
-
-**Project-level** (only available in the current project):
-```bash
-mkdir -p ./.claude/skills
-git clone https://github.com/Tencent-RTC/agent-skills.git ./.claude/skills/agent-skills
-```
-
-#### Other agents (CodeBuddy / Cursor / etc.)
-
-Clone to any location and point your agent to `SKILL.md`:
-```bash
-git clone https://github.com/Tencent-RTC/agent-skills.git
-# Then tell your agent:
-# "Load the Skill from /path/to/agent-skills/skills/trtc-ai-service/SKILL.md"
-```
-
-> **After installation, restart your CLI session** to ensure the Skill is properly registered and loaded.
 
 ### Trigger keywords
 
@@ -104,7 +83,7 @@ To get the customer service agent running, you need 3 cloud service credentials.
 
 | Key | Purpose | Where to find it |
 |-----|---------|-----------------|
-| Key 1: TRTC Application Credentials | Lets the agent make calls and do voice chat | https://console.trtc.io/ (register & create an **RTC Engine** app — supports Conversational AI) |
+| Key 1: TRTC Application Credentials | Lets the agent make calls and do voice chat | https://console.trtc.io/?quickclaim=engine_trial (register & create an **RTC Engine** app — supports Conversational AI) |
 | Key 2: Tencent Cloud API Key | Proves you have permission to use Tencent Cloud voice & calling services (login syncs with your TRTC account) | https://console.tencentcloud.com/cam/capi |
 | Key 3: LLM API Key | Lets the agent "think" — understand queries and respond | Your registered AI service website (e.g. OpenAI, DeepSeek, etc.) |
 
@@ -153,6 +132,10 @@ To change the underlying STT, LLM, or TTS models, check the model overview for e
 | STT (Speech-to-Text) | [STT Model Overview](https://trtc.io/document/69592?product=conversationalai) |
 | LLM (Language Model) | [LLM Model Overview](https://trtc.io/document/68338?product=conversationalai) |
 | TTS (Text-to-Speech) | [TTS Model Overview](https://trtc.io/document/68340?product=conversationalai) |
+
+### STT supported languages
+
+When `engine_model_type` is set to `bigmodel`, you can specify the audio language for STT. Supported languages: `zh` (Chinese), `en` (English), `yue` (Cantonese), `ar` (Arabic), `de` (German), `fr` (French), `es` (Spanish), `pt` (Portuguese), `id` (Indonesian), `it` (Italian), `ko` (Korean), `ru` (Russian), `th` (Thai), `vi` (Vietnamese), `ja` (Japanese), `tr` (Turkish), `hi` (Hindi), `ms` (Malay), `nl` (Dutch), `sv` (Swedish), `da` (Danish), `fi` (Finnish), `pl` (Polish), `cs` (Czech), `fil` (Filipino), `fa` (Persian), `el` (Greek), `ro` (Romanian), `hu` (Hungarian), `mk` (Macedonian).
 
 ### Full documentation
 

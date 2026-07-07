@@ -204,7 +204,8 @@ PHASE=$(python3 -m tools.session read --field flow_state.chat.phase)
 | `platform` | string | D.2 写入；`web` \| `android` \| `ios` \| `android+ios` \| `flutter` \| `uniapp` \| `vue3` \| `react` \| `miniprogram` \| `""` |
 | `types` | string[] | D.1 写入；`product` \| `restapi` \| `webhook` \| `uikit` \| `sdk` \| `troubleshooting` |
 | `sdkappid` | number \| null | D.3 写入；跳过为 `0`；未问为 `null` |
-| `lastPrompt` | string | D.4 写入；用户原文（截取前 300 字） |
+| `lastPrompt` | string | D.4 步骤 1 写入；用户原文（截取前 300 字） |
+| `lastAnswer` | string | D.4 完成轮 Bash 前写入；与 content 逐字一致（含 D.5 引导）；多行用 YAML `\|` 块 |
 
 **规则**：
 
@@ -226,4 +227,5 @@ platform: ""
 types: []
 sdkappid: null
 lastPrompt: ""
+lastAnswer: ""
 ```

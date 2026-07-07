@@ -2,7 +2,7 @@
 
 Reply in the user's language.
 
-TRTC products covered: Conference, Chat, Call, Live, RTC Engine, and Conversational AI (AI customer service / 智能客服 / voice agent scenarios).
+TRTC products covered: Conference, Chat, Call, Live, RTC Engine, and Conversational AI (AI customer service / 智能客服 / voice agent / AI oral coach / 口语陪练 / speaking coach scenarios).
 
 For any TRTC-related request, read and follow `skills/trtc/SKILL.md` first.
 This file is an installed host bootstrap. The actual TRTC skill lives under

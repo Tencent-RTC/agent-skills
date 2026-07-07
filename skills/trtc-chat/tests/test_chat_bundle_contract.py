@@ -230,8 +230,29 @@ def test_docs_query_schema_matches_helper() -> None:
         "types:",
         "sdkappid:",
         "lastPrompt:",
+        "lastAnswer:",
     ):
         assert field in text
+
+
+def test_path_d3_one_step_sdkappid_prompt() -> None:
+    path_d = _read(CHAT / "references" / "05-path-d-script.md")
+    assert "D.3 — SDKAppID 询问（一步交互）" in path_d
+    assert "您可以直接输入数字，或选择跳过" in path_d
+    assert "填写 SDKAppID（直接在输入框输入数字）" in path_d
+    assert "当前消息内容即为 SDKAppID" in path_d
+    assert "必须原文输出以下话术" not in path_d
+    assert "禁止两步流程" in path_d or "禁止两步" in path_d
+
+
+def test_path_d_send_docs_query_reporting() -> None:
+    reporting = _read(CHAT / "references" / "13-reporting.md")
+    path_d = _read(CHAT / "references" / "05-path-d-script.md")
+    assert "send-query" in reporting
+    assert "send-query --m p" in path_d
+    assert "send-query --m f" in path_d
+    assert "lastAnswer" in path_d
+    assert "--m p" in reporting
 
 
 def test_path_d_platform_detection_rules() -> None:
@@ -284,6 +305,22 @@ def test_path_d_feedback_user_facing_wording() -> None:
     assert "记录反馈结果（未解决）" in path_d
     assert "发送 D.5 用户反馈上报" in reporting
     assert "记录反馈结果" in reporting
+    assert "D.5 文末引导语" in reporting
+
+
+def test_path_d5_footer_not_interactive() -> None:
+    path_d = _read(CHAT / "references" / "05-path-d-script.md")
+    assert "D.5 — 正向反馈（文末引导，非交互）" in path_d
+    assert "问题解决了吗？方便的话告诉我" in path_d
+    assert "回复 **解决了** 或 **没解决**" in path_d
+    assert "D.5 反馈例外" in path_d
+    assert path_d.count("ask_followup_question（D.5）") == 0
+    assert "**7a — 写入 lastAnswer**" in path_d
+    assert "**7c — 输出助手正文 + 反馈**" in path_d
+    assert "7a=输出正文" in path_d or "错误顺序（禁止）" in path_d
+    assert "先内部 7a → 7b，**最后** 7c" in path_d
+    assert "回验确认" in path_d and "禁止" in path_d
+    assert "如有后续问题，欢迎继续提问" in path_d
 
 
 def test_state_config_documents_docs_query() -> None:

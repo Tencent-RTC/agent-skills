@@ -1,0 +1,1986 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lumen · AI Speaking Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="https://web.sdk.qcloud.com/trtc/webrtc/v5/test/latest/dist/trtc.js"></script>
+<script>
+tailwind.config={
+  theme:{
+    extend:{
+      colors:{
+        bg:'#FAFAFA', surface:'#FFFFFF', 'surface-2':'#F4F5F7',
+        fg:'#0F172A', muted:'#6B7280', subtle:'#9CA3AF',
+        primary:{DEFAULT:'#1F2937', deep:'#0B1220', soft:'#EEF1F4'},
+        line:'rgba(15,23,42,.08)', 'line-strong':'rgba(15,23,42,.16)',
+        danger:'#E04A4A', success:'#16A34A', amber:'#D97706'
+      },
+      fontFamily:{sans:['Inter','PingFang SC','system-ui','sans-serif'],mono:['JetBrains Mono','ui-monospace','monospace']}
+    }
+  }
+}
+</script>
+</head>
+<body class="bg-bg text-fg font-sans antialiased overflow-x-hidden">
+
+<div class="mx-auto" style="max-width:1440px">
+<div class="px-5 md:px-10 pt-4 pb-16 relative">
+
+  <!-- Top Nav -->
+  <header class="flex items-center justify-between mb-6 md:mb-8">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-full bg-primary grid place-items-center">
+        <span class="w-2.5 h-2.5 rounded-full bg-white"></span>
+      </div>
+      <div class="font-semibold tracking-tight">Lumen</div>
+    </div>
+    <div></div>
+  </header>
+
+  <!-- ============ VIEW: SETUP ============ -->
+  <section id="view-setup" class="view">
+    <div class="text-center mb-7">
+      <div class="text-[11px] tracking-[0.3em] text-subtle mb-3" data-i18n="setup.eyebrow">START A NEW SESSION</div>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight mb-2" data-i18n="setup.title">让对话开始</h1>
+      <p class="text-muted text-sm max-w-md mx-auto" data-i18n="setup.subtitle">选一个场景，就能立刻和 Lumen 开始练习。</p>
+    </div>
+
+    <div class="setup-shell glass max-w-6xl mx-auto">
+      <aside class="setup-left">
+        <div class="flex items-center justify-between mb-3 px-1">
+          <h3 class="font-semibold text-sm" data-i18n="setup.scenesTitle">场景</h3>
+        </div>
+        <div id="scene-list" class="flex flex-col gap-1.5"></div>
+      </aside>
+
+      <div class="setup-right">
+        <div class="setup-orb-wrap" aria-hidden="true">
+          <div class="orb orb-setup"><span class="orb-core"></span><span class="orb-glow"></span><span class="orb-ring"></span></div>
+        </div>
+        <div class="setup-right-inner">
+          <h2 id="sd-title" class="text-3xl md:text-[32px] font-bold tracking-tight mb-3">机场登机</h2>
+          <p id="sd-desc" class="text-muted text-sm leading-relaxed mb-7 max-w-lg"></p>
+
+          <!-- preset roles row (read-only) -->
+          <div class="role-row mb-7">
+            <div class="role-chip">
+              <div class="role-av ai-av" id="sd-ai-av">AI</div>
+              <div class="role-meta">
+                <div class="role-label" data-i18n="setup.aiPlays">AI plays as</div>
+                <div class="role-name"><span id="sd-ai-name">Sarah</span> · <span id="sd-ai-role" class="text-muted">地勤</span></div>
+              </div>
+            </div>
+            <div class="role-link" aria-hidden="true">
+              <i data-lucide="arrow-left-right" style="width:14px;height:14px"></i>
+            </div>
+            <div class="role-chip">
+              <div class="role-av me-av">Me</div>
+              <div class="role-meta">
+                <div class="role-label" data-i18n="setup.iPlay">I play as</div>
+                <div class="role-name"><span id="sd-me-name" class="text-muted">乘客</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Scene recommended phrases -->
+          <div id="sd-phrases" class="phrases-block mb-6" hidden>
+            <div class="phrases-head">
+              <i data-lucide="bookmark" style="width:14px;height:14px"></i>
+              <span id="sd-phrases-title" data-i18n="setup.phrasesTitle">场景推荐表达</span>
+            </div>
+            <div id="sd-phrases-grid" class="phrases-grid"></div>
+          </div>
+
+          <!-- CTA -->
+          <button id="cta-start" class="cta-start">
+            <i data-lucide="mic" style="width:16px;height:16px"></i>
+            <span data-i18n="btn.startChat">开始对话</span>
+            <i data-lucide="arrow-right" style="width:15px;height:15px"></i>
+          </button>
+
+          <!-- More settings trigger -->
+          <button id="more-trigger" class="more-trigger">
+            <span class="flex items-center gap-2"><i data-lucide="sliders-horizontal" style="width:14px;height:14px"></i><span data-i18n="setup.more">更多设置</span></span>
+            <span class="flex items-center gap-1.5 text-xs text-subtle"><span id="more-hint" data-i18n="setup.moreHint">语速 · 音色 · 语言</span><i data-lucide="chevron-up" style="width:14px;height:14px"></i></span>
+          </button>
+        </div>
+
+        <!-- More settings overlay -->
+        <div id="more-overlay" class="more-overlay" aria-hidden="true">
+          <div class="more-overlay-head">
+            <div>
+              <div class="text-[10px] tracking-[0.2em] text-subtle font-semibold mb-1">PREFERENCES</div>
+              <div class="font-semibold text-base" data-i18n="setup.more">更多设置</div>
+            </div>
+            <button id="more-close" class="dock-icon-mini" aria-label="close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+          </div>
+          <div class="more-overlay-body">
+            <div class="more-row">
+              <span class="more-label-inline" data-i18n="pref.pace">语速</span>
+              <div class="flex-1 min-w-0">
+                <div id="diff-list" class="seg"></div>
+                <p id="diff-desc" class="text-xs text-muted mt-2 leading-relaxed"></p>
+              </div>
+            </div>
+            <div class="more-row">
+              <span class="more-label-inline" data-i18n="pref.voice">音色</span>
+              <div id="voice-list" class="seg"></div>
+            </div>
+            <div class="more-row">
+              <span class="more-label-inline" data-i18n="pref.style">交流风格</span>
+              <div class="flex-1 min-w-0">
+                <div id="style-list-seg" class="seg"></div>
+                <p id="style-desc" class="text-xs text-muted mt-2 leading-relaxed"></p>
+              </div>
+            </div>
+            <div class="more-row">
+              <span class="more-label-inline" data-i18n="pref.lang">界面语言</span>
+              <div class="flex-1 min-w-0">
+                <div id="lang-seg" class="lang-seg-list"></div>
+              </div>
+            </div>
+          </div>
+          <div class="more-overlay-foot">
+            <button id="more-done" class="ctrl-btn ctrl-primary" style="width:100%; justify-content:center"><span data-i18n="setup.done">完成</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VIEW: PRACTICE ============ -->
+  <section id="view-practice" class="view hidden">
+    <div class="practice-stage relative">
+      <div class="flex items-center justify-center gap-3 mb-4 flex-wrap text-xs">
+        <span class="px-2.5 py-1 rounded-full bg-primary text-white font-medium" id="pm-scene">-</span>
+        <span class="text-muted flex items-center gap-1.5"><i data-lucide="bot" style="width:13px;height:13px"></i><span id="pm-ai">-</span></span>
+        <span class="text-subtle">·</span>
+        <span class="text-muted flex items-center gap-1.5"><i data-lucide="user" style="width:13px;height:13px"></i><span id="pm-me">-</span></span>
+        <span class="text-subtle">·</span>
+        <span class="text-muted flex items-center gap-1.5"><i data-lucide="sliders-horizontal" style="width:13px;height:13px"></i><span id="pm-cfg">-</span></span>
+      </div>
+
+      <div class="flex flex-col items-center justify-center pt-2">
+        <div class="font-mono text-sm tracking-wider text-subtle mb-3" id="timer">00:00</div>
+        <div class="orb-wrap-lg">
+          <div class="orb orb-lg" id="orb">
+            <span class="orb-core"></span><span class="orb-glow"></span><span class="orb-ring"></span>
+          </div>
+        </div>
+
+        <div class="mt-6 flex items-center gap-2">
+          <span id="state-dot" class="w-1.5 h-1.5 rounded-full bg-subtle"></span>
+          <span id="state-label" class="text-sm font-medium text-muted" data-i18n="practice.stateReady">Ready</span>
+        </div>
+        <div id="caption" class="mt-2 text-fg text-base max-w-lg text-center min-h-[24px] leading-relaxed"></div>
+
+        <div class="wave-row mt-5">
+          <div class="wave paused" id="wave">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div id="hint-trigger" class="hint-trigger hidden" tabindex="0">
+            <i data-lucide="lightbulb" style="width:14px;height:14px"></i>
+            <span data-i18n="practice.needHint">需要一些灵感？</span>
+            <div class="hint-pop" id="hint-pop">
+              <div class="hint-pop-title" data-i18n="practice.suggested">建议回复</div>
+              <ul id="hint-pop-list"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dock bar -->
+      <div class="dock">
+        <button id="mic-btn" class="talk-btn">
+          <span class="mic-pulse"></span>
+          <i data-lucide="mic" id="mic-icon" style="width:18px;height:18px"></i>
+          <span id="mic-label" data-i18n="practice.start">开始对话</span>
+        </button>
+        <div class="dock-divider"></div>
+        <button id="btn-transcript" class="dock-icon" data-i18n-title="practice.subtitle" title="实时字幕"><i data-lucide="messages-square" style="width:18px;height:18px"></i></button>
+        <button id="btn-end" class="dock-icon dock-danger" data-i18n-title="practice.end" title="结束练习"><i data-lucide="square" style="width:16px;height:16px"></i></button>
+      </div>
+
+      <!-- Transcript drawer -->
+      <aside id="drawer" class="drawer">
+        <div class="drawer-head">
+          <div>
+            <h3 class="font-semibold text-sm" data-i18n="practice.subtitle">实时字幕</h3>
+            <p class="text-xs text-muted mt-0.5" data-i18n="practice.subtitleSub">对话同步显示 · 语法即时建议</p>
+          </div>
+          <button id="drawer-close" class="dock-icon-mini"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+        </div>
+        <div id="chat-stream" class="drawer-body no-scrollbar"></div>
+        <div id="idle-hint" class="idle-hint-bar hidden" tabindex="0">
+          <i data-lucide="lightbulb" style="width:14px;height:14px"></i>
+          <span data-i18n="practice.needHint">需要一些灵感？</span>
+          <div class="idle-hint-pop">
+            <div class="hint-pop-title" data-i18n="practice.suggested">建议回复</div>
+            <ul id="idle-list"></ul>
+          </div>
+        </div>
+        <div id="status-line" class="drawer-foot">
+          <div class="drawer-foot-status">
+            <span class="w-1.5 h-1.5 rounded-full bg-subtle"></span>
+            <span id="status-text" data-i18n="practice.statusIdle">未在录音 · 点击"开始对话"开始</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ VIEW: REPORT ============ -->
+  <section id="view-report" class="view hidden">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center mb-8">
+        <div class="flex justify-center mb-5">
+          <div class="orb-wrap-sm"><div class="orb orb-sm"><span class="orb-core"></span><span class="orb-glow"></span></div></div>
+        </div>
+        <div class="text-[11px] tracking-[0.3em] text-subtle mb-2" data-i18n="report.eyebrow">SESSION COMPLETE</div>
+        <h1 class="text-4xl md:text-5xl font-bold tracking-tight mb-3" id="report-title" data-i18n="report.title">Great session!</h1>
+        <p class="text-muted max-w-md mx-auto" id="report-subtitle" data-i18n="report.subtitle"></p>
+
+        <div class="inline-flex gap-3 mt-6">
+          <div class="stat-card">
+            <div class="text-[10px] text-subtle tracking-widest mb-1" data-i18n="report.duration">DURATION</div>
+            <div class="text-2xl font-bold font-mono" id="r-duration">00:00</div>
+          </div>
+          <div class="stat-card">
+            <div class="text-[10px] text-subtle tracking-widest mb-1" data-i18n="report.turns">TURNS</div>
+            <div class="text-2xl font-bold font-mono" id="r-turns">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Two-col cards -->
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+        <!-- AI Coach summary -->
+        <div class="glass p-6 md:col-span-3">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-full bg-primary grid place-items-center text-white"><i data-lucide="graduation-cap" style="width:15px;height:15px"></i></div>
+            <div><div class="font-semibold text-sm" data-i18n="report.coach">AI Coach</div><div class="text-[11px] text-subtle" data-i18n="report.coachSub">Lumen 给你的话</div></div>
+          </div>
+          <div class="text-fg text-[13.5px] leading-relaxed max-h-[300px] overflow-y-auto no-scrollbar pr-1" id="coach-feedback"></div>
+        </div>
+
+        <!-- Skills analysis 4-dimension -->
+        <div class="glass p-6 md:col-span-2 flex flex-col" style="height:360px">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-sm" data-i18n="report.skill">能力分析</h3>
+            <span class="text-[10px] text-subtle tracking-widest">SKILL</span>
+          </div>
+          <div id="skill-tabs" class="flex items-center gap-1.5 mb-4 flex-wrap"></div>
+          <div id="skill-panel" class="text-[13px] leading-relaxed overflow-y-auto no-scrollbar pr-1 flex-1 min-h-0"></div>
+        </div>
+      </div>
+
+      <!-- Transcript -->
+      <div class="glass p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-sm" data-i18n="report.transcriptTitle">完整对话回顾</h3>
+          <span class="text-[10px] text-subtle tracking-widest" data-i18n="report.transcriptLabel">TRANSCRIPT</span>
+        </div>
+        <div id="transcript" class="space-y-2 max-h-[280px] overflow-y-auto no-scrollbar pr-1"></div>
+      </div>
+
+      <div class="flex items-center justify-center gap-3 mt-6">
+        <button id="btn-back" class="ctrl-btn ctrl-ghost"><i data-lucide="arrow-left" style="width:14px;height:14px"></i><span data-i18n="report.back">返回配置</span></button>
+        <button id="btn-again" class="ctrl-btn ctrl-primary"><span data-i18n="report.again">再来一轮</span><i data-lucide="rotate-cw" style="width:14px;height:14px"></i></button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="loading-overlay hidden">
+  <div class="loading-card">
+    <div class="spin"></div>
+    <p class="mt-3 text-sm font-medium text-fg" data-i18n="loading.generating">AI 正在整理你的口语报告，请稍候…</p>
+  </div>
+</div>
+
+</div>
+
+<style>
+/* ===== GLOBAL STYLES ===== */
+html,body{ background:#FAFAFA; }
+body{ min-height:100vh; }
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background: radial-gradient(700px 500px at 50% -10%, rgba(31,41,55,.05), transparent 60%),
+              radial-gradient(900px 600px at 10% 110%, rgba(31,41,55,.03), transparent 60%);
+}
+body > div{ position:relative; z-index:1; }
+
+.glass{
+  background: rgba(255,255,255,.62); backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  border:1px solid rgba(255,255,255,.85);
+  box-shadow: 0 1px 0 rgba(255,255,255,.95) inset, 0 10px 40px -18px rgba(15,23,42,.10), 0 30px 80px -40px rgba(15,23,42,.12);
+  border-radius:24px;
+}
+
+.view{ animation: fadeUp .55s ease-out both; }
+@keyframes fadeUp{ from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:translateY(0)} }
+
+/* ===== ORB ===== */
+.orb{
+  position:relative; border-radius:50%; overflow:hidden; isolation:isolate;
+  background: radial-gradient(circle at 28% 22%, rgba(255,255,255,.98) 0%, rgba(255,255,255,.55) 8%, rgba(255,255,255,0) 30%),
+              radial-gradient(circle at 42% 50%, #B8D8E8 0%, #8CB8CE 22%, rgba(140,184,206,0) 55%),
+              radial-gradient(circle at 78% 80%, #F0E4C2 0%, #DEC993 18%, rgba(222,201,147,0) 52%),
+              radial-gradient(circle at 50% 55%, #93BBA8 0%, #6E9C88 45%, #4A7A66 100%);
+  box-shadow: inset -14px -22px 50px rgba(20,55,50,.32), inset 16px 18px 36px rgba(255,255,255,.40), 0 30px 70px -20px rgba(60,90,90,.25), 0 0 80px rgba(180,210,210,.30);
+  animation: orbFloat 6s ease-in-out infinite;
+}
+.orb::after{
+  content:""; position:absolute; inset:0; border-radius:50%;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.7 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay; opacity:.55; pointer-events:none;
+}
+.orb-sm{ width:96px; height:96px; }
+.orb-lg{ width:260px; height:260px; }
+.orb .orb-core{ position:absolute; inset:14%; border-radius:50%; background:radial-gradient(circle at 32% 28%, rgba(255,255,255,.55), transparent 50%); filter:blur(8px); mix-blend-mode:screen; }
+.orb .orb-glow{ position:absolute; inset:-30%; border-radius:50%; background:radial-gradient(circle, rgba(150,190,200,.22), transparent 62%); filter:blur(30px); z-index:-1; }
+.orb .orb-ring{ position:absolute; inset:-14px; border-radius:50%; border:1px solid rgba(120,150,150,.22); animation:ringPulse 2.4s ease-in-out infinite; }
+@keyframes orbFloat{ 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-10px) scale(1.02)} }
+@keyframes ringPulse{ 0%,100%{transform:scale(1); opacity:.7} 50%{transform:scale(1.15); opacity:0} }
+.orb-listening{ animation: orbBreath 1.6s ease-in-out infinite; }
+@keyframes orbBreath{ 0%,100%{transform:scale(1)} 50%{transform:scale(1.05); filter:brightness(1.08)} }
+.orb-wrap-sm, .orb-wrap-lg{ display:flex; align-items:center; justify-content:center; }
+
+/* ===== Setup shell ===== */
+.setup-shell{
+  display:grid; grid-template-columns: 260px 1fr;
+  min-height: 560px; padding:0; overflow:hidden; position:relative;
+}
+@media (max-width: 640px){ .setup-shell{ grid-template-columns:1fr; min-height:auto; } }
+.setup-left{
+  padding:20px 16px; background:rgba(244,245,247,.55);
+  border-right:1px solid rgba(15,23,42,.06);
+}
+@media (max-width: 640px){ .setup-left{ border-right:none; border-bottom:1px solid rgba(15,23,42,.06); } }
+.setup-right{
+  position:relative; padding:32px 36px; overflow:hidden;
+  display:flex; flex-direction:column;
+}
+@media (max-width: 768px){ .setup-right{ padding:24px; } }
+.setup-right-inner{ position:relative; z-index:2; display:flex; flex-direction:column; height:100%; }
+
+.setup-orb-wrap{
+  position:absolute; top:-90px; right:-90px; z-index:1;
+  pointer-events:none; opacity:.85;
+}
+.orb-setup{ width:280px; height:280px; }
+.orb-setup .orb-ring{ display:none; }
+.setup-right::before{
+  content:""; position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:radial-gradient(circle at 85% -5%, rgba(255,255,255,0) 30%, rgba(255,255,255,.85) 60%);
+}
+
+/* ===== Scene row (left) ===== */
+.scene-row{
+  display:flex; align-items:center; gap:11px;
+  padding:11px 12px; border-radius:14px; cursor:pointer;
+  border:1px solid transparent; transition: all .2s ease; background: transparent;
+}
+.scene-row:hover{ background:rgba(15,23,42,.04); }
+.scene-row .ic{
+  width:34px; height:34px; border-radius:10px; background:#EEF1F4;
+  display:grid; place-items:center; color:#1F2937; flex-shrink:0; transition:all .2s ease;
+}
+.scene-row .meta{ min-width:0; flex:1; }
+.scene-row .ttl{ font-size:13.5px; font-weight:600; color:#0F172A; line-height:1.3; }
+.scene-row .sub{ font-size:11px; color:#9CA3AF; margin-top:1px; }
+.scene-row.active{
+  background:#1F2937; box-shadow:0 10px 24px -10px rgba(15,23,42,.45);
+}
+.scene-row.active .ic{ background:rgba(255,255,255,.16); color:#fff; }
+.scene-row.active .ttl{ color:#fff; }
+.scene-row.active .sub{ color:rgba(255,255,255,.55); }
+
+/* ===== Segmented control ===== */
+.seg{ display:inline-flex; background:#EEF1F4; border-radius:999px; padding:3px; gap:2px; }
+.seg button{ padding:7px 18px; border-radius:999px; font-size:13px; color:#6B7280; cursor:pointer; transition:all .2s ease; font-weight:500; }
+.seg button:hover{ color:#0F172A; }
+.seg button.active{ background:#1F2937; color:#fff; box-shadow:0 4px 12px -4px rgba(15,23,42,.35); }
+
+/* ===== Buttons ===== */
+.ctrl-btn{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:10px 18px; border-radius:999px; font-size:13px; font-weight:600;
+  transition:all .2s ease; cursor:pointer;
+}
+.ctrl-primary{ background:#1F2937; color:#fff; box-shadow:0 10px 24px -10px rgba(15,23,42,.45); }
+.ctrl-primary:hover{ background:#0B1220; }
+.ctrl-primary:disabled{ background:#9CA3AF; cursor:not-allowed; box-shadow:none; }
+.ctrl-ghost{ background:transparent; color:#6B7280; border:1px solid rgba(15,23,42,.08); }
+.ctrl-ghost:hover{ color:#0F172A; border-color:rgba(15,23,42,.22); }
+
+.cta-start{
+  margin-top:auto; width:100%; display:inline-flex; align-items:center; justify-content:center; gap:10px;
+  padding:15px 24px; border-radius:16px; background:#1F2937; color:#fff; font-weight:600; font-size:15px;
+  box-shadow:0 14px 30px -12px rgba(15,23,42,.5); cursor:pointer; transition:all .2s ease;
+}
+.cta-start:hover{ background:#0B1220; transform:translateY(-1px); box-shadow:0 18px 40px -14px rgba(15,23,42,.55); }
+.cta-start:disabled{ background:#9CA3AF; cursor:not-allowed; box-shadow:none; transform:none; }
+
+/* ===== Role row ===== */
+.role-row{
+  display:flex; align-items:stretch; gap:10px;
+  padding:14px; border-radius:18px; background:rgba(244,245,247,.6);
+  border:1px solid rgba(15,23,42,.06); max-width:520px;
+}
+.role-chip{ flex:1; display:flex; align-items:center; gap:11px; min-width:0; }
+.role-av{
+  width:42px; height:42px; border-radius:50%; display:grid; place-items:center;
+  color:#fff; font-weight:700; font-size:15px; flex-shrink:0;
+  box-shadow:0 6px 14px -6px rgba(15,23,42,.4);
+}
+.ai-av{ background:linear-gradient(135deg,#374151,#0F172A); }
+.me-av{ background:linear-gradient(135deg,#9CA3AF,#4B5563); font-size:13px; }
+.role-meta{ min-width:0; }
+.role-label{ font-size:10px; font-weight:600; color:#9CA3AF; letter-spacing:.08em; text-transform:uppercase; }
+.role-name{ font-size:13.5px; font-weight:600; color:#0F172A; margin-top:2px; line-height:1.3; }
+.role-link{ display:grid; place-items:center; width:28px; color:#9CA3AF; flex-shrink:0; }
+
+/* ===== Phrases block ===== */
+.phrases-head{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:#475569; margin-bottom:10px; }
+.phrases-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+.phrase-card{
+  background:#FFFFFF; border:1px solid rgba(15,23,42,.08); border-radius:12px; padding:12px 14px;
+  transition:border-color .15s ease;
+}
+.phrase-en{ font-family:'SF Mono',ui-monospace,'JetBrains Mono',Menlo,monospace; font-size:13.5px; color:#0F172A; font-weight:500; letter-spacing:-0.01em; line-height:1.3; }
+.phrase-gloss{ font-size:11.5px; color:#94A3B8; margin-top:4px; line-height:1.3; }
+@media (max-width:640px){ .phrases-grid{ grid-template-columns:1fr; } }
+
+/* ===== More settings trigger ===== */
+.more-trigger{
+  margin-top:14px; width:100%; display:flex; align-items:center; justify-content:space-between;
+  padding:11px 16px; border-radius:12px; background:transparent;
+  border:1px solid rgba(15,23,42,.08); font-size:13px; font-weight:600; color:#374151;
+  cursor:pointer; transition:all .2s ease;
+}
+.more-trigger:hover{ border-color:rgba(15,23,42,.22); background:#F4F5F7; color:#0F172A; }
+
+/* ===== More overlay ===== */
+.more-overlay{
+  position:absolute; left:0; right:0; bottom:0; top:0; z-index:10;
+  background:rgba(255,255,255,.96); backdrop-filter:blur(18px) saturate(140%);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  display:flex; flex-direction:column;
+  transform:translateY(100%); opacity:0; pointer-events:none;
+  transition:transform .42s cubic-bezier(.2,.7,.3,1), opacity .25s ease;
+  border-top:1px solid rgba(15,23,42,.06);
+}
+.more-overlay.open{ transform:translateY(0); opacity:1; pointer-events:auto; }
+.more-overlay-head{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  padding:24px 32px 14px; border-bottom:1px solid rgba(15,23,42,.06);
+}
+.more-overlay-body{ flex:1; overflow-y:auto; padding:22px 32px; display:flex; flex-direction:column; gap:20px; }
+.more-overlay-foot{ padding:14px 32px 22px; border-top:1px solid rgba(15,23,42,.06); }
+@media (max-width:768px){ .more-overlay-head,.more-overlay-body,.more-overlay-foot{ padding-left:22px; padding-right:22px; } }
+.more-row{ display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap; }
+.more-row .more-label-inline{ padding-top:6px; }
+.more-label-inline{ font-size:11px; font-weight:600; color:#6B7280; min-width:44px; }
+
+/* ===== Practice stage ===== */
+.practice-stage{ position:relative; min-height:580px; padding:12px 0 100px; }
+
+/* Wave */
+.wave{ display:flex; align-items:center; justify-content:center; gap:4px; height:32px; }
+.wave span{ display:block; width:3px; border-radius:3px; background:linear-gradient(180deg,#9CA3AF,#1F2937); animation:waveJump 1s ease-in-out infinite; }
+.wave span:nth-child(odd){ animation-delay:-.3s }
+.wave span:nth-child(3n){ animation-delay:-.6s }
+.wave span:nth-child(5n){ animation-delay:-.9s }
+@keyframes waveJump{ 0%,100%{height:5px;opacity:.45} 50%{height:26px;opacity:1} }
+.wave.paused span{ animation-play-state:paused; height:5px; opacity:.35; }
+
+/* ===== Hint trigger ===== */
+.wave-row{ display:flex; align-items:center; justify-content:center; gap:14px; min-height:36px; position:relative; }
+.hint-trigger{
+  position:relative; display:inline-flex; align-items:center; gap:6px;
+  padding:6px 14px; border-radius:999px;
+  background:rgba(255,255,255,.72); backdrop-filter:blur(12px) saturate(140%);
+  -webkit-backdrop-filter:blur(12px) saturate(140%);
+  border:1px solid rgba(15,23,42,.1); color:#6B7280;
+  font-size:12px; font-weight:500; cursor:pointer;
+  box-shadow:0 2px 8px -2px rgba(15,23,42,.08);
+  animation:hintBlink 2.4s ease-in-out infinite; outline:none; transition:all .2s ease;
+}
+.hint-trigger:hover{ border-color:rgba(15,23,42,.22); color:#1F2937; }
+.hint-trigger.hidden{ display:none; }
+@keyframes hintBlink{ 0%,100%{box-shadow:0 2px 8px -2px rgba(15,23,42,.08), 0 0 0 0 rgba(31,41,55,.12)} 50%{box-shadow:0 2px 8px -2px rgba(15,23,42,.08), 0 0 0 6px rgba(31,41,55,0)} }
+.hint-pop{
+  position:absolute; bottom:calc(100% + 10px); left:50%; transform:translateX(-50%) translateY(4px);
+  width:280px; padding:14px 16px;
+  background:rgba(255,255,255,.88); backdrop-filter:blur(20px) saturate(150%);
+  -webkit-backdrop-filter:blur(20px) saturate(150%);
+  border:1px solid rgba(255,255,255,.9); border-radius:16px;
+  box-shadow:0 4px 6px -1px rgba(15,23,42,.06), 0 20px 50px -12px rgba(15,23,42,.15);
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:20;
+}
+.hint-trigger:hover .hint-pop, .hint-trigger:focus .hint-pop, .hint-trigger:focus-within .hint-pop{
+  opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0);
+}
+.hint-pop-title{ font-size:10px; font-weight:700; letter-spacing:.15em; color:#9CA3AF; margin-bottom:10px; }
+.hint-pop ul{ display:flex; flex-direction:column; gap:6px; }
+.hint-pop li{
+  padding:8px 12px; border-radius:12px; font-size:12px; line-height:1.5; color:#0F172A;
+  background:#F4F5F7; border:1px solid rgba(15,23,42,.04); text-align:left; transition:all .15s ease;
+  display:flex; align-items:flex-start; gap:8px;
+}
+.hint-pop li:hover{ background:#EEF1F4; }
+.hint-pop li .num{
+  display:inline-flex; align-items:center; justify-content:center;
+  flex-shrink:0; width:18px; height:18px; border-radius:50%;
+  background:#1F2937; color:#fff; font-size:9px; font-weight:700; margin-top:1px;
+}
+
+/* ===== Dock ===== */
+.dock{
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+  display:flex; align-items:center; gap:10px; padding:8px 10px;
+  background:rgba(255,255,255,.72); backdrop-filter:blur(22px) saturate(160%);
+  -webkit-backdrop-filter:blur(22px) saturate(160%);
+  border:1px solid rgba(255,255,255,.9); border-radius:999px;
+  box-shadow:0 1px 0 rgba(255,255,255,.95) inset, 0 18px 50px -16px rgba(15,23,42,.20), 0 6px 18px -8px rgba(15,23,42,.10);
+  z-index:30;
+}
+.dock-divider{ width:1px; height:22px; background:rgba(15,23,42,.10); margin:0 2px; }
+.dock-icon{
+  width:40px; height:40px; border-radius:50%; display:grid; place-items:center;
+  color:#374151; background:transparent; cursor:pointer; transition:all .18s ease;
+}
+.dock-icon:hover{ background:#EEF1F4; color:#0F172A; }
+.dock-icon-mini{
+  width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
+  color:#6B7280; background:transparent; cursor:pointer; transition:all .18s ease;
+}
+.dock-icon-mini:hover{ background:#EEF1F4; color:#0F172A; }
+.dock-danger{ color:#E04A4A; }
+.dock-danger:hover{ background:#FFF1F0; color:#E04A4A; }
+
+.talk-btn{
+  position:relative; display:inline-flex; align-items:center; gap:8px;
+  padding:11px 22px; border-radius:999px; background:#1F2937;
+  color:#fff; font-weight:600; font-size:14px;
+  box-shadow:0 10px 26px -10px rgba(15,23,42,.55);
+  cursor:pointer; transition:all .2s ease;
+}
+.talk-btn:hover{ background:#0B1220; transform:translateY(-1px); }
+.talk-btn.recording{ background:linear-gradient(135deg,#FF6B5B,#E04A4A); box-shadow:0 10px 26px -10px rgba(224,74,74,.55); }
+.mic-pulse{ position:absolute; inset:-5px; border-radius:999px; border:2px solid rgba(15,23,42,.20); opacity:0; pointer-events:none; }
+.talk-btn.recording .mic-pulse{ border-color:rgba(255,107,91,.55); opacity:1; animation:micPulse 1.6s ease-out infinite; }
+@keyframes micPulse{ 0%{transform:scale(.96); opacity:.85} 100%{transform:scale(1.14); opacity:0} }
+
+/* ===== Drawer ===== */
+.drawer{
+  position:fixed; top:0; right:0; bottom:0; width:min(420px, 90vw);
+  background:rgba(255,255,255,.85); backdrop-filter:blur(22px) saturate(140%);
+  -webkit-backdrop-filter:blur(22px) saturate(140%);
+  border-left:1px solid rgba(15,23,42,.06);
+  box-shadow:-20px 0 60px -20px rgba(15,23,42,.18);
+  display:flex; flex-direction:column; z-index:40;
+  visibility:hidden; opacity:0; transform:translateX(100%);
+  transition:transform .42s cubic-bezier(.2,.7,.3,1), opacity .3s ease, visibility 0s .42s;
+}
+.drawer.open{ visibility:visible; opacity:1; transform:translateX(0); transition:transform .42s cubic-bezier(.2,.7,.3,1), opacity .3s ease, visibility 0s 0s; }
+.drawer-head{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px 12px; border-bottom:1px solid rgba(15,23,42,.06); }
+.drawer-body{ flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:10px; }
+/* idle-hint-bar 的容器需要 overflow:visible 才能让弹出层超出 drawer 边界 */
+#status-line{ position:relative; overflow:visible; }
+.drawer-foot{ padding:12px 20px; border-top:1px solid rgba(15,23,42,.06); display:flex; flex-direction:column; align-items:center; gap:0; font-size:11px; color:#6B7280; }
+.drawer-foot-status{ display:flex; align-items:center; gap:8px; width:100%; padding:8px 0 4px; }
+
+/* ===== Chat bubbles ===== */
+.bubble-wrap{ display:flex; gap:8px; align-items:flex-start; animation:bubbleIn .35s ease both; }
+@keyframes bubbleIn{ from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:translateY(0)} }
+.bubble-wrap.me{ flex-direction:row-reverse; }
+.avatar-mini{ width:26px; height:26px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; color:#fff; font-size:10px; font-weight:700; }
+.avatar-mini.ai{ background:#1F2937; }
+.avatar-mini.me{ background:#9CA3AF; }
+.bubble-col{ display:flex; flex-direction:column; gap:4px; max-width:calc(100% - 60px); min-width:0; }
+.bubble-wrap.me .bubble-col{ align-items:flex-end; }
+.bubble{
+  padding:10px 13px; border-radius:14px; font-size:13px; line-height:1.55;
+  word-wrap:break-word;
+}
+.bubble.ai{ background:#fff; color:#0F172A; border:1px solid rgba(15,23,42,.06); border-bottom-left-radius:4px; }
+.bubble.me{ background:#1F2937; color:#fff; border-bottom-right-radius:4px; }
+.bubble .tm{ font-size:10px; opacity:.55; margin-top:4px; font-family:'JetBrains Mono',monospace; }
+
+.me-line{ display:flex; align-items:flex-start; gap:6px; justify-content:flex-end; width:100%; }
+.gm{ flex-shrink:0; width:20px; height:20px; border-radius:50%; display:grid; place-items:center; font-weight:700; font-size:12px; margin-top:6px; transition:all .2s ease; }
+.gm.warn{ color:#E04A4A; background:rgba(224,74,74,.10); cursor:pointer; }
+.gm.warn:hover{ background:rgba(224,74,74,.18); transform:scale(1.08); }
+.gm.ok{ color:#16A34A; background:rgba(22,163,74,.08); }
+.gm.pending{ color:#9CA3AF; background:rgba(15,23,42,.04); }
+.gm.pending::before{ content:''; width:7px; height:7px; border-radius:50%; background:#9CA3AF; opacity:.6; animation:gmPulse 1.2s ease-in-out infinite; }
+@keyframes gmPulse{ 0%,100%{transform:scale(.6); opacity:.4} 50%{transform:scale(1); opacity:.9} }
+
+.suggest-box{
+  margin-top:6px; border:1px dashed rgba(224,74,74,.4); background:#FFF8F7;
+  border-radius:12px; padding:10px 12px; font-size:12px; line-height:1.55;
+  color:#0F172A; width:100%; animation:bubbleIn .35s ease both;
+}
+.suggest-box .sg-title{ font-size:10px; font-weight:700; color:#E04A4A; letter-spacing:.1em; margin-bottom:4px; }
+.suggest-box .sg-fix{ color:#1F2937; font-weight:600; }
+.suggest-box .sg-why{ color:#6B7280; margin-top:4px; }
+.suggest-box .sg-better{ color:#D97706; font-weight:600; }
+
+.no-scrollbar{ scrollbar-width:none; -ms-overflow-style:none; }
+.no-scrollbar::-webkit-scrollbar{ width:0; height:0; display:none; }
+
+/* Idle hint bar in drawer（与主屏 hint-trigger 保持一致的交互） */
+.idle-hint-bar{
+  position:relative; display:inline-flex; align-items:center; gap:6px;
+  margin:10px auto; padding:6px 14px; border-radius:999px;
+  background:rgba(255,255,255,.85); backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  border:1px solid rgba(15,23,42,.1); color:#6B7280;
+  font-size:12px; font-weight:500; cursor:pointer;
+  box-shadow:0 2px 8px -2px rgba(15,23,42,.08);
+  animation:hintBlink 2.4s ease-in-out infinite; outline:none; transition:all .2s ease;
+  align-self:center;
+}
+.idle-hint-bar.hidden{ display:none; }
+.idle-hint-bar:hover{ border-color:rgba(15,23,42,.22); color:#1F2937; }
+.idle-hint-pop{
+  position:absolute; bottom:calc(100% + 10px); left:50%; transform:translateX(-50%) translateY(4px);
+  width:280px; padding:14px 16px;
+  background:rgba(255,255,255,.95); backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(15,23,42,.08); border-radius:16px;
+  box-shadow:0 4px 6px -1px rgba(15,23,42,.06), 0 20px 50px -12px rgba(15,23,42,.15);
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:50;
+}
+.idle-hint-bar:hover .idle-hint-pop,
+.idle-hint-bar:focus .idle-hint-pop,
+.idle-hint-bar:focus-within .idle-hint-pop{
+  opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0);
+}
+.idle-hint-pop .hint-pop-title{ font-size:10px; font-weight:700; letter-spacing:.15em; color:#9CA3AF; margin-bottom:10px; }
+.idle-hint-pop ul{ display:flex; flex-direction:column; gap:6px; }
+#idle-list li{
+  padding:8px 12px; border-radius:12px; font-size:12px; line-height:1.5; color:#0F172A;
+  background:#F4F5F7; border:1px solid rgba(15,23,42,.04);
+  display:flex; align-items:flex-start; gap:8px; transition:all .15s ease;
+}
+#idle-list li:hover{ background:#EEF1F4; }
+#idle-list li .num{
+  display:inline-flex; align-items:center; justify-content:center;
+  flex-shrink:0; width:18px; height:18px; border-radius:50%;
+  background:#1F2937; color:#fff; font-size:9px; font-weight:700; margin-top:1px;
+}
+
+/* ===== Report ===== */
+.stat-card{
+  padding:14px 22px; border-radius:18px;
+  background:rgba(255,255,255,.7); backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(15,23,42,.06); text-align:left;
+}
+.transcript-row{ display:flex; gap:12px; padding:10px 12px; border-radius:12px; background:#fff; border:1px solid rgba(15,23,42,.04); transition:all .2s ease; }
+.transcript-row:hover{ border-color:rgba(15,23,42,.12); }
+.transcript-row .sp{ width:26px; height:26px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; font-size:10px; font-weight:700; color:#fff; }
+.transcript-row.ai .sp{ background:#1F2937; }
+.transcript-row.me .sp{ background:#9CA3AF; }
+.transcript-row .tx{ font-size:13px; line-height:1.6; color:#0F172A; flex:1; }
+.transcript-row .tm{ font-size:10px; color:#9CA3AF; font-family:'JetBrains Mono',monospace; flex-shrink:0; align-self:center; }
+
+.skill-tab{ padding:6px 14px; border-radius:999px; font-size:12px; font-weight:500; color:#6B7280; background:#fff; border:1px solid rgba(15,23,42,.08); cursor:pointer; transition:all .2s ease; }
+.skill-tab:hover{ color:#0F172A; border-color:rgba(15,23,42,.22); }
+.skill-tab.active{ color:#fff; border-color:#1F2937; background:#1F2937; }
+.skill-content{ animation:bubbleIn .3s ease both; }
+.skill-content .skill-label{ font-size:10px; font-weight:700; color:#1F2937; letter-spacing:.1em; margin-top:12px; margin-bottom:3px; }
+.skill-content p{ margin-bottom:6px; color:#0F172A; }
+
+/* ===== Language selector in More Settings ===== */
+.lang-seg-list{ display:flex; flex-wrap:wrap; gap:6px; }
+.lang-pill{
+  display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:6px 14px; border-radius:999px; font-size:12.5px; font-weight:500;
+  color:#6B7280; background:#EEF1F4; border:1px solid transparent;
+  cursor:pointer; transition:all .18s ease; line-height:1.2;
+}
+.lang-pill:hover{ color:#0F172A; background:#E5E7EB; }
+.lang-pill.active{ background:#1F2937; color:#fff; border-color:transparent; box-shadow:0 4px 10px -4px rgba(15,23,42,.3); }
+.lang-pill-name{ font-size:12.5px; font-weight:600; }
+.lang-pill-sub{ font-size:10px; opacity:.7; margin-top:1px; }
+
+/* ===== Language menu (legacy, kept for CSS ref) ===== */
+.lang-menu{ animation:fadeUp .18s ease both; }
+.lang-opt{
+  width:100%; display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; font-size:13px; color:#0F172A; cursor:pointer; transition:background .15s ease;
+}
+.lang-opt:hover{ background:#F4F5F7; }
+.lang-opt.active{ background:#EEF1F4; font-weight:600; }
+
+/* Loading spinner */
+.spin{ display:inline-block; width:16px; height:16px; border:2px solid #E5E7EB; border-top-color:#1F2937; border-radius:50%; animation:spin .6s linear infinite; }
+@keyframes spin{ to{transform:rotate(360deg)} }
+
+/* Loading overlay */
+.loading-overlay{
+  position:fixed; inset:0; z-index:100;
+  background:rgba(255,255,255,.82); backdrop-filter:blur(10px);
+  display:flex; align-items:center; justify-content:center;
+}
+.loading-overlay.hidden{ display:none; }
+.loading-card{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:40px 48px; border-radius:20px;
+  background:rgba(255,255,255,.88); border:1px solid rgba(15,23,42,.06);
+  box-shadow:0 20px 50px -20px rgba(15,23,42,.15);
+}
+.loading-card .spin{ width:28px; height:28px; border-width:3px; animation-duration:.8s; }
+
+@media (max-width:768px){ .orb-lg{ width:200px; height:200px; } .practice-stage{ min-height:480px; } }
+</style>
+
+<script src="/static/i18n.js?{{ asset_version }}"></script>
+
+<script>
+/* ===================== APP STATE ===================== */
+window.appData = {
+  scenes:[
+    {id:'travel', icon:'plane',          tag:'TRAVEL'},
+    {id:'work',   icon:'briefcase',      tag:'WORK'},
+    {id:'daily',  icon:'coffee',         tag:'DAILY'},
+    {id:'free',   icon:'message-circle', tag:'FREE'}
+  ],
+  styles:[
+    {id:'friend',icon:'smile'},{id:'listen',icon:'ear'},{id:'local',icon:'map-pin'}
+  ],
+  difficulties:[{id:'a'},{id:'b'},{id:'c'}],
+  voices:[{id:'f'},{id:'m'}],
+  _skillLabels:{fluency:'流利度',vocab:'词汇',grammar:'语法',completeness:'完整度'},
+  _suggestTitle:'建议优化',
+  _suggestFix:'更地道的说法：',
+  _summaryLabels:{scene:'场景',ai:'AI',me:'我',pace:'语速',voice:'音色'},
+};
+
+// DIFF_ID → backend Level
+const DIFF_TO_LEVEL = {a:'beginner', b:'intermediate', c:'advanced'};
+// SCENE_ID → backend Scenario (daily → free for LLM prompt, but daily uses its own JSON entries)
+const SCENE_TO_BACKEND = {travel:'travel', work:'work', daily:'free', free:'free'};
+// SCENE_ID → JSON key in practice-scenarios.json (daily maps to its own daily entries)
+const SCENE_TO_JSON_KEY = {travel:'travel', work:'work', daily:'daily', free:'free'};
+
+// ===================== TRTC STATE =====================
+const TRTC_STATE = {
+  sdkAppId:0, userId:'', userSig:'', robotUserId:'', robotUserSig:'',
+  avatarUserId:'', avatarUserSig:'', avatarAvailable:false, roomId:0, taskId:null,
+  trtcClient:null, micMuted:true, aiSpeaking:false, callState:'idle',
+  aiRoundText:{}, aiRoundMsgId:{}, aiRoundLast:{},
+  // 全局轮次管理：AI 一整轮回复可能含多个 roundId，统一累积到一个气泡
+  aiTurnText:'', aiTurnBubbleId:null,
+  _curRoundId:'', _curRoundText:'',
+  // push-to-talk: 用户说话期间的 ASR 文本累积缓存，用户点"结束对话"后统一发给 AI
+  // _recordingSession: 每次开麦时生成新 ID，ASR 消息只有 session 匹配时才接受，
+  // 防止关麦后迟到的 echo/回显被写入下一轮 userTurnText
+  userTurnText:'', _recordingSession:0,
+  transcript:[], startedAt:null, endedAt:null, messageSeq:0,
+  idleTimer:null, idleHintTimer:null,
+  hintsRequestId:0, hintsState:'idle', hintsCurrent:[], hintsOpen:false,
+  hintsTimer:null, hintsTimerFired:false, hintsPrefetched:null,
+  inlineCorrections:{},
+  reports:null,
+};
+window.TRTC_STATE = TRTC_STATE;  // expose for cross-IIFE access (report view)
+
+// ===================== API HELPERS =====================
+function escapeHtml(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+async function callAPI(action, body={}){
+  const res = await fetch('/action', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Action':action},
+    body:JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.Response && data.Response.Error){
+    throw new Error(data.Response.Error.Message || data.Response.Error.Code);
+  }
+  return data;
+}
+
+// ===================== SETUP VIEW =====================
+(function(){
+  const D = window.appData;
+  const state = window.cfgState = {
+    sceneId:'travel',
+    styleId:'friend', diffId:'b', voiceId:'f'
+  };
+  function $(id){ return document.getElementById(id); }
+  function curScene(){ return D.scenes.find(s=>s.id===state.sceneId); }
+
+  // 加载 practice-scenarios.json 的 meta 板块，仅作为推荐表达的兜底数据源。
+  // 注意：title / sub / desc / aiRoles / meRoles 由 I18N_DATA + applyDataI18n() 维护，
+  // 这里不能再覆盖，否则会冲掉多语言切换的效果。
+  async function loadSceneMeta(){
+    try{
+      const url = D.scenariosUrl || '/static/practice-scenarios.json';
+      const resp = await fetch(url);
+      const data = await resp.json();
+      const meta = data && data.meta;
+      if (!meta) return;
+      D.scenes.forEach(s=>{
+        const m = meta[s.id];
+        if (!m) return;
+        // 仅在 I18N_DATA 还没有该场景的 recommendedExpressions 时兜底注入（不会覆盖语言版）
+        if (!s.recommendedExpressions && Array.isArray(m.recommendedExpressions)){
+          s.recommendedExpressions = m.recommendedExpressions;
+        }
+      });
+    }catch(e){ console.warn('loadSceneMeta failed:', e); }
+  }
+
+  function renderScenes(){
+    const list = $('scene-list');
+    list.innerHTML = D.scenes.map(s=>`
+      <div class="scene-row ${s.id===state.sceneId?'active':''}" data-id="${s.id}">
+        <div class="ic"><i data-lucide="${s.icon}" style="width:17px;height:17px"></i></div>
+        <div class="meta"><div class="ttl">${s.title}</div><div class="sub">${s.sub}</div></div>
+      </div>`).join('');
+    list.querySelectorAll('.scene-row').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        if(state.sceneId===el.dataset.id) return;
+        state.sceneId = el.dataset.id;
+        renderScenes(); renderDetail();
+        if(window.lucide) lucide.createIcons();
+      });
+    });
+    if(window.lucide) lucide.createIcons();
+  }
+
+  function renderDetail(){
+    const s = curScene();
+    $('sd-title').textContent = s.title || '';
+    $('sd-desc').textContent = s.desc || '';
+    const ai = (s.aiRoles && s.aiRoles[0]) || {n:'AI',r:'—'};
+    const me = (s.meRoles && s.meRoles[0]) || {n:'我',r:'—'};
+    $('sd-ai-name').textContent = ai.n;
+    $('sd-ai-role').textContent = ai.r;
+    $('sd-me-name').textContent = me.n + ' · ' + me.r;
+    try{ $('sd-ai-av').textContent = (ai.n||'A')[0]; }catch(e){}
+
+    // 渲染「场景推荐表达」板块
+    //   title 永远是英文短语（学习目标语言）
+    //   小字：en 模式不渲染；其他语言显示对应 UI 语言的翻译
+    const block = $('sd-phrases');
+    const grid  = $('sd-phrases-grid');
+    const exprs = s.recommendedExpressions || [];
+    if (!block || !grid) return;
+    if (exprs.length === 0){
+      block.setAttribute('hidden','');
+      grid.innerHTML = '';
+      return;
+    }
+    block.removeAttribute('hidden');
+    const isEn = (window.currentLang || '').toLowerCase() === 'en';
+    grid.innerHTML = exprs.map(p=>{
+      const en   = p.en || '';
+      const gloss = isEn ? '' : (p.zh || '');
+      return '<div class="phrase-card">'
+        + '<div class="phrase-en">'+escapeHtml(en)+'</div>'
+        + (gloss ? '<div class="phrase-gloss">'+escapeHtml(gloss)+'</div>' : '')
+      + '</div>';
+    }).join('');
+  }
+
+  function renderPref(){
+    $('diff-list').innerHTML = D.difficulties.map(d=>`
+      <button class="${d.id===state.diffId?'active':''}" data-id="${d.id}">${d.label}</button>`).join('');
+    $('diff-list').querySelectorAll('button').forEach(el=>{
+      el.addEventListener('click',()=>{ state.diffId=el.dataset.id; renderPref(); updateHint(); });
+    });
+    $('diff-desc').textContent = D.difficulties.find(x=>x.id===state.diffId).desc;
+    $('voice-list').innerHTML = D.voices.map(v=>`
+      <button class="${v.id===state.voiceId?'active':''}" data-id="${v.id}">${v.label}</button>`).join('');
+    $('voice-list').querySelectorAll('button').forEach(el=>{
+      el.addEventListener('click',()=>{ state.voiceId=el.dataset.id; renderPref(); updateHint(); });
+    });
+    const seg = $('style-list-seg');
+    if(seg){
+      seg.innerHTML = D.styles.map(x=>`
+        <button class="${x.id===state.styleId?'active':''}" data-id="${x.id}">${x.label}</button>`).join('');
+      seg.querySelectorAll('button').forEach(el=>{
+        el.addEventListener('click',()=>{ state.styleId=el.dataset.id; renderPref(); updateHint(); });
+      });
+      $('style-desc').textContent = D.styles.find(x=>x.id===state.styleId).desc || '';
+    }
+  }
+
+  function updateHint(){
+    const d = D.difficulties.find(x=>x.id===state.diffId);
+    const v = D.voices.find(x=>x.id===state.voiceId);
+    $('more-hint').textContent = `${d.label} · ${v.label}`;
+  }
+
+  function bindOverlay(){
+    const trig=$('more-trigger'), ov=$('more-overlay'), close=$('more-close'), done=$('more-done');
+    if(!trig||!ov) return;
+    function open(){ ov.classList.add('open'); ov.setAttribute('aria-hidden','false'); }
+    function shut(){ ov.classList.remove('open'); ov.setAttribute('aria-hidden','true'); }
+    trig.addEventListener('click', open);
+    close.addEventListener('click', shut);
+    done.addEventListener('click', shut);
+  }
+
+  function renderAll(){
+    renderScenes(); renderDetail(); renderPref(); updateHint(); bindOverlay();
+    if(window.lucide) lucide.createIcons();
+  }
+
+  // 暴露给 initConfigView：同步渲染 + 后台兜底加载 JSON 里的 recommendedExpressions
+  // 注意：loadSceneMeta 是 async 的（fetch JSON），但 applyDataI18n 已经从 I18N_DATA
+  // 注入了 recommendedExpressions，所以这里同步调 renderAll 即可；loadSceneMeta
+  // 作为兜底在初始化时 fire-and-forget 调一次（万一 I18N_DATA 没有该字段）。
+  window.initConfigView = function(){
+    renderAll();
+    loadSceneMeta().then(()=>{ /* 兜底数据加载完，如果补了 recommendedExpressions 则重新渲染短语板块 */
+      renderDetail();
+    });
+  };
+
+  window.getPracticeContext = function(){
+    const s = curScene();
+    return {
+      scene:s, ai:s.aiRoles[0], me:s.meRoles[0],
+      style:D.styles.find(x=>x.id===state.styleId),
+      diff:D.difficulties.find(x=>x.id===state.diffId),
+      voice:D.voices.find(x=>x.id===state.voiceId)
+    };
+  };
+})();
+
+// ===================== PRACTICE VIEW (TRTC) =====================
+(function(){
+  const D = window.appData;
+  const S = TRTC_STATE;
+  let timer=null, sec=0, micBtnOn=false;
+
+  function $(id){return document.getElementById(id);}
+  function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+  function T(k){return window.t(k)||k;}
+
+  // 过滤 [FEEDBACK]/[FOLLOWUP]/[CORRECTION]/[BETTER] 等系统标签，用空格替代避免文本粘连
+  function cleanSubtitleText(t){
+    if(!t) return '';
+    return t.replace(/\[FEEDBACK\]/gi,' ').replace(/\[FOLLOWUP\]/gi,' ').replace(/\[CORRECTION\]/gi,' ').replace(/\[BETTER\]/gi,' ').replace(/\s+/g,' ').trim();
+  }
+
+  // 本 Skill 是纯英文口语陪练场景：STTConfig.Language=en 只是"优先"英文声学模型，
+  // 遇到语气词/停顿仍可能被误识成中文（如"嗯"/"对呀"），混进 ASR 结果里。这段中文噪声
+  // 一旦被当作用户原话传给 LLM，会污染上下文、加重幻觉——所以在显示气泡 & 发给
+  // InvokeLLM 之前，统一剥掉 CJK 字符（中/日/韩文字符范围），只留英文内容。
+  function stripNonEnglishNoise(t){
+    if(!t) return '';
+    return t
+      // CJK 统一表意文字 + 扩展区、日文假名、韩文音节 —— 覆盖绝大多数误识别的中文/日文/韩文噪声
+      .replace(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/g, ' ')
+      // 中文全角标点（英文标点保留，不影响正常英文标点）
+      .replace(/[\u3000-\u303f\uff00-\uffef]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function setOrbState(st){
+    const orb=$('orb'),wave=$('wave'),lbl=$('state-label'),cap=$('caption'),dot=$('state-dot');
+    switch(st){
+      case 'idle':
+        orb.classList.remove('orb-listening'); wave.classList.add('paused');
+        lbl.textContent=T('practice.stateReady'); lbl.style.color='#9CA3AF';
+        dot.style.background='#9CA3AF';
+        break;
+      case 'recording':
+        orb.classList.add('orb-listening'); wave.classList.remove('paused');
+        lbl.textContent=T('practice.stateRecording'); lbl.style.color='#E04A4A';
+        dot.style.background='#E04A4A';
+        cap.textContent=T('practice.captionRecording');
+        break;
+      case 'speaking':
+        orb.classList.add('orb-listening'); wave.classList.remove('paused');
+        lbl.textContent=T('practice.stateSpeaking'); lbl.style.color='#1F2937';
+        dot.style.background='#1F2937';
+        break;
+      case 'connecting':
+        orb.classList.add('orb-listening'); wave.classList.remove('paused');
+        lbl.textContent=T('practice.statusConnecting'); lbl.style.color='#D97706';
+        dot.style.background='#D97706';
+        break;
+    }
+  }
+
+  function startTimer(){ stopTimer(); sec=0; timer=setInterval(()=>{sec++;$('timer').textContent=fmt(sec);},1000); }
+  function stopTimer(){ if(timer){clearInterval(timer);timer=null;} return sec; }
+
+  function addBubble(role, text, ts){
+    const box=$('chat-stream');
+    const id='msg-'+(++S.messageSeq);
+    const row=document.createElement('div');
+    row.className='bubble-wrap '+(role==='user'?'me':'ai');
+    if(role==='coach'||role==='ai'){
+      row.id=id;
+      const displayText=cleanSubtitleText(text);
+      row.innerHTML='<div class="avatar-mini ai">AI</div>'
+        +'<div class="bubble-col"><div class="bubble ai">'+escapeHtml(displayText)+'<div class="tm">'+escapeHtml(ts)+'</div></div></div>';
+      // Only update caption when drawer is NOT open (center subtitle display)
+      const drawer=$('drawer');
+      if(!drawer.classList.contains('open')){
+        $('caption').textContent='"'+displayText+'"';
+      }
+    } else {
+      row.innerHTML='<div class="avatar-mini me">U</div>'
+        +'<div class="bubble-col" id="'+id+'">'
+        +'<div class="me-line">'
+        +'<div class="gm pending" data-id="'+id+'"></div>'
+        +'<div class="bubble me">'+escapeHtml(text)+'<div class="tm">'+escapeHtml(ts)+'</div></div>'
+        +'</div></div>';
+    }
+    box.appendChild(row);
+    box.scrollTop=box.scrollHeight;
+    if(window.lucide) lucide.createIcons();
+    // Quick correct：必须在 appendChild 之后调用，确保 getElementById 能找到元素
+    if(role==='user') requestQuickCorrect(id, text);
+    return id;
+  }
+
+  function updateBubble(msgId, newText){
+    const el=document.getElementById(msgId);
+    if(!el) return;
+    const bubble=el.querySelector('.bubble');
+    if(bubble) bubble.textContent=cleanSubtitleText(newText);
+  }
+
+  // Quick correct
+  async function requestQuickCorrect(msgId, sentence){
+    const col=document.getElementById(msgId);
+    if(!col) return;
+    const gm=col.querySelector('.gm');
+    if(!gm) return;
+    // check if sentence is too short or empty
+    if(sentence.trim().length < 2){ gm.classList.remove('pending'); gm.classList.add('ok'); gm.textContent='✓'; return; }
+    try{
+      const ctx=window.getPracticeContext&&window.getPracticeContext();
+      const resp=await callAPI('QuickCorrect', {
+        UserSentence:sentence,
+        Scenario:SCENE_TO_BACKEND[ctx?ctx.scene.id:'free']||'free',
+        Level:DIFF_TO_LEVEL[(ctx&&ctx.diff)?ctx.diff.id:'b']||'intermediate',
+        ScenarioTopic:null,
+        TurnId:msgId,
+        UILanguage:window.currentLang||'zh-CN'   // 传递完整 UI 语言，后端按此生成 why 字段
+      });
+      const corr=(resp.Corrections||{});
+      // 按 UI 语言选择对应的纠正数据；不支持的语言降级到 en
+      const uiLang=window.currentLang||'zh-CN';
+      const langKey = uiLang.startsWith('zh') ? 'zh'
+                    : uiLang.startsWith('ja') ? 'ja'
+                    : uiLang.startsWith('ko') ? 'ko'
+                    : 'en';
+      const langData=corr[langKey]||corr['en']||{};
+      const hasCorr=langData.correction||langData.better;
+      if(!hasCorr){ gm.classList.remove('pending'); gm.classList.add('ok'); gm.textContent='✓'; return; }
+      gm.classList.remove('pending'); gm.classList.add('warn'); gm.textContent='*';
+      // build suggest box
+      const bubble=col.querySelector('.bubble.me');
+      const w=bubble?bubble.getBoundingClientRect().width:200;
+      const box=document.createElement('div');
+      box.className='suggest-box';
+      box.style.maxWidth=w+'px'; box.style.marginLeft='auto';
+      let html='';
+      if(langData.correction){
+        html+=`<div class="sg-title">${D._suggestTitle||'建议优化'}</div>`;
+        html+=`<div>${D._suggestFix||'更地道的说法：'}<span class="sg-fix">${escapeHtml(langData.correction.fix||'')}</span></div>`;
+        html+=`<div class="sg-why">${escapeHtml(langData.correction.why||'')}</div>`;
+      }
+      if(langData.better){
+        html+=`<div style="margin-top:8px"><span class="sg-better">${escapeHtml(langData.better.native||'')}</span></div>`;
+        html+=`<div class="sg-why">${escapeHtml(langData.better.why||'')}</div>`;
+      }
+      box.innerHTML=html;
+      gm.addEventListener('click',()=>{
+        const exist=col.querySelector('.suggest-box');
+        if(exist){exist.remove();return;}
+        col.appendChild(box);
+      });
+      S.inlineCorrections[msgId]=corr;
+    }catch(e){
+      gm.classList.remove('pending'); gm.classList.add('ok'); gm.textContent='✓';
+    }
+  }
+
+  // Hints
+  function isDrawerOpen(){ return $('drawer').classList.contains('open'); }
+
+  // 完全重置 hint 状态（用于开麦时）
+  function clearHints(){
+    if(S.idleHintTimer){clearTimeout(S.idleHintTimer);S.idleHintTimer=null;}
+    if(S.hintsTimer){clearTimeout(S.hintsTimer);S.hintsTimer=null;}
+    $('hint-trigger').classList.add('hidden');
+    $('idle-hint').classList.add('hidden');
+    S.hintsState='idle'; S.hintsCurrent=[]; S.hintsPrefetched=null; S.hintsTimerFired=false;
+  }
+
+  // 只隐藏 UI，不清状态（结束对话后保留计时器和数据）
+  function hideHintsUI(){
+    $('hint-trigger').classList.add('hidden');
+    $('idle-hint').classList.add('hidden');
+  }
+
+  // drawer 开关时根据当前 hint 状态重新选择显示位置
+  function updateHintsForDrawer(){
+    if(S.hintsState !== 'ready' || S.hintsCurrent.length === 0) return;
+    if(isDrawerOpen()){
+      $('hint-trigger').classList.add('hidden');
+      $('idle-hint').classList.remove('hidden');
+    }else{
+      $('idle-hint').classList.add('hidden');
+      $('hint-trigger').classList.remove('hidden');
+    }
+  }
+  window.updateHintsForDrawer=updateHintsForDrawer;
+
+  async function fetchHints(explicitAiMessage){
+    S.hintsRequestId++;
+    const reqId=S.hintsRequestId;
+    S.hintsPrefetched=null; S.hintsTimerFired=false; S.hintsState='loading';
+    try{
+      const ctx=window.getPracticeContext&&window.getPracticeContext();
+      const recent=S.transcript.slice(-6).map(t=>({role:t.role==='coach'?'coach':'user',text:t.text}));
+      // 优先使用显式传入的 AI 消息（state=1 时传入当前轮 finalText，避免错位）
+      // 没有显式消息时从 transcript 里取最后一条 coach 消息（兜底）
+      const aiLastText = explicitAiMessage || (S.transcript.filter(t=>t.role==='coach').slice(-1)[0]||{}).text;
+      if(!aiLastText) return;
+      const resp=await callAPI('SuggestReplies', {
+        AiLastMessage:aiLastText,
+        Scenario:SCENE_TO_BACKEND[ctx?ctx.scene.id:'free']||'free',
+        Level:DIFF_TO_LEVEL[(ctx&&ctx.diff)?ctx.diff.id:'b']||'intermediate',
+        Style:(ctx&&ctx.style)?ctx.style.id:'friend',
+        RecentTranscript:recent,
+        HintId:String(reqId)
+      });
+      const hints=resp.Hints||[];
+      if(reqId!==S.hintsRequestId) return;
+      S.hintsPrefetched=hints;
+      if(S.hintsTimerFired){
+        if(hints.length>0) setHintsVisible(hints);
+      }
+    }catch(e){
+      if(reqId===S.hintsRequestId) S.hintsPrefetched=[];
+    }
+  }
+
+  function setHintsVisible(hints){
+    S.hintsCurrent=hints; S.hintsState='ready';
+    const list=hints.map((t,i)=>`<li><span class="num">${i+1}</span>${escapeHtml(t)}</li>`).join('');
+    // drawer 打开时只在字幕区内显示，否则在主屏显示
+    $('hint-pop-list').innerHTML=list;
+    $('idle-list').innerHTML=list;
+    if(isDrawerOpen()){
+      $('hint-trigger').classList.add('hidden');
+      $('idle-hint').classList.remove('hidden');
+    }else{
+      $('idle-hint').classList.add('hidden');
+      $('hint-trigger').classList.remove('hidden');
+    }
+  }
+
+  function scheduleHints(){
+    clearHints();
+    // AI 说完立即开始预取（仅当 transcript 有内容时），10s 空闲后显示
+    const hasCoach=S.transcript.some(t=>t.role==='coach');
+    if(hasCoach) fetchHints();  // 立即发起 LLM 请求（预取）
+    S.idleHintTimer=setTimeout(()=>{
+      S.hintsTimerFired=true;
+      // 10s 到点：如果预取已回包就立即显示，否则等 fetchHints 回来时再显示
+      if(S.hintsPrefetched&&S.hintsPrefetched.length>0) setHintsVisible(S.hintsPrefetched);
+      // 若预取未开始（startTRTC 阶段 transcript 为空），现在补发
+      if(!hasCoach||S.hintsPrefetched===null) fetchHints();
+    },10000);
+  }
+
+  // 用户说完话后立即调用：与 AI 回复并行发起 hints prefetch，
+  // 基于当前最新对话上下文（用户刚说完时），hints 贴近本轮话题。
+  // AI 说完（state=1）后再启动 10s 计时器决定何时显示。
+  function scheduleHintsAfterUserTurn(){
+    // 清除旧的 hint 计时器和数据，开始新一轮
+    if(S.idleHintTimer){clearTimeout(S.idleHintTimer);S.idleHintTimer=null;}
+    if(S.hintsTimer){clearTimeout(S.hintsTimer);S.hintsTimer=null;}
+    $('hint-trigger').classList.add('hidden');
+    $('idle-hint').classList.add('hidden');
+    S.hintsState='loading'; S.hintsCurrent=[];
+    S.hintsPrefetched=null; S.hintsTimerFired=false;
+    // 立即发起 prefetch（用户说完时上下文最新）
+    fetchHints();
+    // 注意：计时器不在这里启动，由 state=1（AI 说完）触发 startHintsTimer()
+  }
+
+  // AI 说完后（state=1）调用：启动 10s 计时器，prefetch 若已就绪则立即显示
+  function startHintsTimer(){
+    if(S.idleHintTimer) return;  // 已有计时器，不重复
+    S.idleHintTimer=setTimeout(()=>{
+      S.hintsTimerFired=true;
+      if(S.hintsPrefetched&&S.hintsPrefetched.length>0) setHintsVisible(S.hintsPrefetched);
+      else if(S.hintsPrefetched===null) fetchHints();  // prefetch 还没回包，稍等后由 fetchHints 回调显示
+    },10000);
+  }
+
+  // TRTC message handling
+  function parseCoachMessage(text){
+    const feedbackMatch=text.match(/\[FEEDBACK\](.+?)(?=\[FOLLOWUP\]|\[CORRECTION\]|\[BETTER\]|$)/is);
+    const followupMatch=text.match(/\[FOLLOWUP\](.+?)(?=\[CORRECTION\]|\[BETTER\]|$)/is);
+    const correctionMatch=text.match(/\[CORRECTION\](.+?)(?=\[BETTER\]|$)/is);
+    const betterMatch=text.match(/\[BETTER\](.+?)$/is);
+    return {
+      feedback: (feedbackMatch?feedbackMatch[1]:text).trim(),
+      followup: followupMatch?followupMatch[1].trim():'',
+      correction: correctionMatch?correctionMatch[1].trim():null,
+      better: betterMatch?betterMatch[1].trim():null
+    };
+  }
+
+  async function startTRTC(){
+    if(S.callState==='active'||S.callState==='connecting') return;
+    if(typeof TRTC==='undefined'){
+      console.error('TRTC SDK not loaded');
+      return;
+    }
+    S.callState='connecting'; setOrbState('connecting');
+    $('status-text').textContent=T('practice.statusConnecting');
+
+    const ctx=window.getPracticeContext&&window.getPracticeContext();
+    const sceneId=ctx?ctx.scene.id:'travel';
+    const diffId=ctx?ctx.diff.id:'b';
+    const styleId=ctx?ctx.style.id:'friend';
+    const voiceId=ctx?ctx.voice.id:'f';
+
+    // 1. join — get TRTC credentials
+    let uid='user_'+Date.now()%100000+'_'+Math.random().toString(36).slice(2,6);
+    let joinResp;
+    try{
+      joinResp=await callAPI('join',{userid:uid});
+      S.sdkAppId=joinResp.sdkappid; S.userId=joinResp.userid; S.userSig=joinResp.usersig;
+      S.robotUserId=joinResp.robot_userid; S.robotUserSig=joinResp.robot_usersig;
+      S.avatarUserId=joinResp.avatar_userid||''; S.avatarUserSig=joinResp.avatar_usersig||'';
+      S.avatarAvailable=!!joinResp.avatar_available;
+      S.roomId=Math.floor(Math.random()*90000)+10000;
+      S.scenariosUrl=joinResp.scenarios_url;
+      S.endKeywords=joinResp.end_keywords||{en:[],zh:[]};
+      S.farewellMessage=joinResp.farewell_message||{en:'',zh:''};
+    }catch(e){
+      console.error('join failed:',e);
+      S.callState='idle'; setOrbState('idle');
+      $('status-text').textContent=T('practice.statusIdle');
+      return;
+    }
+
+    // 2. load scenario candidate —— 优先走后端 GetSceneCandidates：
+    //    没装/没配 custom-learning-kb → 内置题库；装了且配了 → 查知识库（契约格式快
+    //    解析 / LLM 兜底提炼），任何环节失败都会静默降级回内置题库。候选自带
+    //    aiRole/myRole，与 opening 天然自洽（不会出现"选了机场场景却配出酒店角色"）。
+    const jsonKey=SCENE_TO_JSON_KEY[sceneId]||'free';
+    const candLevel=DIFF_TO_LEVEL[diffId]||'intermediate';
+    let opening='', openingId='', openingTopic='', candAiRole='', candMyRole='';
+    try{
+      const candResp=await callAPI('GetSceneCandidates',{Scenario:jsonKey, Level:candLevel});
+      const candidates=Array.isArray(candResp.Candidates)?candResp.Candidates:[];
+      if(candidates.length>0){
+        const pick=candidates[Math.floor(Math.random()*candidates.length)];
+        opening=pick.opening||''; openingId=pick.id||''; openingTopic=pick.topic||'';
+        candAiRole=pick.aiRole||''; candMyRole=pick.myRole||'';
+      }
+    }catch(e){ console.warn('GetSceneCandidates failed, falling back to local scenarios.json:', e); }
+    // 后端调用本身失败（网络问题等）时的最后兜底：直接读本地题库（同一份数据，只是绕开后端）
+    if(!opening){
+      try{
+        const scResp=await fetch(S.scenariosUrl||'/static/practice-scenarios.json');
+        const scData=await scResp.json();
+        const sceneList=scData[jsonKey]||scData['free']||{};
+        const levelList=sceneList[candLevel]||[];
+        if(levelList.length>0){
+          const pick=levelList[Math.floor(Math.random()*levelList.length)];
+          opening=pick.opening||''; openingId=pick.id||''; openingTopic=pick.topic||'';
+          candAiRole=pick.aiRole||''; candMyRole=pick.myRole||'';
+        }
+      }catch(e){/* fallback */}
+    }
+    if(!opening) opening='Hi! Ready to start practicing English together?';
+
+    // 3. TRTC create + enterRoom
+    try{
+      // assetsPath: AI 降噪插件(AIDenoiser)需要加载 WASM 资源，指向 TRTC 官方 CDN
+      const client=TRTC.create({
+        assetsPath:'https://web.sdk.qcloud.com/trtc/webrtc/v5/assets/'
+      });
+      S.trtcClient=client;
+
+      client.on(TRTC.EVENT.CUSTOM_MESSAGE,(event)=>{
+        try{
+          const txt=new TextDecoder().decode(event.data);
+          const data=JSON.parse(txt);
+          const payload=data.payload||{};
+          // TRTC Conversational AI: type 10000 = subtitle, 10001 = AI status
+          if(data.type===10000){
+            const rawText=payload.text||'';
+            if(!rawText) return;
+            const isEnd=payload.end===true;
+            const sender=data.sender||'';
+            const isCoach=(sender===S.robotUserId);
+            if(isCoach){
+              const text=rawText.trim();
+              if(!text) return;
+              const rid=payload.roundid||'default';
+              console.log('[SUB]', JSON.stringify({rid, end:isEnd, text:text.substring(0,80)}));
+              // 清理 [FEEDBACK]/[FOLLOWUP] 等系统标签后再存储和显示
+              const cleanText=cleanSubtitleText(text);
+              if(!cleanText) return;
+              if(rid !== S._curRoundId){
+                // 新一轮开始：重置气泡 ID，让新轮次创建独立气泡
+                S._curRoundId=rid;
+                S.aiTurnBubbleId=null;
+                S.aiTurnText='';
+                S._curRoundText=cleanText;
+              }else{
+                // 同一 roundId 覆盖式更新（全量累积模式，新 chunk 包含前文）
+                S._curRoundText=cleanText;
+              }
+              if(isEnd){
+                // 本轮完成，把当前文本固定到 aiTurnText
+                S.aiTurnText=S._curRoundText;
+                S._curRoundText='';
+              }
+              // 气泡显示当前最新内容
+              const displayText=S._curRoundText||S.aiTurnText;
+              if(!S.aiTurnBubbleId){
+                S.aiTurnBubbleId=addBubble('coach',displayText,fmt(sec));
+              }else{
+                updateBubble(S.aiTurnBubbleId,displayText);
+              }
+              setOrbState('speaking');
+              $('status-text').textContent=T('practice.statusAI');
+            }else{
+              // 用户 ASR：只在麦克风打开（录音中）时接受，防止关麦后迟到的 echo 污染下一轮
+              if(S.micMuted || S._recordingSession === 0) return;  // 已关麦，丢弃
+              // 先剥掉误识别混入的中/日/韩文噪声（如"嗯"/"对呀"），再修剪空白——
+              // 保证显示气泡和最终发给 InvokeLLM 的文本都是干净的纯英文
+              const userText=stripNonEnglishNoise(rawText);
+              if(!userText) return;
+              // SubtitleMode=0 全量累积，覆盖式更新
+              S.userTurnText=userText;
+            }
+          }else if(data.type===10001){
+            const stateCode=payload&&payload.state;
+            if(stateCode===1){
+              if(S.aiTurnBubbleId){
+                // AI 这一轮回复结束
+                // _curRoundText 通常已在 end=true 时被置空，兜底处理未收到 end=true 的情况
+                const finalText=S.aiTurnText||(S._curRoundText?cleanSubtitleText(S._curRoundText):'');
+                if(finalText){
+                  var lastCoach=S.transcript.filter(function(t){return t.role==='coach';}).slice(-1)[0];
+                  if(!lastCoach||lastCoach.text!==finalText){
+                    S.transcript.push({role:'coach',text:finalText,ts:fmt(sec)});
+                  }
+                }
+                S.aiTurnBubbleId=null; S.aiTurnText='';
+                S._curRoundId=''; S._curRoundText='';
+                S.aiRoundText={}; S.aiRoundLast={}; S.aiRoundMsgId={};
+                setOrbState('idle');
+                $('status-text').textContent=T('practice.statusTurn');
+                // hints 显示策略：
+                // 用 finalText（当前轮 AI 回复）立即发起 prefetch，10s 后显示。
+                // 不再依赖 transcript 里的 aiLast，避免用上一轮消息生成错位的 hints。
+                clearHints();
+                // 立即用本轮 AI 消息发起 prefetch（与 10s 计时并行）
+                if(finalText){
+                  S.hintsState='loading'; S.hintsPrefetched=null; S.hintsTimerFired=false;
+                  fetchHints(finalText);  // 传入当前轮 finalText 作为锚点
+                  S.idleHintTimer=setTimeout(()=>{
+                    S.hintsTimerFired=true;
+                    if(S.hintsPrefetched&&S.hintsPrefetched.length>0) setHintsVisible(S.hintsPrefetched);
+                    else if(S.hintsPrefetched===null) fetchHints(finalText);
+                  },10000);
+                }else{
+                  scheduleHints();
+                }
+              }
+              if(!S.micMuted){
+                setOrbState('recording');
+              }else{
+                setOrbState('idle');
+                $('caption').textContent=T('practice.captionWaiting');
+              }
+            }else if(stateCode===2){
+              $('caption').textContent=T('practice.captionThinking');
+            }else if(stateCode===3){
+              setOrbState('speaking');
+            }
+          }
+        }catch(e){/* ignore parse errors */}
+      });
+
+      client.on(TRTC.EVENT.REMOTE_USER_LEAVE,({userId})=>{
+        if(userId===S.robotUserId&&S.callState==='active'){
+          // robot left unexpectedly — clean up
+          S.callState='idle';
+          setOrbState('idle');
+          $('status-text').textContent=T('practice.statusEnd');
+        }
+      });
+
+      client.on(TRTC.EVENT.ERROR,(err)=>{
+        console.error('TRTC error:',err);
+      });
+
+      await client.enterRoom({
+        roomId:S.roomId,
+        scene:'rtc',
+        sdkAppId:S.sdkAppId,
+        userId:S.userId,
+        userSig:S.userSig,
+      });
+
+      // 4. Mic — start then immediately mute (push-to-talk mode)
+      try{
+        await client.startLocalAudio();
+        // AI 降噪：mode=1 远场消除模式，专为 ASR 场景设计，
+        // 消除远场人声和环境噪声，提高英文识别准确率（需 v5.13.0+ / 尊享版套餐）
+        try{
+          await client.startPlugin('AIDenoiser',{
+            sdkAppId:S.sdkAppId,
+            userId:S.userId,
+            userSig:S.userSig,
+            mode:1
+          });
+          console.log('[TRTC] AI Denoiser enabled (mode=1, ASR-optimized)');
+        }catch(e){ console.warn('[TRTC] AI Denoiser plugin failed:',e); }
+        S.micMuted=true;
+        try{ client.updateLocalAudio({mute:true}); }catch(e){}
+      }catch(e){
+        console.error('mic failed:',e);
+        try{ await client.exitRoom(); }catch(e){}
+        S.callState='idle'; setOrbState('idle');
+        $('status-text').textContent=T('practice.statusIdle');
+        return;
+      }
+
+      // 5. StartAIConversation — pull in AI agent, it will speak the opening via TTS
+      const s=ctx?ctx.scene:{id:'travel'};
+      // 角色优先用候选场景自带的 aiRole/myRole（内置题库 or 外接知识库，与 opening 天然
+      // 自洽）；只有 free/daily（设计上本就没有固定角色）以外的场景，且候选彻底拿不到时，
+      // 才退到通用静态角色兜底（避免网络完全不可用时角色缺失）。
+      const staticAi=(s.aiRoles&&s.aiRoles[0])||{n:'Sarah',r:'Ground staff'};
+      const staticMe=(s.meRoles&&s.meRoles[0])||{n:'Passenger',r:'Solo'};
+      const noFixedRoleScene=(sceneId==='free'||sceneId==='daily');
+      const aiRoleStr=candAiRole || (noFixedRoleScene ? '' : `${staticAi.n}, ${staticAi.r}`);
+      const myRoleStr=candMyRole || (noFixedRoleScene ? '' : `${staticMe.n}, ${staticMe.r}`);
+      const voiceGender=voiceId==='m'?'male':'female';
+
+      const startBody={
+        RoomId:S.roomId,
+        AgentConfig:{
+          UserId:S.robotUserId,
+          UserSig:S.robotUserSig,
+          TargetUserId:S.userId,
+        },
+        UserConfig:{
+          TurnDetectionMode:1,
+          InterruptMode:1,
+          InterruptSpeechDuration:600,
+          VadLevel:2,            // 2=推荐值；3过于激进，会把英文单词当噪声抑制掉
+          VadSilenceTime:1200,
+        },
+        Scenario:SCENE_TO_BACKEND[sceneId]||'free',
+        Level:DIFF_TO_LEVEL[diffId]||'intermediate',
+        Style:styleId,
+        Voice:voiceGender,
+        OpeningQuestion:opening,
+        ScenarioTopic:openingTopic,
+        AiRole:aiRoleStr,
+        MyRole:myRoleStr,
+        UseAvatar:false,
+        AvatarConfig:{
+          AvatarUserID:S.avatarUserId,
+          AvatarUserSig:S.avatarUserSig,
+        },
+      };
+      const startResp=await callAPI('StartAIConversation',startBody);
+      if(startResp.Response&&startResp.Response.Error){
+        throw new Error(startResp.Response.Error.Message);
+      }
+      S.taskId=startResp.TaskId;
+      if(!S.taskId) throw new Error('No TaskId returned');
+      S.callState='active';
+
+      console.log('TRTC started, TaskId='+S.taskId);
+
+      // 6. AI agent is now connected — it will TTS the opening line automatically
+      //    The WelcomeMessage (opening) goes directly through TTS
+      setOrbState('speaking');
+      $('status-text').textContent=T('practice.statusAI');
+      $('caption').textContent='\"'+opening+'\"';
+      scheduleHints();
+
+    }catch(e){
+      console.error('startTRTC failed:',e);
+      try{
+        if(S.trtcClient){ await S.trtcClient.exitRoom(); S.trtcClient=null; }
+      }catch(e2){}
+      if(S.taskId){
+        try{ await callAPI('StopAIConversation',{TaskId:S.taskId}); }catch(e3){}
+        S.taskId=null;
+      }
+      S.callState='idle'; setOrbState('idle');
+      $('status-text').textContent=T('practice.statusIdle');
+    }
+  }
+
+  function toggleMic(){
+    if(S.callState!=='active'){
+      startTRTC();
+      return;
+    }
+    if(S.micMuted){
+      S.micMuted=false;
+      S._recordingSession++;           // 新录音轮次：递增 session ID，使旧的 ASR echo 失效
+      S.userTurnText='';               // 清空上一轮残留
+      if(S.trtcClient) try{ S.trtcClient.updateLocalAudio({mute:false}); }catch(e){}
+      $('mic-btn').classList.add('recording');
+      $('mic-icon').setAttribute('data-lucide','mic-off');
+      $('mic-label').textContent=T('practice.stop');
+      setOrbState('recording');
+      $('status-text').textContent=T('practice.statusRecording');
+      // 开麦：只停计时器，保留 hint UI（用户可能需要看着 hint 内容说话）
+      if(S.idleHintTimer){clearTimeout(S.idleHintTimer);S.idleHintTimer=null;}
+      if(S.hintsTimer){clearTimeout(S.hintsTimer);S.hintsTimer=null;}
+    }else{
+      S.micMuted=true;
+      const closedSession=S._recordingSession;  // 记录本轮 session
+      S._recordingSession=0;                    // 置 0：此后迟到的 ASR 全部丢弃
+      if(S.trtcClient) try{ S.trtcClient.updateLocalAudio({mute:true}); }catch(e){}
+      $('mic-btn').classList.remove('recording');
+      $('mic-icon').setAttribute('data-lucide','mic');
+      $('mic-label').textContent=T('practice.start');
+      // push-to-talk: 用户说完话，触发 AI 回复
+      if(S.taskId){
+        const userText=S.userTurnText || '';
+        S.userTurnText='';
+        // 没有采集到 ASR 文本，不触发 AI 回复（用户没说话）
+        if(!userText){
+          setOrbState('idle');
+          $('status-text').textContent=T('practice.statusTurn');
+        }else{
+          // 显示用户气泡
+          addBubble('user',userText,fmt(sec));
+          S.transcript.push({role:'user',text:userText,ts:fmt(sec)});
+          // ★ 后台预生成 Report：用户轮次足够时（≥6 轮）就开始在后台调 GenerateReport，
+          //   等用户点"结束对话"时大概率已经预生成完，秒进 Report 屏。
+          maybePreloadReport();
+          // 显示思考状态
+          $('caption').textContent=T('practice.captionThinking');
+          // 触发 AI 回复（hints 将在 AI 说完后用 finalText 发起，避免错位）
+          callAPI('InvokeLLM',{TaskId:S.taskId, Text:userText}).catch(e=>{
+            console.error('InvokeLLM failed:',e);
+          });
+        }
+      }else{
+        setOrbState('idle');
+        $('status-text').textContent=T('practice.statusTurn');
+      }
+      // 结束录音后隐藏 hint UI（消失）
+      hideHintsUI();
+    }
+    if(window.lucide) lucide.createIcons();
+  }
+
+  // ===== Report 后台预生成 =====
+  // 在用户对话轮次足够多时（≥6 轮 user），悄悄在后台调 GenerateReport 并把结果
+  // 缓存到 S._preloadedReport。等用户真正点"结束对话"时：
+  //   * 如果预生成完成后用户没再说新话 → 直接用预生成结果（秒切）
+  //   * 如果预生成后用户又说了新话 → 丢弃预生成，重新调一次（保证数据完整）
+  const PRELOAD_MIN_USER_TURNS = 6;
+  function maybePreloadReport(){
+    if (S._preloading || S._preloadedReport) return;
+    const userTurns = (S.transcript||[]).filter(t=>t && t.role==='user').length;
+    if (userTurns < PRELOAD_MIN_USER_TURNS) return;
+    S._preloading = true;
+    const preloadTurns = userTurns;   // 记录预生成时的轮次数
+    const startedAt = Date.now();
+    const code = window.currentLang.startsWith('zh') ? 'zh' : 'en';
+    const ctx  = window.getPracticeContext && window.getPracticeContext();
+    callAPI('GenerateReport', {
+      Scenario:    SCENE_TO_BACKEND[ctx?ctx.scene.id:'free'] || 'free',
+      Level:       DIFF_TO_LEVEL[(ctx&&ctx.diff)?ctx.diff.id:'b'] || 'intermediate',
+      Style:       (ctx&&ctx.style)?ctx.style.id : 'friend',
+      DurationSec: sec,
+      Transcript:  S.transcript,
+      Language:    code
+    }).then(resp=>{
+      S._preloadedReport = resp.Report || resp;
+      S._preloadTurns = preloadTurns;
+      S._preloadSavedSecs = Math.round((Date.now() - startedAt)/1000);
+      console.log('[Report] Preloaded in background ('+S._preloadSavedSecs+'s, '+preloadTurns+' turns)');
+    }).catch(e=>{
+      console.warn('[Report] Preload failed (will retry on End):', e);
+    }).finally(()=>{
+      S._preloading = false;
+    });
+  }
+
+  async function endSession(){
+    window._practiceSec=stopTimer();  // save duration for report access
+    clearHints();
+    S.endedAt=Date.now();
+    S.callState='idle';
+
+    // show loading overlay
+    var overlay=document.getElementById('loading-overlay');
+    if(overlay) overlay.classList.remove('hidden');
+
+    // farewell first
+    if(S.taskId){
+      try{
+        const lang=window.currentLang.startsWith('zh')?'zh':'en';
+        await callAPI('FarewellAndStop',{TaskId:S.taskId, Lang:lang});
+      }catch(e){}
+      S.taskId=null;
+    }
+    // exit TRTC room
+    if(S.trtcClient){
+      try{ await S.trtcClient.exitRoom(); }catch(e){}
+      try{ S.trtcClient.destroy(); }catch(e){}
+      S.trtcClient=null;
+    }
+
+    $('drawer').classList.remove('open');
+    $('mic-btn').classList.remove('recording');
+    S.micMuted=true;
+
+    // generate report —— 智能选择预生成 vs 重新生成
+    //   预生成后用户没再说新话 → 直接用（秒切）
+    //   预生成后用户又说了新话 → 丢弃预生成，重新调一次（保证数据完整）
+    const currentTurns = (S.transcript||[]).filter(t=>t && t.role==='user').length;
+    const preloadUsable = S._preloadedReport && S._preloadTurns === currentTurns;
+
+    if (preloadUsable) {
+      console.log('[Report] Using preloaded report (saved ~'+ (S._preloadSavedSecs||0) +'s, '+currentTurns+' turns)');
+      S.reports = S._preloadedReport;
+      S._preloadedReport = null;
+    } else {
+      if (S._preloadedReport) {
+        console.log('[Report] Discarding stale preload ('+S._preloadTurns+'→'+currentTurns+' turns), regenerating...');
+        S._preloadedReport = null;
+      }
+      try{
+        const code=window.currentLang.startsWith('zh')?'zh':'en';
+        const ctx=window.getPracticeContext&&window.getPracticeContext();
+        const resp=await callAPI('GenerateReport',{
+          Scenario:SCENE_TO_BACKEND[ctx?ctx.scene.id:'free']||'free',
+          Level:DIFF_TO_LEVEL[(ctx&&ctx.diff)?ctx.diff.id:'b']||'intermediate',
+          Style:(ctx&&ctx.style)?ctx.style.id:'friend',
+          DurationSec:sec,
+          Transcript:S.transcript,
+          Language:code
+        });
+        S.reports=resp.Report||resp;
+      }catch(e){
+        console.error('GenerateReport failed:',e);
+        S.reports={};
+      }
+    }
+
+    // hide loading overlay
+    if(overlay) overlay.classList.add('hidden');
+
+    // switch to report
+    window._goReport();
+  }
+
+  window.refreshPracticeMeta=function(){
+    const ctx=window.getPracticeContext&&window.getPracticeContext();
+    if(!ctx) return;
+    $('pm-scene').textContent=ctx.scene.title;
+    $('pm-ai').textContent=ctx.ai.n+' · '+ctx.ai.r;
+    $('pm-me').textContent=ctx.me.n+' · '+ctx.me.r;
+    $('pm-cfg').textContent=`${ctx.style.label} · ${ctx.diff.label} · ${ctx.voice.label}`;
+  };
+
+  window.initPracticeView=function(){
+    // 清理旧 TRTC 连接，避免上一次会话的消息污染新 session
+    if(S.trtcClient){
+      try{ S.trtcClient.exitRoom(); }catch(e){}
+      S.trtcClient=null;
+    }
+    if(S.taskId){
+      callAPI('StopAIConversation',{TaskId:S.taskId}).catch(()=>{});
+      S.taskId=null;
+    }
+    window.refreshPracticeMeta();
+    sec=0; S.messageSeq=0; S.transcript=[];
+    S.aiRoundText={}; S.aiRoundMsgId={}; S.aiRoundLast={};
+    S.aiTurnText=''; S.aiTurnBubbleId=null;
+    S._curRoundId=''; S._curRoundText='';
+    S.userTurnText=''; S._recordingSession=0;
+    S.inlineCorrections={}; S.reports=null; S._preloadedReport=null; S._preloadTurns=0; S._preloading=false; S.taskId=null; S.callState='idle'; S.micMuted=true;
+    $('timer').textContent='00:00';
+    $('chat-stream').innerHTML='';
+    $('mic-btn').classList.remove('recording');
+    $('mic-icon').setAttribute('data-lucide','mic');
+    $('mic-label').textContent=T('practice.start');
+    $('drawer').classList.remove('open');
+    $('caption').textContent=T('practice.captionReady');
+    clearHints();
+    setOrbState('idle');
+    $('status-text').textContent=T('practice.statusIdle');
+    startTimer();
+    S.startedAt=Date.now();
+    if(window.lucide) lucide.createIcons();
+  };
+
+  window.stopPracticeView=function(){
+    stopTimer(); clearHints(); $('drawer').classList.remove('open');
+  };
+
+  // Auto-start: called after switchTo('practice') to immediately connect TRTC
+  window._autoStart=function(){
+    if(S.callState==='active'||S.callState==='connecting') return;
+    startTRTC();
+  };
+
+  // Duration accessor for report
+  window._getPracticeSec=function(){ return sec; };
+
+  window._togglePracticeMic=toggleMic;
+  window._endSession=endSession;
+})();
+
+// ===================== REPORT VIEW =====================
+(function(){
+  const D=window.appData;
+  const TRT=window.TRTC_STATE||{};   // shared TRTC state
+
+  function fmtTime(secs){
+    secs=parseInt(secs)||0;
+    return String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0');
+  }
+
+  let curSkill='fluency';
+  let reportData=null;
+
+  function renderCoach(){
+    var el=document.getElementById('coach-feedback');
+    if(!reportData||!reportData.summary){
+      el.innerHTML='<p class="text-muted text-sm">No summary available for this session.</p>';
+      return;
+    }
+    el.textContent=reportData.summary;
+  }
+
+  function renderSkillTabs(){
+    var tabs=document.getElementById('skill-tabs');
+    var dims=['fluency','vocabulary','grammar','completeness'];
+    var labels={fluency:D._skillLabels.fluency||'流利度',vocabulary:D._skillLabels.vocab||'词汇',grammar:D._skillLabels.grammar||'语法',completeness:D._skillLabels.completeness||'完整度'};
+    tabs.innerHTML=dims.map(function(d){
+      return '<button class="skill-tab '+(d===curSkill?'active':'')+'" data-id="'+d+'">'+escapeHtml(labels[d])+'</button>';
+    }).join('');
+    tabs.querySelectorAll('.skill-tab').forEach(function(b){
+      b.addEventListener('click',function(){ curSkill=b.dataset.id; renderSkillTabs(); renderSkillPanel(); });
+    });
+  }
+
+  function renderSkillPanel(){
+    var panel=document.getElementById('skill-panel');
+    var analysis=(reportData&&reportData.abilityAnalysis)||{};
+    var dim=analysis[curSkill]||{};
+    var comment=dim.comment||'';
+    var nextStep=dim.nextStep||'';
+    var watchouts=dim.watchouts||[];
+    var betterExpressions=dim.betterExpressions||[];
+    var highlights=dim.highlights||[];
+
+    var html='<div class="skill-content">';
+    if(comment) html+='<p class="text-muted mb-2" style="line-height:1.6">'+escapeHtml(comment)+'</p>';
+    else html+='<p class="text-muted text-sm">No data for this dimension yet.</p>';
+
+    if(highlights.length>0){
+      html+='<div class="skill-label">Highlights</div>';
+      highlights.forEach(function(h){ html+='<p style="font-size:12px;margin-bottom:2px">✦ '+escapeHtml(h)+'</p>'; });
+    }
+    if(watchouts.length>0){
+      html+='<div class="skill-label">Watchouts</div>';
+      watchouts.forEach(function(w){
+        html+='<p style="color:#E04A4A;font-size:12px;margin-bottom:1px">'+escapeHtml(w.original||'')+'</p>';
+        html+='<p style="color:#16A34A;font-size:12px;margin-bottom:1px">→ '+escapeHtml(w.correction||'')+'</p>';
+        html+='<p class="text-muted" style="font-size:11px;margin-bottom:6px">'+escapeHtml(w.explanation||'')+'</p>';
+      });
+    }
+    if(betterExpressions.length>0){
+      html+='<div class="skill-label">Better Expressions</div>';
+      betterExpressions.forEach(function(b){
+        html+='<p style="color:#D97706;font-size:12px;margin-bottom:1px">'+escapeHtml(b.original||'')+' → '+escapeHtml(b.suggestion||'')+'</p>';
+        html+='<p class="text-muted" style="font-size:11px;margin-bottom:6px">'+escapeHtml(b.context||'')+'</p>';
+      });
+    }
+    if(nextStep){
+      html+='<div class="skill-label">Next Step</div><p style="font-size:12px">'+escapeHtml(nextStep)+'</p>';
+    }
+    html+='</div>';
+    panel.innerHTML=html;
+  }
+
+  function renderTranscript(){
+    var el=document.getElementById('transcript');
+    var transcript=TRT.transcript||[];
+    if(!transcript.length){
+      el.innerHTML='<p class="text-muted text-sm text-center py-4">No transcript recorded for this session.</p>';
+      return;
+    }
+    el.innerHTML=transcript.map(function(m){
+      var isAI=m.role==='coach';
+      return '<div class="transcript-row '+(isAI?'ai':'me')+'">'
+        +'<div class="sp">'+(isAI?'AI':'Me')+'</div>'
+        +'<div class="tx">'+escapeHtml(m.text)+'</div>'
+        +'<div class="tm">'+escapeHtml(m.ts||'')+'</div>'
+        +'</div>';
+    }).join('');
+  }
+
+  window.renderReport=function(){
+    // Report is already in the correct UI language (generated server-side by Language param)
+    var reports=TRT.reports||{};
+    reportData=reports;
+
+    curSkill='fluency';
+    renderCoach();
+    renderSkillTabs();
+    renderSkillPanel();
+    renderTranscript();
+
+    // Duration: use endedAt - startedAt, fallback to timer sec
+    var durationSec=0;
+    if(TRT.endedAt&&TRT.startedAt){
+      durationSec=Math.floor((TRT.endedAt-TRT.startedAt)/1000);
+    }else if(window._getPracticeSec){
+      durationSec=window._getPracticeSec();
+    }
+    document.getElementById('r-duration').textContent=fmtTime(durationSec);
+
+    // Turns: count user messages in transcript
+    var transcript=TRT.transcript||[];
+    var turnCount=transcript.filter(function(t){return t.role==='user'}).length;
+    document.getElementById('r-turns').textContent=String(turnCount);
+
+    if(window.lucide) lucide.createIcons();
+  };
+
+  window.initReportView=window.renderReport;
+})();
+
+// ===================== MAIN =====================
+document.addEventListener('DOMContentLoaded',()=>{
+  if(window.lucide) lucide.createIcons();
+  const views={
+    setup:document.getElementById('view-setup'),
+    practice:document.getElementById('view-practice'),
+    report:document.getElementById('view-report')
+  };
+  function switchTo(name){
+    Object.entries(views).forEach(([k,v])=>v.classList.toggle('hidden',k!==name));
+    if(!views[name].classList.contains('hidden')){
+      views[name].style.animation='none'; void views[name].offsetWidth; views[name].style.animation='';
+    }
+    if(name==='setup') window.initConfigView&&initConfigView();
+    if(name==='practice') window.initPracticeView&&initPracticeView();
+    else window.stopPracticeView&&stopPracticeView();
+    if(name==='report') window.initReportView&&initReportView();
+    if(window.lucide) lucide.createIcons();
+  }
+
+  window.applyI18n();
+  switchTo('setup');
+
+  window._goPractice=()=>{ switchTo('practice'); setTimeout(()=>{ window._autoStart&&_autoStart(); }, 300); };
+  window._goReport=()=>switchTo('report');
+
+  // Setup CTA: 立即进 Practice 屏 → 自动建房拉入 Agent
+  document.getElementById('cta-start').addEventListener('click',()=>{
+    switchTo('practice');
+    setTimeout(()=>{ window._autoStart&&_autoStart(); }, 400);
+  });
+  document.getElementById('btn-end').addEventListener('click',()=>{
+    if(window._endSession) window._endSession();
+    else switchTo('report');
+  });
+  document.getElementById('btn-again').addEventListener('click',()=>{
+    switchTo('practice');
+    setTimeout(()=>{ window._autoStart&&_autoStart(); }, 400);
+  });
+  document.getElementById('btn-back').addEventListener('click',()=>switchTo('setup'));
+  document.getElementById('mic-btn').addEventListener('click',()=>window._togglePracticeMic&&_togglePracticeMic());
+
+  // Drawer
+  const drawer=document.getElementById('drawer');
+  document.getElementById('btn-transcript').addEventListener('click',()=>{
+    drawer.classList.toggle('open');
+    window.updateHintsForDrawer&&window.updateHintsForDrawer();
+  });
+  document.getElementById('drawer-close').addEventListener('click',()=>{
+    drawer.classList.remove('open');
+    window.updateHintsForDrawer&&window.updateHintsForDrawer();
+  });
+
+  // Language switcher (inside More Settings panel)
+  (function(){
+    const LANGS = [
+      {code:'zh-CN', label:'简体中文', sub:'Simplified'},
+      {code:'zh-TW', label:'繁體中文', sub:'Traditional'},
+      {code:'en',    label:'English',  sub:'US'},
+      {code:'ja',    label:'日本語',   sub:'Japanese'},
+      {code:'ko',    label:'한국어',   sub:'Korean'},
+    ];
+    const container = document.getElementById('lang-seg');
+    if (!container) return;
+
+    function buildLangButtons(){
+      container.innerHTML = LANGS.map(l=>
+        `<button class="lang-pill${l.code===window.currentLang?' active':''}" data-lang="${l.code}" data-label="${l.label}">
+          <span class="lang-pill-name">${l.label}</span><span class="lang-pill-sub">${l.sub}</span>
+        </button>`
+      ).join('');
+      container.querySelectorAll('.lang-pill').forEach(b=>{
+        b.addEventListener('click',()=>{
+          window.currentLang = b.dataset.lang;
+          container.querySelectorAll('.lang-pill').forEach(x=>x.classList.toggle('active',x.dataset.lang===b.dataset.lang));
+          window.applyI18n();
+          if(window.lucide) lucide.createIcons();
+        });
+      });
+    }
+    buildLangButtons();
+
+    // Keep active state in sync whenever applyI18n is called externally
+    const _origApplyI18n = window.applyI18n;
+    window.applyI18n = function(){
+      _origApplyI18n();
+      container.querySelectorAll('.lang-pill').forEach(b=>b.classList.toggle('active',b.dataset.lang===window.currentLang));
+    };
+  })();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+# custom-learning-kb —— 接入自有教研知识库（Path A / Path B 均可选装）
+name: custom-learning-kb
+version: "1.0.0"
+type: capability
+description: "把用户自有教研库（默认 Dify/Coze）接进来，驱动 Setup 屏的场景候选（由 scenario-roleplay 消费），也为报告的 betterExpressions 提供素材。唯一走『连外部系统』的能力。"
+
+path_a: true                   # Path A / Path B 均可选装；不配置任何 KB_* 时行为等同不装（用内置题库）
+
+dependencies:
+  - { name: conversation-core, version: ">=1.0.0,<2.0.0" }
+
+extensions:
+  - inject_at: server.router_extension
+    inline_code: |
+      from ._capability_loader import try_load_capability as _try
+      _m = _try("custom-learning-kb", "src/router.py")
+      if _m is not None and hasattr(_m, "router"):
+          app.include_router(_m.router, prefix="/api/v1/kb", tags=["custom-learning-kb"])
+
+config:
+  adapter: { default: "dify", env: "KB_ADAPTER" }     # dify | coze | user_custom
+  top_k:   { default: 3, env: "KB_TOP_K" }
+
+endpoints:
+  - { method: POST, path: /api/v1/kb/retrieve, description: "检索教研片段（供内部能力调用，也可前端直调）" }
+
+# 经典「连外部系统」契约 —— 用 KBClient Port（见 references/evaluator-port.md#2）
+business_contract:
+  port_class: "src.ports.kb_client.KBClient"
+  default_adapter: "src.adapters.dify.DifyKBClient"
+  customization_sop: "references/evaluator-port.md#2-kbclient-port"
+  external_apis:
+    - name: kb.retrieve
+      direction: outbound        # ← 关键：去拉用户的 KB（非 inbound）
+      method: POST
+      path: "{KB_DIFY_API_URL}/datasets/retrieve  |  Coze /open_api/knowledge/recall"
+      description: "检索用户知识库，返回相关教研片段"
+      request_schema:  { query: string, top_k: int }
+      response_schema: { records: "[{text, source, score}]" }
+      auth: { type: bearer, location: header, name: Authorization }
+      timeout_ms: 8000
+
+integration:
+  auto_adapters:
+    - { tech_stack: ["dify"], adapter: dify }
+    - { tech_stack: ["coze"], adapter: coze }
+  fallback:
+    manual_api: { rest_endpoint: "/api/v1/kb" }
+  # scenario-roleplay 是当前唯一的内部消费者：装了本能力后，Setup 屏场景候选会自动
+  # 从内置题库切到本能力检索到的内容（契约格式快解析 / 自由文本 LLM 提炼），检索/
+  # 提炼失败静默降级回内置题库，不需要额外接线。
+  consumers:
+    - { capability: scenario-roleplay, via: "src/scenario_source.py::get_kb_candidates" }
+
+security:
+  network:
+    enforce_https: true          # 非 localhost 强制 HTTPS
+    deny_private_network: true   # 禁止访问内网地址（SSRF 防护）
+
+acceptance:
+  - "配置 Dify/Coze key 后 /api/v1/kb/retrieve 能返回片段"
+  - "切换 KB_ADAPTER (dify|coze|user_custom) 无需改业务代码"
+  - "outbound 拒绝内网地址（localhost 除外）"
+  - "装了本能力后，GetSceneCandidates 自动改用 KB 内容；不装或检索失败静默降级回内置题库"
+

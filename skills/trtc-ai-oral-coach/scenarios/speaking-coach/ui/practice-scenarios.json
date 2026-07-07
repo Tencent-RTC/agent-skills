@@ -1,0 +1,500 @@
+{
+  "meta": {
+    "travel": {
+      "title": "机场登机",
+      "tag": "TRAVEL",
+      "sub": "值机、安检、登机口",
+      "desc": "国际机场办理值机、托运行李、过安检的常用对话。",
+      "aiRoles": [
+        { "n": "Sarah", "r": "地勤" },
+        { "n": "Mike",  "r": "安检员" },
+        { "n": "Linda", "r": "登机口工作人员" }
+      ],
+      "meRoles": [
+        { "n": "乘客", "r": "Solo" }
+      ],
+      "recommendedExpressions": [
+        { "en": "boarding pass",        "zh": "登机牌" },
+        { "en": "baggage allowance",    "zh": "行李额" },
+        { "en": "window or aisle",      "zh": "靠窗/过道" },
+        { "en": "gate change",          "zh": "登机口变动" }
+      ]
+    },
+    "work": {
+      "title": "项目周会",
+      "tag": "WORK",
+      "sub": "进度同步、异处处理",
+      "desc": "向团队成员同步项目进展、处理突发问题的职场沟通。",
+      "aiRoles": [
+        { "n": "David",  "r": "项目经理" },
+        { "n": "Emma",   "r": "产品经理" },
+        { "n": "Jason",  "r": "开发负责人" }
+      ],
+      "meRoles": [
+        { "n": "我", "r": "团队成员" }
+      ],
+      "recommendedExpressions": [
+        { "en": "on track",            "zh": "按计划进行" },
+        { "en": "blocker",             "zh": "阻塞项" },
+        { "en": "action item",         "zh": "待办事项" },
+        { "en": "follow up",           "zh": "跟进" }
+      ]
+    },
+    "study": {
+      "title": "课堂讨论",
+      "tag": "STUDY",
+      "sub": "小组作业、观点辩论",
+      "desc": "校园里的小组讨论、作业讨论、课堂发言。",
+      "aiRoles": [
+        { "n": "Prof. Lee",  "r": "授课老师" },
+        { "n": "Anna",       "r": "同组同学" }
+      ],
+      "meRoles": [
+        { "n": "我", "r": "学生" }
+      ],
+      "recommendedExpressions": [
+        { "en": "from my perspective",  "zh": "在我看来" },
+        { "en": "I see your point",     "zh": "我理解你的意思" },
+        { "en": "to be honest",         "zh": "说实话" },
+        { "en": "could you elaborate",  "zh": "能展开说说吗" }
+      ]
+    },
+    "daily": {
+      "title": "咖啡店点单",
+      "tag": "DAILY",
+      "sub": "日常 · 闲聊",
+      "desc": "咖啡店点单、闲聊、推荐等轻松生活场景。",
+      "aiRoles": [
+        { "n": "Mia",  "r": "咖啡师" },
+        { "n": "Leo",  "r": "常客" }
+      ],
+      "meRoles": [
+        { "n": "我", "r": "顾客" }
+      ],
+      "recommendedExpressions": [
+        { "en": "for here or to go",     "zh": "堂食还是外带" },
+        { "en": "can I get ...",         "zh": "我要一份..." },
+        { "en": "what do you recommend", "zh": "你有什么推荐" },
+        { "en": "make it less sweet",    "zh": "少糖" }
+      ]
+    },
+    "free": {
+      "title": "自由聊天",
+      "tag": "FREE",
+      "sub": "无主题、随性",
+      "desc": "想到什么聊什么，没有固定角色与场景。",
+      "aiRoles": [
+        { "n": "Alex",   "r": "老朋友" }
+      ],
+      "meRoles": [
+        { "n": "我", "r": "本人" }
+      ],
+      "recommendedExpressions": [
+        { "en": "by the way",          "zh": "顺便一提" },
+        { "en": "speaking of which",   "zh": "说到这个" },
+        { "en": "I'm curious about",   "zh": "我很好奇" },
+        { "en": "what's your take",    "zh": "你怎么看" }
+      ]
+    }
+  },
+  "travel": {
+    "beginner": [
+      {
+        "id": "travel-b-1",
+        "topic": "Hotel check-in",
+        "hint": "checking into a hotel",
+        "opening": "Hi, welcome to The Grand Hotel. Do you have a reservation with us today?",
+        "aiRole": "A hotel front-desk clerk",
+        "myRole": "A guest checking in at the hotel"
+      },
+      {
+        "id": "travel-b-2",
+        "topic": "Ordering at a restaurant",
+        "hint": "ordering food at a restaurant",
+        "opening": "Hi there! Welcome. Are you ready to order, or would you like a few more minutes with the menu?",
+        "aiRole": "A restaurant server",
+        "myRole": "A diner ready to order"
+      },
+      {
+        "id": "travel-b-3",
+        "topic": "Asking for directions",
+        "hint": "asking a stranger for directions",
+        "opening": "Excuse me — you look a bit lost. Where are you trying to get to?",
+        "aiRole": "A friendly local on the street",
+        "myRole": "A traveler who got lost"
+      }
+    ],
+    "intermediate": [
+      {
+        "id": "travel-i-1",
+        "topic": "Rebooking a flight",
+        "hint": "rebooking a delayed flight",
+        "opening": "Hi, this is the airline service desk. I see your flight was delayed — how can I help you with rebooking today?",
+        "aiRole": "An airline service-desk agent",
+        "myRole": "A passenger whose flight was delayed"
+      },
+      {
+        "id": "travel-i-2",
+        "topic": "Reporting lost luggage",
+        "hint": "reporting lost luggage at the airport",
+        "opening": "Hello, baggage services. I understand your luggage didn't make it. Could you tell me what your bag looks like and which flight you were on?",
+        "aiRole": "A baggage-services staff member",
+        "myRole": "A passenger whose luggage is missing"
+      },
+      {
+        "id": "travel-i-3",
+        "topic": "Hotel complaint",
+        "hint": "complaining about a hotel room",
+        "opening": "Front desk, how can I help you? You mentioned there's an issue with your room — what's been going on?",
+        "aiRole": "A hotel front-desk clerk",
+        "myRole": "A guest reporting a room issue"
+      }
+    ],
+    "advanced": [
+      {
+        "id": "travel-a-1",
+        "topic": "Travel insurance claim",
+        "hint": "filing a travel insurance claim",
+        "opening": "Hello, you've reached travel insurance claims. I see you'd like to file a claim — could you walk me through what happened on your trip?",
+        "aiRole": "A travel-insurance claims officer",
+        "myRole": "A traveler filing a claim"
+      },
+      {
+        "id": "travel-a-2",
+        "topic": "Customs questioning",
+        "hint": "going through customs interview",
+        "opening": "Welcome. Could I see your passport please? What's the purpose of your visit, and how long do you plan to stay?",
+        "aiRole": "A customs officer",
+        "myRole": "A traveler going through customs"
+      },
+      {
+        "id": "travel-a-3",
+        "topic": "Cross-cultural misunderstanding",
+        "hint": "smoothing over a cultural misunderstanding",
+        "opening": "Hey, I noticed things got a bit awkward back there. I think there might've been a cultural mix-up — mind if we talk it through?",
+        "aiRole": "Someone from a different culture",
+        "myRole": "A traveler navigating an awkward moment"
+      }
+    ]
+  },
+  "work": {
+    "beginner": [
+      {
+        "id": "work-b-1",
+        "topic": "Self-introduction at a meeting",
+        "hint": "introducing yourself at a meeting",
+        "opening": "Hi everyone, glad to have a new face on the team. Why don't you go ahead and introduce yourself?",
+        "aiRole": "A teammate welcoming you",
+        "myRole": "A new team member"
+      },
+      {
+        "id": "work-b-2",
+        "topic": "Scheduling a meeting",
+        "hint": "scheduling a meeting with a colleague",
+        "opening": "Hey, I'd like to set up a quick sync with you this week. When works best on your end?",
+        "aiRole": "A colleague",
+        "myRole": "An employee scheduling a sync"
+      },
+      {
+        "id": "work-b-3",
+        "topic": "Lunch order with colleagues",
+        "hint": "deciding lunch with the team",
+        "opening": "Hey, we're ordering lunch in. What are you in the mood for today?",
+        "aiRole": "A colleague ordering lunch",
+        "myRole": "An employee picking a lunch order"
+      }
+    ],
+    "intermediate": [
+      {
+        "id": "work-i-1",
+        "topic": "Project status sync",
+        "hint": "giving a project status update",
+        "opening": "Hey, thanks for hopping on. Could you walk me through where things stand on the project this week?",
+        "aiRole": "Your manager",
+        "myRole": "An employee giving a project update"
+      },
+      {
+        "id": "work-i-2",
+        "topic": "Giving feedback to a teammate",
+        "hint": "giving feedback to a teammate",
+        "opening": "Hey, got a minute? I wanted to share some thoughts on how the last sprint went — open to a quick chat?",
+        "aiRole": "A teammate",
+        "myRole": "An employee giving constructive feedback"
+      },
+      {
+        "id": "work-i-3",
+        "topic": "Negotiating a deadline",
+        "hint": "negotiating a deadline with your manager",
+        "opening": "Sure, come on in. You said you wanted to talk about the timeline — what's on your mind?",
+        "aiRole": "Your manager",
+        "myRole": "An employee negotiating a timeline"
+      }
+    ],
+    "advanced": [
+      {
+        "id": "work-a-1",
+        "topic": "Salary negotiation",
+        "hint": "negotiating a salary offer",
+        "opening": "Thanks for taking the time. We'd love to bring you on board — let's talk numbers. What were you hoping to see in the offer?",
+        "aiRole": "A hiring manager",
+        "myRole": "A candidate discussing a job offer"
+      },
+      {
+        "id": "work-a-2",
+        "topic": "Job interview",
+        "hint": "answering a behavioural interview question",
+        "opening": "Welcome, thanks for coming in today. To kick things off — could you tell me about a recent project you're particularly proud of?",
+        "aiRole": "An interviewer",
+        "myRole": "A candidate in a behavioural interview"
+      },
+      {
+        "id": "work-a-3",
+        "topic": "Cross-team conflict resolution",
+        "hint": "resolving a cross-team conflict",
+        "opening": "Hey, thanks for joining. I know there's been some friction between our teams lately — can we walk through what's been going wrong?",
+        "aiRole": "A peer from another team",
+        "myRole": "An employee resolving cross-team friction"
+      }
+    ]
+  },
+  "study": {
+    "beginner": [
+      {
+        "id": "study-b-1",
+        "topic": "Explaining being late to class",
+        "hint": "explaining why you were late",
+        "opening": "Hi, you're a bit late today — everything alright?",
+        "aiRole": "Your teacher",
+        "myRole": "A student arriving late"
+      },
+      {
+        "id": "study-b-2",
+        "topic": "Asking the teacher for an extension",
+        "hint": "asking for a homework extension",
+        "opening": "Sure, what's up? Did you have a question about the assignment?",
+        "aiRole": "Your teacher",
+        "myRole": "A student asking for more time"
+      },
+      {
+        "id": "study-b-3",
+        "topic": "Discussing weekend homework",
+        "hint": "chatting with a classmate about homework",
+        "opening": "Hey! Did you finish the homework over the weekend? I got a bit stuck on one part.",
+        "aiRole": "A classmate",
+        "myRole": "A student comparing homework notes"
+      }
+    ],
+    "intermediate": [
+      {
+        "id": "study-i-1",
+        "topic": "Group project planning",
+        "hint": "planning a group project",
+        "opening": "Hey team, glad we're all here. Let's figure out how to split up the project — any thoughts on who wants to take what?",
+        "aiRole": "A teammate on the project",
+        "myRole": "A student planning group work"
+      },
+      {
+        "id": "study-i-2",
+        "topic": "Class debate",
+        "hint": "debating a topic in class",
+        "opening": "Alright, let's open this up. You're arguing in favour of remote learning — go ahead, make your case.",
+        "aiRole": "Your teacher moderating a debate",
+        "myRole": "A student arguing a position"
+      },
+      {
+        "id": "study-i-3",
+        "topic": "Presentation rehearsal",
+        "hint": "rehearsing a presentation with a friend",
+        "opening": "Okay, I'm your audience. Whenever you're ready, take it from the top — pretend it's the real thing.",
+        "aiRole": "A friend acting as the audience",
+        "myRole": "A student rehearsing a presentation"
+      }
+    ],
+    "advanced": [
+      {
+        "id": "study-a-1",
+        "topic": "Thesis viva defense",
+        "hint": "defending your thesis",
+        "opening": "Welcome. I've read your thesis with interest. Could you start by walking me through the central argument and why it matters?",
+        "aiRole": "A thesis committee examiner",
+        "myRole": "A student defending their thesis"
+      },
+      {
+        "id": "study-a-2",
+        "topic": "Cross-cultural classroom discussion",
+        "hint": "discussing differing cultural views in class",
+        "opening": "That's a really interesting perspective. I'm curious — how do you think someone from a different cultural background might read that situation?",
+        "aiRole": "A classmate from another culture",
+        "myRole": "A student sharing their perspective"
+      },
+      {
+        "id": "study-a-3",
+        "topic": "Academic disagreement",
+        "hint": "respectfully disagreeing with a peer's argument",
+        "opening": "I hear what you're saying, but I'm not sure I fully agree. Mind if I push back on one part of your argument?",
+        "aiRole": "A peer with an opposing view",
+        "myRole": "A student respectfully pushing back"
+      }
+    ]
+  },
+  "daily": {
+    "beginner": [
+      {
+        "id": "daily-b-1",
+        "topic": "Coffee shop order",
+        "hint": "ordering coffee at a local coffee shop",
+        "opening": "Hi there! Welcome to Brew & Co. What can I get started for you today?",
+        "aiRole": "A coffee shop barista",
+        "myRole": "A customer ordering coffee"
+      },
+      {
+        "id": "daily-b-2",
+        "topic": "Casual chat with barista",
+        "hint": "small talk while ordering",
+        "opening": "Hey! The usual today or are you feeling adventurous? We've got a new seasonal latte.",
+        "aiRole": "A friendly barista",
+        "myRole": "A regular customer chatting"
+      },
+      {
+        "id": "daily-b-3",
+        "topic": "Takeout order",
+        "hint": "ordering food to-go",
+        "opening": "Hi! Are you dining in or taking away today?",
+        "aiRole": "A restaurant staff member",
+        "myRole": "A customer ordering takeout"
+      }
+    ],
+    "intermediate": [
+      {
+        "id": "daily-i-1",
+        "topic": "Asking for recommendations",
+        "hint": "asking barista for drink recommendations",
+        "opening": "Good afternoon! If you're not sure what to get, I'm happy to recommend something based on what you usually like.",
+        "aiRole": "A barista",
+        "myRole": "A customer asking for a recommendation"
+      },
+      {
+        "id": "daily-i-2",
+        "topic": "Catching up with a regular",
+        "hint": "chatting with a familiar customer",
+        "opening": "Oh hey, long time no see! How have you been? The usual flat white?",
+        "aiRole": "A barista who knows the customer",
+        "myRole": "A regular customer catching up"
+      },
+      {
+        "id": "daily-i-3",
+        "topic": "Weekend plan chat",
+        "hint": "casual weekend conversation",
+        "opening": "Nice weather today, isn't it? Got any fun plans for the weekend?",
+        "aiRole": "A barista making small talk",
+        "myRole": "A customer chatting casually"
+      }
+    ],
+    "advanced": [
+      {
+        "id": "daily-a-1",
+        "topic": "Debating coffee preferences",
+        "hint": "discussing coffee culture",
+        "opening": "I see you're eyeing the single-origin Ethiopia — you into specialty coffee? What's your go-to brewing method at home?",
+        "aiRole": "A coffee-enthusiast barista",
+        "myRole": "A customer discussing coffee preferences"
+      },
+      {
+        "id": "daily-a-2",
+        "topic": "Cultural food discussion",
+        "hint": "talking about food culture differences",
+        "opening": "I've noticed you order the matcha every time. You must have spent some time in Japan — am I right?",
+        "aiRole": "An observant barista",
+        "myRole": "A customer discussing food culture"
+      },
+      {
+        "id": "daily-a-3",
+        "topic": "Giving life advice casually",
+        "hint": "casual heart-to-heart over coffee",
+        "opening": "You look like you've got a lot on your mind today. Sometimes a good latte and a chat is all you need — what's up?",
+        "aiRole": "A warm, chatty barista",
+        "myRole": "A customer having a casual heart-to-heart"
+      }
+    ]
+  },
+  "free": {
+    "beginner": [
+      {
+        "id": "free-b-1",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hey! What's something that made you smile this week?",
+        "aiRole": "",
+        "myRole": ""
+      },
+      {
+        "id": "free-b-2",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hi! If you could travel anywhere right now, where would it be?",
+        "aiRole": "",
+        "myRole": ""
+      },
+      {
+        "id": "free-b-3",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hello! Tell me about something you're really into lately.",
+        "aiRole": "",
+        "myRole": ""
+      }
+    ],
+    "intermediate": [
+      {
+        "id": "free-i-1",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hey! What's something that's been on your mind lately — work, life, or just a random thought worth chatting about?",
+        "aiRole": "",
+        "myRole": ""
+      },
+      {
+        "id": "free-i-2",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hi there! If you had a free Saturday and zero obligations, how would you spend it?",
+        "aiRole": "",
+        "myRole": ""
+      },
+      {
+        "id": "free-i-3",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hey! Tell me about a small habit you've picked up recently that you actually like.",
+        "aiRole": "",
+        "myRole": ""
+      }
+    ],
+    "advanced": [
+      {
+        "id": "free-a-1",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hi! Pick any topic you'd like to dig into today — something you've been thinking about, debating with yourself, or just curious about.",
+        "aiRole": "",
+        "myRole": ""
+      },
+      {
+        "id": "free-a-2",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hey! Is there an idea or belief you've changed your mind about over the past few years? I'd love to hear what shifted.",
+        "aiRole": "",
+        "myRole": ""
+      },
+      {
+        "id": "free-a-3",
+        "topic": "Open chat",
+        "hint": "open chat",
+        "opening": "Hello! If you could have a long, unhurried conversation with anyone — alive or not — who would it be, and what would you ask them?",
+        "aiRole": "",
+        "myRole": ""
+      }
+    ]
+  }
+}

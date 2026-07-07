@@ -1,0 +1,32 @@
+# ai-oral-coach trigger word registry
+#
+# Documentation only — routing logic is inlined in skills/trtc/SKILL.md.
+# Do NOT reference this file as a runtime routing dependency.
+#
+# Purpose: single source of truth for what triggers the oral coach fast-path,
+# so edits happen here and get back-ported to SKILL.md manually.
+
+triggers:
+  include:
+    # Chinese
+    - "AI口语陪练"
+    - "AI英语陪练"
+    - "口语教练"
+    - "口语陪练"
+    - "TRTC + 口语"
+    - "TRTC + 英语陪练"
+    - "练口语"
+    # English
+    - "AI oral coach"
+    - "oral coach"
+    - "english tutor bot"
+    - "speaking practice"
+    - "speaking coach"
+    - "TRTC + oral coach"
+    - "TRTC + speaking coach"
+
+  removed_from_pr:
+    # Removed — too broad, causes false positives
+    - "练英语"
+    - "学英语"
+    - "英语老师"

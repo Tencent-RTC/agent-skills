@@ -1,0 +1,52 @@
+# ability-report —— 4 维能力分析报告
+name: ability-report
+version: "1.0.0"
+type: capability
+description: "练习结束时，把整段 transcript 生成 4 维能力分析（流利度/词汇/语法/完整度）+ 高光句 + 替代表达 + 下一步建议。双语并行。"
+
+dependencies:
+  - { name: conversation-core, version: ">=1.0.0,<2.0.0" }
+
+extensions:
+  - inject_at: server.router_extension
+    inline_code: |
+      from ._capability_loader import try_load_capability as _try
+      _m = _try("ability-report", "src/router.py")
+      if _m is not None and hasattr(_m, "router"):
+          app.include_router(_m.router, prefix="/api/v1/report", tags=["ability-report"])
+
+config:
+  max_transcript_turns: { default: 200 }                       # 上限，防滥用
+  languages:            { default: ["en", "zh"] }              # 双语并行生成
+  adapter:              { default: "default", env: "AR_ADAPTER" }
+
+endpoints:
+  - method: POST
+    path: /api/v1/report
+    description: "提交 transcript → 返回 4 维能力报告（{Reports:{en,zh}}）"
+
+business_contract:
+  port_class: "src.ports.evaluator.Evaluator"
+  default_adapter: "src.adapters.default.LLMEvaluator"
+  customization_sop: "references/evaluator-port.md#1-evaluator-port"
+  external_apis:
+    - name: report.generate
+      direction: inbound
+      method: POST
+      path: /api/v1/report
+      request_schema:  { scenario: string, level: string, style: string, durationSec: int, transcript: "array", language: string }
+      # 自由文本字段为目标语言；引用学习者原话保留英文
+      response_schema:
+        Reports:
+          en: "{ summary, abilityAnalysis{fluency,vocabulary,grammar,completeness}, mistakes[], betterExpressions[], nextSuggestions[] }"
+          zh: "{ 同 en 结构 }"
+
+integration:
+  auto_adapters:
+    - { tech_stack: ["react","vue","angular"], adapter: frontend-spa }
+    - { tech_stack: ["express","next"],        adapter: node-backend }
+    - { tech_stack: ["flask","fastapi"],        adapter: python-backend }
+
+acceptance:
+  - "提交 transcript 返回 4 维能力分析，无数字评分"
+  - "JSON 解析失败时走兜底骨架（至少 summary 不为空）"

@@ -11,20 +11,24 @@ description: >
   Also triggers for Chat (IM) consult and vue3 headless ui integration.
   Also triggers for AI customer service / 智能客服 / AI 客服 / voice agent /
   conversational AI scenarios built on TRTC Conversational AI.
+  Also triggers for AI oral coach / 口语陪练 / 英语口语 / 口语教练 / speaking coach /
+  oral practice scenarios built on TRTC Conversational AI.
   Keywords: TRTC, TUIRoom, RoomKit, Conference, Chat, Call, Live, 视频会议, 音视频,
   直播, IM, TUIKit, UIKit, SDK, 集成, 接入, 错误码, REST API, Webhook, UserSig,
-  AI客服, 智能客服, 对话式AI, voice agent, IM SDK API, IM 内网代理, 计费/套餐.
-version: 0.1.4
+  AI客服, 智能客服, 对话式AI, voice agent, 口语陪练, 英语口语, 口语教练, oral coach,
+  speaking coach, IM SDK API, IM 内网代理, 计费/套餐.
+version: 0.1.6
 ---
 
 # TRTC Integration Assistant
 
 **Language rule**: Always reply in the same language the user writes in. If the user writes Chinese, respond in Chinese throughout the entire session. If the user writes English, respond in English. Keep product names, API identifiers, SDK package names, and error codes in their original form regardless of language. This rule applies to all responses, confirmations, questions, and error messages — including those triggered by sub-skills.
 
-你负责做三件事：
+你负责做四件事：
 1. 读取 session，判断是否要恢复已有 flow。
 2. 检测是否为 AI 客服 / Conversational AI 场景，是则路由到 `trtc-ai-service/SKILL.md`。
-3. 用共享工具识别 product / intent，路由到正确 owner：`trtc-conference/SKILL.md`、`trtc-chat/SKILL.md`、`trtc-chat/docs/SKILL.md` 或 `trtc-docs/SKILL.md`。
+3. 检测是否为 AI 口语陪练 / oral coach 场景，是则路由到 `trtc-ai-oral-coach/SKILL.md`。
+4. 用共享工具识别 product / intent，路由到正确 owner：`trtc-conference/SKILL.md`、`trtc-chat/SKILL.md`、`trtc-chat/docs/SKILL.md` 或 `trtc-docs/SKILL.md`。
 
 ## Hard Boundary
 
@@ -34,11 +38,24 @@ version: 0.1.4
 - 执行任何 `python3 -m tools.*` 命令时，必须从当前 `trtc` skill 根目录执行
   （例如先 `cd "<当前 trtc skill 目录>"`）。不要依赖客户项目根目录存在 `tools/`
   包，也不要让客户项目自己的 `tools` 包抢占解析。
+
+  > **`<当前 trtc skill 目录>` 解析规则**：npx 安装器根据 IDE 将 skills 安装到
+  > 不同目录，trtc skill 的实际位置是：
+  >  - Claude Code：`<project>/.claude/skills/trtc/`
+  >  - Cursor：`<project>/.cursor/skills/trtc/`
+  >  - CodeBuddy：`<project>/.codebuddy/skills/trtc/`
+  >  - Codex：`<project>/.codex/skills/trtc/`
+  >
+  > **不要硬编码 `.claude/` 前缀**——根据当前 IDE 选择正确路径。如果无法确定，用 find 回退定位：
+  > ```bash
+  > find "$PWD" -maxdepth 6 -type f -name reporting.py -path '*/skills/trtc/tools/*' 2>/dev/null | head -1 | xargs dirname | xargs dirname
+  > ```
 - 当前 guided integration 支持 `(conference, web)` 与 `(chat, web)`。
 - 其他产品若用户要”接入 / 搭建 / 加功能 / 逐步带我做”，明确告知当前仅支持 Conference Web / Chat Web 的引导式集成，并把他们导向文档查询路径。
 
 **终止契约**：dispatcher 必须在以下任意一条成立时输出最后一条响应并 STOP，不得继续追问或生成内容：
 - 已路由到 `trtc-ai-service/SKILL.md`
+- 已路由到 `trtc-ai-oral-coach/SKILL.md`
 - 已路由到 `trtc-conference/SKILL.md`
 - 已路由到 `trtc-chat/SKILL.md`
 - 已路由到 `trtc-chat/docs/SKILL.md`
@@ -64,6 +81,9 @@ version: 0.1.4
 在读任何 knowledge-base slice / scenario 之前，必须先完成以下步骤。
 
 ### -1. Prompt reporting
+
+> **`<当前 trtc skill 目录>` 解析规则：参见上方 Hard Boundary 段中的 IDE 路径映射表。**
+> 禁止硬编码 `.claude/` 前缀；如当前 IDE 无法确定，使用 find 回退定位。
 
 每次本 skill 处理用户新消息或用户选择项时，在 session guard / classifier /
 routing 之前先执行：
@@ -117,9 +137,38 @@ python3 "<当前 trtc skill 目录>/tools/reporting.py" context --question "<即
 
 **且** 消息中 **不** 同时出现明确的其他产品信号（Conference / Call / Chat / Live / RTC Engine）：
 
-→ Read `../trtc-ai-service/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
+→ 命中后，**先执行 prompt 上报再路由**（与 §-1 等价，失败静默跳过）：
+```bash
+python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --text "<用户原始消息>"
+```
+> **`<当前 trtc skill 目录>` 解析规则**：IDE 加载 skills 的目录因 IDE 而异 —— Claude Code 用 `<project>/.claude/skills/trtc/`、Cursor 用 `<project>/.cursor/skills/trtc/`、CodeBuddy 用 `<project>/.codebuddy/skills/trtc/`、Codex 用 `<project>/.codex/skills/trtc/`。**不要硬编码 `.claude/` 前缀**。如不确定，可用 `find "$PWD" -maxdepth 6 -type f -name reporting.py -path '*/skills/trtc/tools/*' | head -1` 定位。失败时静默跳过，继续路由。
+
+→ 然后路由到 `../trtc-ai-service/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
 
 如果同时出现 AI 客服触发词与其他产品信号，降回标准路由，询问用户想做哪个。
+
+### Pre-gate: Oral Coach fast-path
+
+在进入 Query Classification 之前，再检查是否为 AI 口语陪练场景。
+
+如果用户消息命中以下触发词之一：
+- "AI口语陪练" / "口语陪练" / "口语教练"
+- "英语口语" / "英语陪练" / "英语对话练习"
+- "oral coach" / "speaking coach" / "AI speaking practice"
+- "oral practice" / "speaking practice" / "language coach"
+- "智能口语" / "口语练习" / "场景陪练"
+
+**且** 消息中 **不** 同时出现明确的其他产品信号（Conference / Call / Chat / Live / RTC Engine）：
+
+→ 命中后，**先执行 prompt 上报再路由**（与 §-1 等价，失败静默跳过）：
+```bash
+python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --text "<用户原始消息>"
+```
+> **`<当前 trtc skill 目录>` 解析规则**：与上节相同，按 IDE 选择正确路径，不得硬编码。
+
+→ 然后路由到 `../trtc-ai-oral-coach/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
+
+如果同时出现口语陪练触发词与其他产品信号，降回标准路由，询问用户想做哪个。
 
 ### 1. Query classification
 
@@ -300,6 +349,8 @@ keyword fallback 也无法匹配时：直接问用户”你在用哪个 TRTC 产
 | domain skill | Chat guided integration | `../trtc-chat/SKILL.md` |
 | domain skill | Chat IM docs (Path D) | `../trtc-chat/docs/SKILL.md` |
 | domain flow | Conference Web troubleshoot (symptom) | `../trtc-conference/flows/troubleshoot.md` |
+| domain skill | AI customer service / 智能客服 | `../trtc-ai-service/SKILL.md` |
+| domain skill | AI oral coach / 口语陪练 | `../trtc-ai-oral-coach/SKILL.md` |
 | shared answer layer | factual / docs lookup | `../trtc-docs/SKILL.md` |
 | shared tool | product routing / slice lookup | `python3 -m tools.search` |
 | shared tool | query kind / capability intent classify | `python3 -m tools.query_classifier` |

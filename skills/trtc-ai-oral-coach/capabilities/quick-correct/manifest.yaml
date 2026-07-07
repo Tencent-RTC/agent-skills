@@ -1,0 +1,48 @@
+# quick-correct —— 单句 Speak 风格纠正
+name: quick-correct
+version: "1.0.0"
+type: capability
+description: "用户每轮说完后，异步给一句话的纠正（correction）+ 更地道说法（better），双语并行。"
+
+dependencies:
+  - { name: conversation-core, version: ">=1.0.0,<2.0.0" }
+
+extensions:
+  - inject_at: server.router_extension
+    inline_code: |
+      from ._capability_loader import try_load_capability as _try
+      _m = _try("quick-correct", "src/router.py")
+      if _m is not None and hasattr(_m, "router"):
+          app.include_router(_m.router, prefix="/api/v1/correct", tags=["quick-correct"])
+
+config:
+  max_sentence_length: { default: 800 }                       # 单句上限，防滥用
+  adapter:             { default: "default", env: "QC_ADAPTER" }
+
+endpoints:
+  - method: POST
+    path: /api/v1/correct
+    description: "提交一句话 → 返回纠正 + 更地道说法（无可纠正项返回 null）"
+
+# 评估类能力 —— 共用 Evaluator Port（见 references/evaluator-port.md）
+business_contract:
+  port_class: "src.ports.evaluator.Evaluator"
+  default_adapter: "src.adapters.default.LLMEvaluator"
+  customization_sop: "references/evaluator-port.md#1-evaluator-port"
+  external_apis:
+    - name: correct.submit
+      direction: inbound
+      method: POST
+      path: /api/v1/correct
+      request_schema:  { sentence: string, scenario: string, level: string, language: string }
+      response_schema: { correction: "string|null", better: "string|null", explanation: string }
+
+integration:
+  auto_adapters:
+    - { tech_stack: ["react","vue","angular"], adapter: frontend-spa }
+    - { tech_stack: ["express","next"],        adapter: node-backend }
+    - { tech_stack: ["flask","fastapi"],        adapter: python-backend }
+
+acceptance:
+  - "提交一句话能返回 correction / better 字段"
+  - "判定无错时返回 null，前端不弹卡片"

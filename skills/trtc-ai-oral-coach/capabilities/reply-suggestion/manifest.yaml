@@ -1,0 +1,49 @@
+# reply-suggestion —— Lightbulb 接话建议
+name: reply-suggestion
+version: "1.0.0"
+type: capability
+description: "AI 说完一句后，异步给用户 3 条不同方向的英文接话建议（卡住时的提示）。"
+
+dependencies:
+  - { name: conversation-core, version: ">=1.0.0,<2.0.0" }
+
+extensions:
+  - inject_at: server.router_extension
+    inline_code: |
+      from ._capability_loader import try_load_capability as _try
+      _m = _try("reply-suggestion", "src/router.py")
+      if _m is not None and hasattr(_m, "router"):
+          app.include_router(_m.router, prefix="/api/v1/suggest", tags=["reply-suggestion"])
+
+config:
+  max_ai_message_length:  { default: 1200 }
+  max_recent_turns:       { default: 6 }
+  suggestions_count:      { default: 3 }
+  adapter:                { default: "default", env: "RS_ADAPTER" }
+
+endpoints:
+  - method: POST
+    path: /api/v1/suggest
+    description: "提交 AI 最后一句 + 最近对话 → 返回 3 条接话建议"
+
+business_contract:
+  port_class: "src.ports.evaluator.Evaluator"
+  default_adapter: "src.adapters.default.LLMEvaluator"
+  customization_sop: "references/evaluator-port.md#1-evaluator-port"
+  external_apis:
+    - name: suggest.replies
+      direction: inbound
+      method: POST
+      path: /api/v1/suggest
+      request_schema:  { aiLastMessage: string, recentTranscript: "array", scenario: string, level: string, style: string }
+      response_schema: { suggestions: "string[3]" }
+
+integration:
+  auto_adapters:
+    - { tech_stack: ["react","vue","angular"], adapter: frontend-spa }
+    - { tech_stack: ["express","next"],        adapter: node-backend }
+    - { tech_stack: ["flask","fastapi"],        adapter: python-backend }
+
+acceptance:
+  - "返回 3 条方向不同的英文接话建议"
+  - "调用失败时前端静默降级，不阻塞主流程"
