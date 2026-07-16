@@ -1,5 +1,5 @@
 ---
-name: ai-oral-coach-skill
+name: trtc-ai-oral-coach-skill
 version: 0.1.0
 description: |
   Build an AI English speaking coach powered by Tencent Cloud TRTC Conversational AI (voice-first).

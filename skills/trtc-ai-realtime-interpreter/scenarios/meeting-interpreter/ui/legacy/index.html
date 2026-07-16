@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- ===== HEAD ===== -->
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AI Live Translator · Meeting Demo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="https://web.sdk.qcloud.com/trtc/webrtc/v5/test/latest/dist/trtc.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        background:'#F5F6F7',
+        foreground:'#0F1115',
+        card:'#FFFFFF',
+        primary:{DEFAULT:'#111318',foreground:'#FFFFFF'},
+        muted:'#6B7280',
+        muted2:'#9CA3AF',
+        border:'rgba(15,17,21,.08)',
+        danger:'#C0362C',
+        success:'#3B7A57',
+      },
+      fontFamily:{
+        sans:['Inter','PingFang SC','HarmonyOS Sans SC','Microsoft YaHei','system-ui','sans-serif'],
+        mono:['SF Mono','JetBrains Mono','Menlo','monospace'],
+      },
+    }
+  }
+}
+</script>
+</head>
+<body class="bg-background text-foreground font-sans overflow-x-hidden antialiased">
+
+<!-- ===== HTML ===== -->
+<div class="mx-auto" style="max-width:1440px">
+  <main class="min-w-0">
+
+    <!-- SCREEN 1 -->
+    <section id="s1" class="screen px-6 md:px-10 py-12 md:py-16">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-[11px] tracking-[0.22em] text-muted2 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>STEP 01 · SETUP
+        </div>
+        <h2 class="mt-3 text-[36px] md:text-[44px] font-semibold tracking-tight leading-[1.15]">
+          Meeting Live Translator <span class="text-muted2 font-normal">·</span> <span class="italic font-serif text-[32px] md:text-[38px]">Real-Time Interpretation</span>
+        </h2>
+        <p class="mt-3 text-[15px] text-muted max-w-2xl">
+          Choose your language pair → AI will transcribe, translate, and broadcast your speech in real-time. Other attendees are simulated mock data for the demo scenario.
+        </p>
+        <div id="healthTip" class="mt-4 text-[12px] text-danger hidden"></div>
+        <div class="mt-10 text-[11px] tracking-[0.18em] text-muted2">Choose Translation Pair · TRANSLATION PAIR</div>
+        <div id="modeCards" class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+        <div class="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <button id="startBtn" class="btn-primary disabled" disabled>
+            <i data-lucide="video" style="width:16px;height:16px"></i><span>Join Meeting</span>
+            <i data-lucide="arrow-right" style="width:16px;height:16px"></i>
+          </button>
+          <div class="text-[12px] text-muted2">You will host a simulated multilingual meeting (other 5 attendees are mock data).</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN 2 : Conference (unified canvas) -->
+    <section id="s2" class="screen hidden">
+      <div class="conf-shell">
+        <div class="conf-main">
+        <!-- top bar -->
+        <div class="conf-top">
+          <div class="flex items-center gap-4">
+            <span class="conf-top-btn muted" id="connState"><i data-lucide="loader" style="width:14px;height:14px"></i>Connecting…</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="conf-title" id="meetingTitle">Host's Quick Conference</span>
+            <span class="font-mono text-[13px] text-foreground ml-2" id="callTimer">00:00</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="conf-top-btn"><i data-lucide="globe" style="width:14px;height:14px"></i><span id="modeTag">ZH ⇄ EN</span></button>
+            <div class="flex items-center gap-2">
+              <span class="host-avatar-sm">ME</span>
+              <span class="text-[13px] text-foreground font-medium">Host</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- stage (unified light canvas) -->
+        <div class="conf-stage">
+          <div class="conf-watermark" aria-hidden="true"></div>
+          <div id="orbitLayer" class="orbit-layer"></div>
+
+          <!-- center speaker -->
+          <div class="speaker-wrap">
+            <div class="speaker-halo" id="speakerHalo"></div>
+            <div class="speaker-avatar" id="speakerAvatar">
+              <span class="speaker-initials" id="speakerInitials">ME</span>
+            </div>
+            <div class="speaker-meta">
+              <span class="speaker-dot"></span>
+              <span id="speakerName">You (Host)</span>
+              <span class="speaker-lang" id="speakerLang">ZH</span>
+            </div>
+          </div>
+
+          <!-- agent state pill -->
+          <div id="agentState" class="agent-state state-listen agent-state-abs">
+            <span class="wave"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="state-label" id="agentStateLabel">Listening…</span>
+          </div>
+
+          <div class="host-chip">
+            <span class="host-chip-avatar"><i data-lucide="user" style="width:14px;height:14px"></i></span>
+            <span class="host-chip-mic" id="hostChipMic"><i data-lucide="mic" style="width:11px;height:11px"></i></span>
+            <span class="host-chip-name">Host</span>
+          </div>
+        </div>
+
+        <!-- bottom toolbar -->
+        <div class="conf-toolbar">
+          <div class="tb-left">
+            <button id="micBtn" class="tb-btn active"><span class="tb-ico"><i data-lucide="mic" style="width:20px;height:20px"></i></span><span class="tb-label" id="micLabel">Mute</span></button>
+            <button id="chatBtn" class="tb-btn"><span class="tb-ico"><i data-lucide="message-square" style="width:20px;height:20px"></i></span><span class="tb-label">Transcript</span></button>
+            <button id="peopleBtn" class="tb-btn"><span class="tb-ico"><i data-lucide="users" style="width:20px;height:20px"></i></span><span class="tb-label">People (<span id="attendeeCount">7</span>)</span></button>
+          </div>
+          <div class="tb-right">
+            <button id="endBtn" class="leave-btn">Leave Room</button>
+          </div>
+        </div>
+        </div><!-- /conf-main -->
+
+        <!-- transcript panel (push layout) -->
+        <aside id="chatPanel" class="chat-panel">
+          <div class="chat-inner">
+          <div class="chat-head">
+            <div class="chat-title">
+              <i data-lucide="captions" style="width:15px;height:15px"></i>
+              <span>Transcript · Live</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button id="chatCloseBtn" class="chat-close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+            </div>
+          </div>
+          <div class="chat-sub">
+            <span class="chip-mini"><i data-lucide="sparkles" style="width:11px;height:11px"></i>AI Live Translation</span>
+            <span class="chip-mini font-mono" id="chatModeTag">ZH ⇄ EN</span>
+          </div>
+          <div id="transcriptStream" class="transcript-stream flex-1"></div>
+          </div>
+        </aside>
+
+        <!-- people panel (push layout) -->
+        <aside id="peoplePanel" class="chat-panel">
+          <div class="chat-inner">
+          <div class="chat-head">
+            <div class="chat-title">
+              <i data-lucide="users" style="width:15px;height:15px"></i>
+              <span>People · Attendees</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button id="peopleCloseBtn" class="chat-close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+            </div>
+          </div>
+          <div class="chat-sub">
+            <span class="chip-mini"><i data-lucide="circle-dot" style="width:11px;height:11px"></i>Live Meeting</span>
+            <span class="chip-mini font-mono" id="peopleCountTag">7 members</span>
+          </div>
+          <div id="peopleList" class="transcript-stream flex-1"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- SCREEN 3 : Summary -->
+    <section id="s3" class="screen hidden px-6 md:px-10 py-12 md:py-16">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-[11px] tracking-[0.22em] text-muted2">STEP 03 · TRANSCRIPT</div>
+        <h2 class="mt-3 text-[32px] md:text-[38px] font-semibold tracking-tight">Full Transcript <span class="italic font-serif text-muted2">· Session Record</span></h2>
+        <p class="mt-2 text-[14px] text-muted">Below is the complete transcript with original speech and AI translations from this session.</p>
+
+        <div class="mt-8 rounded-2xl border border-border bg-white overflow-hidden">
+          <div class="px-5 py-3 border-b border-border flex items-center justify-between">
+            <div class="text-[12px] text-foreground font-medium flex items-center gap-2">
+              <i data-lucide="file-text" style="width:14px;height:14px"></i>Full Transcript
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="copyBtn" class="ghost-btn"><i data-lucide="copy" style="width:12px;height:12px"></i><span id="copyLabel">Copy</span></button>
+              <button id="restartBtn" class="ghost-btn dark"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i>Start Over</button>
+            </div>
+          </div>
+          <div id="fullTranscript" class="transcript-scroll divide-y divide-border"></div>
+        </div>
+
+        <div class="mt-6 text-[12px] text-muted2">Transcript is kept for the current session only — refresh to clear.</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<style>
+/* ===== STYLE ===== */
+html,body{background:#F5F6F7;}
+body{font-feature-settings:"tnum" on,"ss01" on;}
+.font-serif{font-family:"Source Serif 4","Source Han Serif SC","Songti SC",Georgia,serif;}
+
+.mode-card{position:relative;text-align:left;background:#fff;border:1px solid rgba(15,17,21,.08);border-radius:18px;padding:20px;transition:all .22s ease;box-shadow:0 1px 2px rgba(15,17,21,.03);cursor:pointer;}
+.mode-card:hover{border-color:rgba(15,17,21,.22);transform:translateY(-1px);}
+.mode-card.selected{border-color:#0F1115;box-shadow:0 6px 24px rgba(15,17,21,.10);}
+.mode-card .badge-lang{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#F5F6F7;border:1px solid rgba(15,17,21,.06);font-size:12px;color:#0F1115;font-weight:500;}
+.mode-card .swap{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#0F1115;color:#fff;}
+.mode-card .check{position:absolute;top:14px;right:14px;width:22px;height:22px;border-radius:50%;background:#0F1115;color:#fff;display:none;align-items:center;justify-content:center;}
+.mode-card.selected .check{display:inline-flex;}
+
+.btn-primary{display:inline-flex;align-items:center;gap:10px;background:#0F1115;color:#fff;padding:14px 22px;border-radius:14px;font-size:14px;font-weight:500;transition:all .2s ease;}
+.btn-primary:hover:not(.disabled){background:#000;transform:translateY(-1px);}
+.btn-primary.disabled{background:#D1D5DB;color:#fff;cursor:not-allowed;}
+.ghost-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#fff;border:1px solid rgba(15,17,21,.08);font-size:12px;color:#374151;transition:all .18s ease;}
+.ghost-btn:hover{border-color:rgba(15,17,21,.24);color:#0F1115;}
+.ghost-btn.dark{background:#0F1115;color:#fff;border-color:#0F1115;}
+
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;background:#fff;border:1px solid rgba(15,17,21,.08);font-size:12px;color:#0F1115;}
+
+.agent-state{display:inline-flex;align-items:center;gap:10px;padding:6px 14px;border-radius:999px;background:#fff;border:1px solid rgba(15,17,21,.08);}
+.state-label{font-size:12.5px;color:#0F1115;font-weight:500;}
+.wave{display:inline-flex;align-items:center;gap:2px;height:14px;}
+.wave i{display:inline-block;width:2.5px;height:100%;background:#0F1115;border-radius:2px;animation:wave 1s ease-in-out infinite;}
+.wave i:nth-child(2){animation-delay:.1s;}
+.wave i:nth-child(3){animation-delay:.2s;}
+.wave i:nth-child(4){animation-delay:.3s;}
+.wave i:nth-child(5){animation-delay:.4s;}
+@keyframes wave{0%,100%{transform:scaleY(.3);}50%{transform:scaleY(1);}}
+.state-translate .wave i{background:#3B7A57;}
+.state-speak .wave i{background:#0F1115;animation-name:pulse;}
+@keyframes pulse{0%,100%{transform:scaleY(.5);opacity:.5;}50%{transform:scaleY(1);opacity:1;}}
+.state-idle .wave i{background:#9CA3AF;animation:none;transform:scaleY(.3);}
+
+.conf-shell{position:relative;margin:16px;border-radius:24px;background:#ffffff;border:1px solid rgba(15,17,21,.06);box-shadow:0 8px 40px rgba(15,17,21,.06);overflow:hidden;display:flex;flex-direction:row;height:calc(100vh - 32px);min-height:640px;max-height:900px;}
+.conf-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+@media (max-width:1023px){.conf-shell{height:auto;min-height:0;margin:10px;}}
+
+.conf-top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 22px;border-bottom:1px solid rgba(15,17,21,.06);background:#fff;position:relative;z-index:5;}
+.conf-title{font-size:15px;font-weight:600;letter-spacing:-.01em;color:#0F1115;}
+.conf-top-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;font-size:13px;color:#0F1115;background:transparent;transition:background .15s;}
+.conf-top-btn:hover{background:#F1F2F4;}
+.conf-top-btn.muted{color:#9CA3AF;}
+.host-avatar-sm{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3a3d45,#1a1c22);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;letter-spacing:.02em;}
+
+.conf-stage{position:relative;flex:1;background:#eeeef1;overflow:hidden;min-height:460px;}
+.conf-watermark{position:absolute;inset:0;background-image:repeating-linear-gradient(-24deg, transparent 0 80px, rgba(15,17,21,.035) 80px 82px);pointer-events:none;}
+.conf-watermark::after{content:"HOST · HOST · HOST · HOST · HOST · HOST · HOST · HOST";position:absolute;inset:0;color:rgba(15,17,21,.045);font:600 22px/60px "SF Mono",monospace;letter-spacing:.35em;transform:rotate(-14deg);white-space:pre-wrap;padding:40px;pointer-events:none;overflow:hidden;}
+
+.speaker-wrap{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:14px;z-index:3;}
+.speaker-halo{position:absolute;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle,rgba(15,17,21,.08) 0%,transparent 70%);animation:halo 2.4s ease-in-out infinite;}
+@keyframes halo{0%,100%{transform:scale(.9);opacity:.55;}50%{transform:scale(1.15);opacity:.9;}}
+.speaker-avatar{position:relative;width:120px;height:120px;border-radius:50%;overflow:hidden;background:linear-gradient(135deg,#3a3d45,#151719);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 40px rgba(15,17,21,.18),0 0 0 6px #fff,0 0 0 7px rgba(15,17,21,.06);transition:all .4s ease;}
+.speaker-initials{color:#fff;font-size:36px;font-weight:600;letter-spacing:.02em;}
+.speaker-meta{position:relative;display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border:1px solid rgba(15,17,21,.06);font-size:12.5px;font-weight:500;color:#0F1115;}
+.speaker-dot{width:6px;height:6px;border-radius:50%;background:#3B7A57;box-shadow:0 0 0 3px rgba(59,122,87,.2);}
+.speaker-lang{font:600 10.5px/1 "SF Mono",monospace;padding:2px 6px;border-radius:5px;background:#0F1115;color:#fff;letter-spacing:.04em;}
+
+.orbit-layer{position:absolute;inset:0;z-index:2;}
+.orbit-item{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .5s ease;opacity:.75;}
+.orbit-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#c9ccd1,#8a8f98);color:#fff;display:flex;align-items:center;justify-content:center;font:600 13px/1 sans-serif;letter-spacing:.02em;box-shadow:0 4px 14px rgba(15,17,21,.12),0 0 0 3px #fff;border:1px solid rgba(15,17,21,.06);}
+.orbit-name{font-size:10.5px;color:#6B7280;font-weight:500;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,.7);backdrop-filter:blur(4px);white-space:nowrap;}
+
+.agent-state-abs{position:absolute;top:20px;left:50%;transform:translateX(-50%);z-index:4;}
+
+.host-chip{position:absolute;left:16px;bottom:16px;display:inline-flex;align-items:center;gap:0;padding:4px 12px 4px 4px;border-radius:999px;background:rgba(15,17,21,.55);backdrop-filter:blur(10px);color:#fff;z-index:4;}
+.host-chip-avatar{width:26px;height:26px;border-radius:50%;background:#3b82f6;display:inline-flex;align-items:center;justify-content:center;margin-right:-6px;position:relative;z-index:2;border:1.5px solid rgba(15,17,21,.55);}
+.host-chip-mic{width:20px;height:20px;border-radius:50%;background:#3B7A57;display:inline-flex;align-items:center;justify-content:center;margin-right:8px;border:1.5px solid rgba(15,17,21,.55);}
+.host-chip-name{font-size:11.5px;font-weight:500;}
+
+.conf-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 22px;background:#fff;border-top:1px solid rgba(15,17,21,.06);position:relative;z-index:5;}
+.tb-left{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.tb-btn{display:inline-flex;flex-direction:column;align-items:center;gap:3px;padding:6px 14px;border-radius:10px;background:transparent;color:#0F1115;transition:background .15s;min-width:60px;}
+.tb-btn:hover{background:#F1F2F4;}
+.tb-btn.active{background:#F1F2F4;}
+.tb-ico{display:inline-flex;align-items:center;justify-content:center;color:#0F1115;}
+.tb-label{font-size:11px;color:#4B5563;font-weight:500;letter-spacing:.01em;}
+.leave-btn{padding:8px 22px;border-radius:10px;border:1.5px solid #C0362C;color:#C0362C;font-size:13px;font-weight:500;background:#fff;transition:all .15s;}
+.leave-btn:hover{background:#C0362C;color:#fff;}
+
+.chat-panel{width:0;flex-shrink:0;overflow:hidden;background:#fff;border-left:1px solid rgba(15,17,21,.08);transition:width .35s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;}
+.chat-panel.open{width:380px;}
+.chat-panel .chat-inner{width:380px;height:100%;display:flex;flex-direction:column;}
+.chat-head{padding:16px 18px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(15,17,21,.06);}
+.chat-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#0F1115;}
+.chat-close{width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;color:#6B7280;transition:background .15s;}
+.chat-close:hover{background:#F1F2F4;color:#0F1115;}
+.chat-sub{padding:10px 18px;display:flex;gap:6px;border-bottom:1px solid rgba(15,17,21,.04);}
+.chip-mini{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;background:#F5F6F7;border:1px solid rgba(15,17,21,.06);font-size:11px;color:#4B5563;}
+.chat-foot{padding:10px 14px 14px;border-top:1px solid rgba(15,17,21,.06);}
+.chat-input{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:#F5F6F7;border:1px solid rgba(15,17,21,.05);color:#9CA3AF;font-size:12.5px;}
+
+.transcript-stream{overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:14px;}
+.transcript-stream::-webkit-scrollbar{width:5px;}
+.transcript-stream::-webkit-scrollbar-thumb{background:rgba(15,17,21,.14);border-radius:3px;}
+.tr-item{animation:rise .3s ease both;}
+@keyframes rise{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.tr-item .tr-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#6B7280;}
+.tr-item .tr-speaker{font-weight:600;color:#0F1115;font-size:12px;}
+.tr-item .tr-orig{margin-top:4px;font-size:13px;line-height:1.55;color:#0F1115;}
+.tr-item .tr-trans{margin-top:4px;font-size:12.5px;line-height:1.55;color:#6B7280;padding-left:8px;border-left:2px solid rgba(15,17,21,.1);}
+.tr-item .tr-lang{font-size:10px;letter-spacing:.06em;font-weight:600;text-transform:uppercase;color:#9CA3AF;margin-right:6px;}
+
+.transcript-scroll{max-height:520px;overflow-y:auto;}
+.tr-row{padding:16px 20px;display:grid;grid-template-columns:70px 100px 1fr;gap:14px;align-items:start;}
+.tr-time{font:500 11.5px/1.4 "SF Mono",monospace;color:#9CA3AF;padding-top:2px;}
+.tr-who{font-size:12.5px;font-weight:600;color:#0F1115;}
+.tr-who .role{display:block;font-size:10.5px;color:#9CA3AF;font-weight:500;margin-top:2px;letter-spacing:.04em;}
+.tr-label{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.08em;font-weight:600;text-transform:uppercase;color:#9CA3AF;margin-bottom:2px;}
+.tr-text-o{font-size:13.5px;color:#0F1115;line-height:1.55;}
+.tr-text-t{font-size:13px;color:#6B7280;line-height:1.55;margin-top:6px;padding-left:10px;border-left:2px solid rgba(15,17,21,.08);}
+
+.people-item{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid rgba(15,17,21,.04);transition:background .15s;}
+.people-item:hover{background:#F5F6F7;}
+.people-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font:600 13px/1 sans-serif;flex-shrink:0;}
+.people-avatar.bot{background:linear-gradient(135deg,#6366f1,#4f46e5);}
+.people-avatar.host{background:linear-gradient(135deg,#3a3d45,#1a1c22);}
+.people-avatar.guest{background:linear-gradient(135deg,#c9ccd1,#8a8f98);color:#fff;}
+.people-info{flex:1;min-width:0;}
+.people-name{font-size:13.5px;font-weight:600;color:#0F1115;}
+.people-role{font-size:11px;color:#9CA3AF;margin-top:2px;}
+.people-status{font-size:11px;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;}
+.people-status .dot{width:7px;height:7px;border-radius:50%;}
+.people-status.speaking .dot{background:#3B7A57;box-shadow:0 0 0 3px rgba(59,122,87,.15);}
+.people-status.speaking{color:#3B7A57;font-weight:500;}
+.people-status.listening .dot{background:#3B7A57;animation:pulse-dot 1.5s ease-in-out infinite;}
+.people-status.listening{color:#3B7A57;}
+.people-status.muted .dot{background:#D1D5DB;}
+.people-status.muted{color:#9CA3AF;}
+@keyframes pulse-dot{0%,100%{opacity:1;}50%{opacity:.4;}}
+
+::selection{background:#0F1115;color:#fff;}
+</style>
+
+<script>
+/* ===== DATA ===== */
+window.appData = {
+  modes: [
+    {id:'zh-en',  label:'ZH ⇄ EN', a:'Chinese', b:'English',   desc:'Speak Chinese or English — AI translates bidirectionally and speaks the translation in the other language.', hint:'Mandarin <-> English', langs:['zh','en']},
+    {id:'zh-yue', label:'ZH ⇄ YUE', a:'Chinese', b:'Cantonese', desc:'Speak Chinese or Cantonese — AI translates bidirectionally and speaks the translation in the other language.', hint:'Mandarin <-> Cantonese', langs:['zh','yue']},
+    {id:'en-yue', label:'EN ⇄ YUE', a:'English', b:'Cantonese', desc:'Speak English or Cantonese — AI translates bidirectionally and speaks the translation in the other language.', hint:'English <-> Cantonese', langs:['en','yue']}
+  ],
+  // Other attendees: decorative mock data for the conference scenario.
+  attendees: [
+    {id:'host', name:'You (Host)',     role:'Host',        initials:'ME', host:true, status:'speaking'},
+    {id:'bot',  name:'AI Host',        role:'Interpreter', initials:'AI', bot:true,  status:'listening'},
+    {id:'a1',   name:'Sarah Chen',     role:'PM',          initials:'SC', status:'muted'},
+    {id:'a2',   name:'Ming Wang',      role:'Engineer',    initials:'MW', status:'muted'},
+    {id:'a3',   name:'David Kim',      role:'Design',      initials:'DK', status:'muted'},
+    {id:'a4',   name:'Yating Li',      role:'Marketing',   initials:'LY', status:'muted'},
+    {id:'a5',   name:'Alex Martin',   role:'Sales',       initials:'AM', status:'muted'}
+  ]
+};
+</script>
+
+<script>
+/* ===== SCRIPT ===== */
+// FILE:screen1.js
+(function(){
+  window.state = { mode:null };
+
+  function checkHealth(){
+    fetch('/api/v1/health').then(r=>r.json()).then(h=>{
+      if(h.status!=='ok'){
+        const tip=document.getElementById('healthTip');
+        tip.textContent='Backend: missing credentials — ' + (h.missing||[]).join(', ') + ' (configure them in backend/.env and restart)';
+        tip.classList.remove('hidden');
+      }
+    }).catch(()=>{
+      const tip=document.getElementById('healthTip');
+      tip.textContent='Cannot reach backend (/api/v1/health failed). Make sure backend is running via start.sh.';
+      tip.classList.remove('hidden');
+    });
+  }
+
+  function renderModes(){
+    const wrap = document.getElementById('modeCards');
+    wrap.innerHTML = window.appData.modes.map(m=>`
+      <button class="mode-card" data-id="${m.id}">
+        <span class="check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <div class="flex items-center gap-2">
+          <span class="badge-lang">${m.a}</span>
+          <span class="swap"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h14"/><path d="m17 20 4-4-4-4"/><path d="M21 16H7"/></svg></span>
+          <span class="badge-lang">${m.b}</span>
+        </div>
+        <div class="mt-4 text-[15px] font-semibold tracking-tight">${m.label}</div>
+        <div class="mt-2 text-[13px] text-muted leading-relaxed">${m.desc}</div>
+        <div class="mt-4 text-[10.5px] tracking-[0.14em] text-muted2 font-mono">${m.hint}</div>
+      </button>`).join('');
+    wrap.querySelectorAll('.mode-card').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        wrap.querySelectorAll('.mode-card').forEach(x=>x.classList.remove('selected'));
+        el.classList.add('selected');
+        window.state.mode = el.dataset.id;
+        const btn = document.getElementById('startBtn');
+        btn.classList.remove('disabled'); btn.disabled = false;
+        const m = window.appData.modes.find(x=>x.id===el.dataset.id);
+        document.getElementById('modeTag').textContent = m.label;
+      });
+    });
+    wrap.querySelector('.mode-card').click();
+  }
+  function initStart(){
+    document.getElementById('startBtn').addEventListener('click', function(){
+      if(this.disabled) return;
+      window.gotoTab('s2');
+    });
+  }
+  window.initScreen1 = function(){ renderModes(); initStart(); checkHealth(); };
+})();
+// /FILE:screen1.js
+
+// FILE:screen2.js
+(function(){
+  let timerId=null, elapsed=0;
+  // Message accumulation:
+  //   cmd 10000 subtitle: sender===botUserId -> AI speech (translation, will be TTS'd)
+  //                     sender===host userId -> host's ASR original text
+  //   cmd 10001 AI state: 1=round end 2=thinking 3=speaking
+  const S = window.TRTC_STATE = {
+    trtcClient:null, taskId:null, transcript:[], roomId:null,
+    _curRoundId:'', _curRoundText:'', _bubbleId:null,
+    _origRoundId:'', _origText:'',
+    _isWelcomePhase:true,
+    _welcomeBubbleEl:null,
+  };
+
+  function $(id){ return document.getElementById(id); }
+  function fmt(t){return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');}
+  function tickTimer(){elapsed++;$('callTimer').textContent=fmt(elapsed);}
+
+  function currentMode(){ return window.appData.modes.find(x=>x.id===window.state.mode) || window.appData.modes[0]; }
+
+  function setAgentState(cls, label){
+    const el=$('agentState');
+    el.className='agent-state agent-state-abs '+cls;
+    $('agentStateLabel').textContent=label;
+  }
+
+  function renderOrbit(){
+    const layer = $('orbitLayer');
+    const others = window.appData.attendees.filter(a=>!a.host && !a.bot);
+    const positions = [{x:20,y:28},{x:80,y:26},{x:12,y:62},{x:88,y:60},{x:32,y:82}];
+    layer.innerHTML = others.map((a,i)=>{
+      const p = positions[i] || {x:50,y:20};
+      return `<div class="orbit-item" style="left:${p.x}%;top:${p.y}%;">
+        <div class="orbit-avatar">${a.initials}</div>
+        <div class="orbit-name">${a.name}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function callApi(path, body){
+    const res = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{}) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error((data.detail&&data.detail.message)||('HTTP '+res.status));
+    return data;
+  }
+
+  function updateBotBubble(text){
+    // Reuse the same bubble element for streaming updates (avoid duplicates)
+    if(!S._welcomeBubbleEl){
+      const stream = $('transcriptStream');
+      const div = document.createElement('div');
+      div.className='tr-item';
+      div.innerHTML = `
+        <div class="tr-head"><span class="tr-speaker" style="color:#4f46e5">AI Host</span><span class="font-mono">${fmt(elapsed)}</span></div>
+        <div class="tr-orig" style="border-left:2px solid rgba(79,70,229,.2);padding-left:8px"><span class="tr-lang" style="color:#6366f1">AI</span></div>`;
+      stream.appendChild(div);
+      S._welcomeBubbleEl = div.querySelector('.tr-orig');
+    }
+    S._welcomeBubbleEl.innerHTML = `<span class="tr-lang" style="color:#6366f1">AI</span>${text}`;
+    $('transcriptStream').scrollTop = $('transcriptStream').scrollHeight;
+  }
+
+  function ensureBubble(){
+    if(!S._bubbleId){
+      S._bubbleId = 'tr-'+Date.now();
+      const stream = $('transcriptStream');
+      const div = document.createElement('div');
+      div.className='tr-item'; div.id=S._bubbleId;
+      div.innerHTML = `
+        <div class="tr-head"><span class="tr-speaker">You (Host)</span><span class="font-mono">${fmt(elapsed)}</span></div>
+        <div class="tr-orig" data-role="orig"></div>
+        <div class="tr-trans" data-role="trans" style="display:none"></div>`;
+      stream.appendChild(div);
+    }
+    return document.getElementById(S._bubbleId);
+  }
+
+  function updateOrig(text){
+    const el = ensureBubble();
+    const box = el.querySelector('[data-role="orig"]');
+    box.innerHTML = `<span class="tr-lang">Original</span>${text}`;
+    $('transcriptStream').scrollTop = $('transcriptStream').scrollHeight;
+  }
+
+  function updateTrans(text){
+    const el = ensureBubble();
+    const box = el.querySelector('[data-role="trans"]');
+    box.style.display = '';
+    box.innerHTML = `<span class="tr-lang">Translation</span>${text}`;
+    $('transcriptStream').scrollTop = $('transcriptStream').scrollHeight;
+  }
+
+  function finalizeRound(){
+    if(!S._bubbleId) return;
+    S.transcript.push({ time: fmt(elapsed), sourceText: S._origText, translationText: S._curRoundText, targetLangLabel: currentMode().b });
+    S._bubbleId=null; S._curRoundId=''; S._curRoundText=''; S._origRoundId=''; S._origText='';
+  }
+
+  function handleCustomMessage(event){
+    let text; try { text = new TextDecoder().decode(event.data); } catch(e){ return; }
+    let data; try { data = JSON.parse(text); } catch(e){ return; }
+    console.log('[custom message]', data);
+
+    const payload = data.payload || {};
+    if (data.type === 10000) {
+      const raw = (payload.text||'').trim();
+      if(!raw) return;
+      const isEnd = payload.end === true;
+      const rid = payload.roundid || 'default';
+      const isBot = data.sender === S.botUserId;
+
+      if (isBot) {
+        if (rid !== S._curRoundId) { S._curRoundId = rid; S._curRoundText = raw; }
+        else { S._curRoundText = raw; }
+        if (S._isWelcomePhase) {
+          // Welcome phase: update a single reusable AI Host bubble (no duplicates)
+          updateBotBubble(S._curRoundText);
+          if (isEnd) S._isWelcomePhase = false;
+        } else {
+          updateTrans(S._curRoundText);
+        }
+        setAgentState('state-speak', 'Speaking…');
+      } else {
+        // Host's ASR original text — user started speaking, exit welcome phase
+        S._isWelcomePhase = false;
+        if (rid !== S._origRoundId) { S._origRoundId = rid; S._origText = raw; }
+        else { S._origText = raw; }
+        updateOrig(S._origText);
+        if(!isEnd) setAgentState('state-translate', 'Transcribing…');
+      }
+    } else if (data.type === 10001) {
+      const st = payload && payload.state;
+      if (st === 1) {          // Round end
+        finalizeRound();
+        setAgentState('state-listen','Listening…');
+      } else if (st === 2) {   // Thinking / generating translation
+        setAgentState('state-translate','Translating…');
+      } else if (st === 3) {   // Speaking
+        setAgentState('state-speak','Speaking…');
+      }
+    }
+  }
+
+  async function startRealSession(){
+    if(typeof TRTC==='undefined'){ console.error('TRTC SDK not loaded'); return; }
+    setAgentState('state-idle','Connecting…');
+    $('connState').innerHTML = '<i data-lucide="loader" style="width:14px;height:14px"></i>Connecting…';
+
+    // 1. Get credentials (one real user + one AI bot identity)
+    const cfg = await callApi('/api/v1/config', {});
+    S.sdkAppId = cfg.sdkappid; S.userId = cfg.userid; S.userSig = cfg.usersig;
+    S.botUserId = cfg.bot_userid; S.botUserSig = cfg.bot_usersig;
+    S.roomId = Math.floor(Math.random()*90000)+10000;
+
+    // 2. Enter room + start mic (always-on, server-side VAD auto-segments)
+    const client = TRTC.create({ assetsPath:'https://web.sdk.qcloud.com/trtc/webrtc/v5/assets/' });
+    S.trtcClient = client;
+    client.on(TRTC.EVENT.CUSTOM_MESSAGE, handleCustomMessage);
+    client.on(TRTC.EVENT.ERROR, (e)=>console.error('[TRTC error]', e));
+
+    await client.enterRoom({ roomId:S.roomId, scene:'rtc', sdkAppId:S.sdkAppId, userId:S.userId, userSig:S.userSig });
+    await client.startLocalAudio();
+
+    // 3. Start the AI bot task: welcome message first, then continuous translation
+    const startResp = await callApi('/api/v1/session/start', {
+      roomId: String(S.roomId), roomIdType: 0,
+      hostUserId: S.userId, botUserId: S.botUserId, botUserSig: S.botUserSig,
+      mode: window.state.mode,
+    });
+    S.taskId = startResp.TaskId;
+    if(!S.taskId){ console.error('No TaskId received', startResp); }
+
+    $('connState').innerHTML = '<i data-lucide="check-circle" style="width:14px;height:14px"></i>Connected';
+    setAgentState('state-speak','AI Host welcoming…');
+  }
+
+  async function endSession(){
+    clearInterval(timerId);
+    if(S.taskId){ try{ await callApi('/api/v1/session/stop', {taskId:S.taskId}); }catch(e){} S.taskId=null; }
+    if(S.trtcClient){ try{ await S.trtcClient.exitRoom(); }catch(e){} try{ S.trtcClient.destroy(); }catch(e){} S.trtcClient=null; }
+    window.gotoTab('s3');
+  }
+
+  function toggleChat(open){
+    const panel=$('chatPanel'), btn=$('chatBtn');
+    const isOpen = typeof open==='boolean'?open:!panel.classList.contains('open');
+    panel.classList.toggle('open', isOpen); btn.classList.toggle('active', isOpen);
+    if(isOpen) togglePeople(false);
+  }
+
+  function togglePeople(open){
+    const panel=$('peoplePanel'), btn=$('peopleBtn');
+    const isOpen = typeof open==='boolean'?open:!panel.classList.contains('open');
+    panel.classList.toggle('open', isOpen); btn.classList.toggle('active', isOpen);
+    if(isOpen) toggleChat(false);
+  }
+
+  function renderPeople(){
+    const list = $('peopleList');
+    list.innerHTML = window.appData.attendees.map(a=>{
+      const cls = a.bot ? 'bot' : (a.host ? 'host' : 'guest');
+      const statusLabel = {speaking:'Speaking', listening:'Listening', muted:'Muted'}[a.status] || 'Muted';
+      return `<div class="people-item">
+        <div class="people-avatar ${cls}">${a.initials}</div>
+        <div class="people-info">
+          <div class="people-name">${a.name}</div>
+          <div class="people-role">${a.role}</div>
+        </div>
+        <span class="people-status ${a.status}"><span class="dot"></span>${statusLabel}</span>
+      </div>`;
+    }).join('');
+  }
+
+  let inited=false;
+  window.initScreen2 = function(){
+    renderOrbit();
+    renderPeople();
+    // Reset to a fresh session every time — no inherited conversation history
+    elapsed = 0;
+    $('callTimer').textContent = '00:00';
+    S.transcript = [];
+    S._bubbleId=null; S._curRoundId=''; S._curRoundText='';
+    S._origRoundId=''; S._origText='';
+    S._isWelcomePhase = true;
+    S._welcomeBubbleEl = null;
+    const streamEl = $('transcriptStream');
+    if(streamEl) streamEl.innerHTML = '';
+    const mode = currentMode();
+    document.getElementById('modeTag').textContent = mode.label;
+    document.getElementById('chatModeTag').textContent = mode.a + ' ⇄ ' + mode.b;
+    document.getElementById('speakerLang').textContent = mode.langs[0].toUpperCase();
+    if(window.lucide) lucide.createIcons();
+
+    if(!inited){
+      timerId = setInterval(tickTimer,1000);
+      document.getElementById('micBtn').addEventListener('click', function(){
+        const on = this.classList.toggle('active');
+        document.getElementById('micLabel').textContent = on?'Mute':'Unmute';
+        this.querySelector('.tb-ico').innerHTML = `<i data-lucide="${on?'mic':'mic-off'}" style="width:20px;height:20px"></i>`;
+        document.getElementById('hostChipMic').innerHTML = `<i data-lucide="${on?'mic':'mic-off'}" style="width:11px;height:11px"></i>`;
+        if(S.trtcClient) { try{ S.trtcClient.updateLocalAudio({mute: !on}); }catch(e){} }
+        if(window.lucide) lucide.createIcons();
+      });
+      document.getElementById('chatBtn').addEventListener('click', ()=>toggleChat());
+      document.getElementById('chatCloseBtn').addEventListener('click', ()=>toggleChat(false));
+      document.getElementById('peopleBtn').addEventListener('click', ()=>togglePeople());
+      document.getElementById('peopleCloseBtn').addEventListener('click', ()=>togglePeople(false));
+      document.getElementById('endBtn').addEventListener('click', endSession);
+      inited=true;
+    }
+    // Collapse panels by default
+    toggleChat(false);
+    togglePeople(false);
+    startRealSession().catch(e=>{
+      console.error('startRealSession failed:', e);
+      setAgentState('state-idle','Connection Failed');
+      $('connState').textContent = 'Connection failed: '+e.message;
+    });
+    setTimeout(()=>toggleChat(true), 400);
+  };
+})();
+// /FILE:screen2.js
+
+// FILE:screen3.js
+(function(){
+  function renderFullTranscript(){
+    const wrap = document.getElementById('fullTranscript');
+    const S = window.TRTC_STATE || {transcript:[]};
+    if(!S.transcript || !S.transcript.length){
+      wrap.innerHTML = '<div class="px-5 py-8 text-center text-muted text-sm">No transcript captured in this session (mic may be off, or the task failed to start — check browser console).</div>';
+      return;
+    }
+    wrap.innerHTML = S.transcript.map(item=>`
+      <div class="tr-row">
+        <div class="tr-time">${item.time}</div>
+        <div class="tr-who">You<span class="role">Host</span></div>
+        <div>
+          <div class="tr-label">Original</div>
+          <div class="tr-text-o">${item.sourceText||''}</div>
+          ${item.translationText ? `<div class="tr-text-t"><span class="tr-label" style="margin:0 6px 0 0">Translation · ${item.targetLangLabel||''}</span>${item.translationText}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  function initBtns(){
+    document.getElementById('copyBtn').addEventListener('click', ()=>{
+      const S = window.TRTC_STATE || {transcript:[]};
+      const txt = (S.transcript||[]).map(x=>`[${x.time}] Original: ${x.sourceText}${x.translationText?(' | Translation: '+x.translationText):''}`).join('\n');
+      try{ navigator.clipboard.writeText(txt); }catch(e){}
+      const lbl = document.getElementById('copyLabel');
+      lbl.textContent='Copied'; setTimeout(()=>lbl.textContent='Copy',1500);
+    });
+    document.getElementById('restartBtn').addEventListener('click', ()=>window.gotoTab('s1'));
+  }
+
+  let inited=false;
+  window.initScreen3 = function(){ renderFullTranscript(); if(!inited){initBtns();inited=true;} if(window.lucide) lucide.createIcons(); };
+})();
+// /FILE:screen3.js
+
+// FILE:main.js
+(function(){
+  const screens=['s1','s2','s3'];
+  window.gotoTab = function(id){
+    screens.forEach(s=>{
+      const el=document.getElementById(s);
+      if(el) el.classList.toggle('hidden', s!==id);
+    });
+    window.scrollTo({top:0,behavior:'smooth'});
+    if(id==='s2') window.initScreen2();
+    if(id==='s3') window.initScreen3();
+  };
+  document.addEventListener('DOMContentLoaded', ()=>{
+    if(window.lucide) lucide.createIcons();
+    window.initScreen1();
+  });
+})();
+// /FILE:main.js
+</script>
+
+</body>
+</html>

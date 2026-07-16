@@ -63,7 +63,9 @@ const SKILL_ALLOWLIST = new Set([
   "trtc-conference",
   "trtc-ai-service",
   "trtc-ai-oral-coach",
+  "trtc-ai-realtime-interpreter",
   "trtc-chat",
+  "trtc-push",
 ]);
 
 function getSkillNames() {
@@ -106,6 +108,96 @@ const MCP_TARGETS = {
 
 const MCP_SERVER_NAME  = "tencent-rtc-skill-tool";
 const MCP_SERVER_ENTRY = "@tencent-rtc/skill-tool@latest";
+
+// Multi-MCP registry. tencent-rtc-skill-tool is always installed via npx.
+// trtc-push-mcp is now public on npm and should be installed automatically with
+// the skill suite. Maintainers can still force a local checkout via
+// TRTC_PUSH_MCP_ENTRY / TIMPUSH_MCP_ENTRY when validating unpublished MCP code.
+const TRTC_PUSH_MCP_NAME = "trtc-push-mcp";
+const TRTC_PUSH_MCP_PACKAGE = process.env.TRTC_PUSH_MCP_PACKAGE || "@tencent-rtc/trtc-push-mcp@1";
+
+function getDefaultPathFallbacks({ platform = process.platform, env = process.env } = {}) {
+  if (platform === "win32") {
+    const systemRoot = env.SystemRoot || env.WINDIR || "C:\\Windows";
+    return [path.win32.join(systemRoot, "System32"), systemRoot];
+  }
+  return ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+}
+
+function buildNodePathEnv({
+  execPath = process.execPath,
+  pathEnv = process.env.PATH || "",
+  platform = process.platform,
+  env = process.env,
+} = {}) {
+  const nodeBin = path.dirname(execPath);
+  const fallback = getDefaultPathFallbacks({ platform, env });
+  const seen = new Set();
+  return [nodeBin, ...pathEnv.split(path.delimiter), ...fallback]
+    .filter(Boolean)
+    .filter((part) => {
+      if (seen.has(part)) return false;
+      seen.add(part);
+      return true;
+    })
+    .join(path.delimiter);
+}
+
+function buildNpxMcpEntry(packageName, { execPath = process.execPath, pathEnv = process.env.PATH || "" } = {}) {
+  return {
+    type: "stdio",
+    command: "npx",
+    args: ["-y", packageName],
+    env: {
+      PATH: buildNodePathEnv({ execPath, pathEnv }),
+    },
+  };
+}
+
+function resolveTrtcPushMcpEntry({
+  env = process.env,
+  execPath = process.execPath,
+  existsSync = fs.existsSync,
+} = {}) {
+  const fromEnv = env.TRTC_PUSH_MCP_ENTRY || env.TIMPUSH_MCP_ENTRY;
+  if (fromEnv && existsSync(fromEnv)) {
+    return {
+      command: "node",
+      args: [path.resolve(fromEnv)],
+      source: "env",
+      env: { TRTC_PUSH_MCP_REPORT_DISABLED: "1" },
+    };
+  }
+  return {
+    ...buildNpxMcpEntry(env.TRTC_PUSH_MCP_PACKAGE || TRTC_PUSH_MCP_PACKAGE, {
+      execPath,
+      pathEnv: env.PATH || "",
+    }),
+    source: "npm",
+  };
+}
+
+function getMcpServersToInstall() {
+  const servers = [
+    {
+      name: MCP_SERVER_NAME,
+      entry: buildNpxMcpEntry(MCP_SERVER_ENTRY),
+    },
+  ];
+  const trtcPushMcp = resolveTrtcPushMcpEntry();
+  const entry = {
+    type: "stdio",
+    command: trtcPushMcp.command,
+    args: trtcPushMcp.args,
+  };
+  if (trtcPushMcp.env) entry.env = trtcPushMcp.env;
+  const note =
+    trtcPushMcp.source === "npm"
+      ? `npm → ${trtcPushMcp.args[1]}`
+      : `local → ${trtcPushMcp.args[0]}`;
+  servers.push({ name: TRTC_PUSH_MCP_NAME, entry, note });
+  return servers;
+}
 
 // Hooks distribution targets per IDE.
 //   claude / codebuddy / codex: hooks/ files copied to <root>/.{ide}/hooks/, and
@@ -251,6 +343,30 @@ function isSymlink(p) {
   catch { return false; }
 }
 
+// Local checkout install (npx from sibling / `node bin/cli.js` inside this repo)
+// should symlink skills so edits under skills/ are live in IDE skill roots.
+// Opt out with TRTC_SKILLS_COPY=1; force on with TRTC_SKILLS_SYMLINK=1.
+function shouldSymlinkSkills(skillsRootAbs, resolvedRoot) {
+  if (process.env.TRTC_SKILLS_COPY === "1") return false;
+  if (process.env.TRTC_SKILLS_SYMLINK === "1") return true;
+  const pkg = path.resolve(PKG_ROOT);
+  const root = path.resolve(resolvedRoot);
+  const skillsRoot = path.resolve(skillsRootAbs);
+  return root === pkg || skillsRoot.startsWith(pkg + path.sep);
+}
+
+function installSkillDir(src, dest, { symlink }) {
+  rmrf(dest);
+  if (symlink) {
+    ensureDir(path.dirname(dest));
+    const rel = path.relative(path.dirname(dest), src);
+    fs.symlinkSync(rel || src, dest, "dir");
+    return "symlink";
+  }
+  copyRecursive(src, dest);
+  return "copy";
+}
+
 // ── project root resolution ───────────────────────────────────────────────────
 // Walk UP from cwd for strong repo-root signals (P1 monorepo manifest,
 // P2 package.json workspaces, P3 .git). Otherwise P4 cwd-local package.json,
@@ -345,7 +461,7 @@ function printHelp() {
     ${c.dim("KB     :")} ${c.gray("alongside the skills root as knowledge-base/")}
     ${c.dim("Hooks  :")} ${c.gray("<projectRoot>/.{ide}/hooks/  +  settings file with hook events wired")}
     ${c.dim("Rules  :")} ${c.gray("CLAUDE.md / AGENTS.md / CODEBUDDY.md (marker-merged)")}
-    ${c.dim("MCP    :")} ${c.gray("tencent-rtc-skill-tool → IDE mcp config (npx @tencent-rtc/skill-tool@latest)")}
+    ${c.dim("MCP    :")} ${c.gray("tencent-rtc-skill-tool + npm trtc-push-mcp (local only with TRTC_PUSH_MCP_ENTRY)")}
 
   ${c.dim("Skills are copied as sibling dirs so relative routing (../trtc-onboarding) keeps working.")}
 `);
@@ -359,6 +475,7 @@ function listSkills() {
     "trtc-ai-service":    "AI customer service scenarios (TRTC Conversational AI)",
     "trtc-ai-oral-coach": "AI oral speaking coach / 口语陪练 (TRTC Conversational AI)",
     "trtc-chat":          "IM / Chat SDK integration",
+    "trtc-push":          "TIMPush offline push integration (via trtc-push-mcp)",
   };
   console.log(`\n  ${c.bold("Skills shipped in this package:")}\n`);
   for (const name of getSkillNames()) {
@@ -469,14 +586,17 @@ function cleanHooksSettings(ideList, resolvedRoot) {
   }
 }
 
-function installSkills(skillsRootAbs) {
+function installSkills(skillsRootAbs, resolvedRoot) {
   ensureDir(skillsRootAbs);
+  const symlink = shouldSymlinkSkills(skillsRootAbs, resolvedRoot);
+  const modes = [];
   for (const name of getSkillNames()) {
     const src = path.join(SKILLS_SRC, name);
-    if (fs.existsSync(src)) {
-      copyRecursive(src, path.join(skillsRootAbs, name));
-    }
+    if (!fs.existsSync(src)) continue;
+    const mode = installSkillDir(src, path.join(skillsRootAbs, name), { symlink });
+    modes.push({ name, mode });
   }
+  return { symlink, modes };
 }
 
 // Copy knowledge-base so that skills can resolve it. Skills use
@@ -719,11 +839,7 @@ function installAiInstructions(ideList, resolvedRoot) {
 
 // ── MCP installation ──────────────────────────────────────────────────────────
 function installMcp(ideList, resolvedRoot) {
-  const serverEntry = {
-    type: "stdio",
-    command: "npx",
-    args: ["-y", MCP_SERVER_ENTRY],
-  };
+  const servers = getMcpServersToInstall();
 
   for (const ide of ideList) {
     const mcpTarget = MCP_TARGETS[ide];
@@ -735,7 +851,9 @@ function installMcp(ideList, resolvedRoot) {
     ensureDir(path.dirname(configPath));
 
     if (mcpTarget.format === "toml") {
-      installMcpToml(configPath, serverEntry);
+      for (const server of servers) {
+        installMcpToml(configPath, server.name, server.entry);
+      }
     } else {
       let config = {};
       if (fs.existsSync(configPath)) {
@@ -745,27 +863,39 @@ function installMcp(ideList, resolvedRoot) {
       if (!config.mcpServers || typeof config.mcpServers !== "object") {
         config.mcpServers = {};
       }
-      config.mcpServers[MCP_SERVER_NAME] = serverEntry;
+      for (const server of servers) {
+        config.mcpServers[server.name] = server.entry;
+      }
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
     }
-    console.log(c.green("    ✓ ") + `${ide} MCP → ${configPath}`);
+    const labels = servers
+      .map(s => s.name + (s.note ? ` (${s.note})` : ""))
+      .join(", ");
+    console.log(c.green("    ✓ ") + `${ide} MCP → ${configPath}` + c.dim(` [${labels}]`));
   }
 }
 
-function installMcpToml(configPath, serverEntry) {
+function installMcpToml(configPath, serverName, serverEntry) {
   let content = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
 
-  const sectionHeader = `[mcp_servers.${MCP_SERVER_NAME}]`;
+  const sectionHeader = `[mcp_servers.${serverName}]`;
   const argsValue = JSON.stringify(serverEntry.args).replace(/,/g, ", ");
-  const newSection = [
+  const lines = [
     sectionHeader,
     `command = "${serverEntry.command}"`,
     `args = ${argsValue}`,
-  ].join("\n") + "\n";
+  ];
+  if (serverEntry.env && typeof serverEntry.env === "object") {
+    for (const [k, v] of Object.entries(serverEntry.env)) {
+      lines.push(`[mcp_servers.${serverName}.env]`);
+      lines.push(`${k} = "${String(v).replace(/"/g, '\\"')}"`);
+    }
+  }
+  const newSection = lines.join("\n") + "\n";
 
-  const escapedName = MCP_SERVER_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedName = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const sectionRegex = new RegExp(
-    `\\[mcp_servers\\.${escapedName}\\]\\n(?:(?!\\[)[^\\n]*\\n)*`,
+    `\\[mcp_servers\\.${escapedName}\\](?:\\.[^\\]\\n]+)?\\n(?:(?!\\[)[^\\n]*\\n)*`,
     "g"
   );
   content = content.replace(sectionRegex, "");
@@ -789,7 +919,7 @@ function installClaudePermissions(ideList, resolvedRoot) {
   if (!settings.permissions || typeof settings.permissions !== "object") settings.permissions = {};
   if (!Array.isArray(settings.permissions.allow)) settings.permissions.allow = [];
 
-  const rules = [`mcp__${MCP_SERVER_NAME}__*`];
+  const rules = [`mcp__${MCP_SERVER_NAME}__*`, `mcp__${TRTC_PUSH_MCP_NAME}__*`];
   const added = rules.filter(r => !settings.permissions.allow.includes(r));
   if (added.length > 0) {
     settings.permissions.allow.push(...added);
@@ -815,9 +945,13 @@ function installCursorPermissions(ideList, resolvedRoot) {
   }
   if (!Array.isArray(perms.mcpAllowlist)) perms.mcpAllowlist = [];
 
-  const rule = `${MCP_SERVER_NAME}:skill_analysis`;
-  if (!perms.mcpAllowlist.includes(rule)) {
-    perms.mcpAllowlist.push(rule);
+  const rules = [
+    `${MCP_SERVER_NAME}:skill_analysis`,
+    `${TRTC_PUSH_MCP_NAME}:*`,
+  ];
+  const added = rules.filter(r => !perms.mcpAllowlist.includes(r));
+  if (added.length > 0) {
+    perms.mcpAllowlist.push(...added);
     fs.writeFileSync(permPath, JSON.stringify(perms, null, 2) + "\n", "utf8");
     console.log(c.green("    ✓ ") + `cursor permissions → ${permPath}`);
   } else {
@@ -923,8 +1057,11 @@ function main() {
       if (wiped > 0) console.log(c.dim(`    ✓ cleaned ${wiped} existing skill ${wiped === 1 ? "entry" : "entries"}`));
     }
 
-    installSkills(skillsRootAbs);
-    for (const name of getSkillNames()) console.log(c.green("    ✓ ") + name + "/");
+    const { modes } = installSkills(skillsRootAbs, resolvedRoot);
+    for (const { name, mode } of modes) {
+      const tag = mode === "symlink" ? c.dim(" (symlink → skills/" + name + ")") : "";
+      console.log(c.green("    ✓ ") + name + "/" + tag);
+    }
 
     const kbDest = copyKnowledgeBase(skillsRootAbs);
     console.log(c.green("    ✓ ") + "knowledge-base/ " + c.dim("→ " + kbDest));
@@ -952,10 +1089,20 @@ function main() {
   console.log(`\n  ${c.bold("Done.")} ${c.dim("Just describe what you want to build in your IDE — the skill activates automatically.")}\n`);
 }
 
-try {
-  main();
-} catch (err) {
-  console.error(c.red(`\n  Error: ${err.message || err}\n`));
-  if (err.stack && process.env.DEBUG) console.error(c.dim(err.stack) + "\n");
-  process.exit(1);
+module.exports = {
+  getDefaultPathFallbacks,
+  buildNodePathEnv,
+  buildNpxMcpEntry,
+  resolveTrtcPushMcpEntry,
+  getMcpServersToInstall,
+};
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (err) {
+    console.error(c.red(`\n  Error: ${err.message || err}\n`));
+    if (err.stack && process.env.DEBUG) console.error(c.dim(err.stack) + "\n");
+    process.exit(1);
+  }
 }

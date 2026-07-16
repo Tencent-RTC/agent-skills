@@ -1,0 +1,2 @@
+node_modules/
+# dist/ 是 Path A 的预构建运行资产，必须提交，不能忽略

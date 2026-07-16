@@ -1,0 +1,72 @@
+# =====================================================================
+# Path A 默认配方 —— AI 会议实时翻译（Vue3 + Atomicx Core 会议室 + 实时翻译叠加层）
+#
+# 本文件由 SKILL.md 的 Path A SOP 解析执行；不是 add-capability.py 的输入。
+# Coding Agent 按顺序逐条执行作为"组装说明清单"，用户不直接运行本文件。
+# =====================================================================
+apiVersion: trtc-ai-realtime-interpreter/v1
+kind: Recipe
+metadata:
+  name: meeting-interpreter-default
+  scenario: meeting-interpreter
+  version: "1.0.0"
+  description: "默认会议实时翻译 Demo（Vue3 Atomicx 会议室 + AI 翻译叠加层 + 房主权限控制 + 静默旁听转写面板）"
+  language: "zh"
+
+# ---------------------------------------------------------------------------
+# 能力组装清单
+# ---------------------------------------------------------------------------
+capabilities:
+  required:
+    - name: conversation-core
+      role: skeleton
+    - name: realtime-translation
+      role: capability
+    - name: meeting-ops
+      role: capability
+  scenario_glue:
+    # 房主权限校验属于场景层专属实现，不属于任何可复用能力包
+    - description: "内存字典房间归属登记 + 主持人 AuthZ 校验"
+      location: "backend/app/server.py"
+
+# ---------------------------------------------------------------------------
+# 部署参数
+# ---------------------------------------------------------------------------
+deploy:
+  backend:
+    entry: "backend/start.sh"
+    port_env: "PORT"
+    default_port: 8020
+    https: true   # TRTC Web SDK 采集麦克风要求安全上下文
+  frontend:
+    dev_command: "npm install && npm run dev"
+    build_command: "npm install && npm run build"
+    dev_port: 5173
+    proxy_target_env: "VITE_BACKEND_TARGET"
+
+# ---------------------------------------------------------------------------
+# 启动后访问入口
+# ---------------------------------------------------------------------------
+routes:
+  - path: "https://localhost:5173"
+    description: "前端开发模式入口（vite dev，代理 /api 到后端）"
+  - path: "https://localhost:8020"
+    description: "后端生产模式入口（托管 ui/dist 构建产物）"
+  - path: "https://localhost:8020/api/v1/health"
+    description: "三把钥匙自检 JSON"
+  - path: "https://localhost:8020/docs"
+    description: "FastAPI Swagger"
+
+post_assembly:
+  health_check:
+    url: "https://localhost:8020/api/v1/health"
+    expect_field: "status"
+    expect_value: "ok"
+
+go_production_guide: |
+  - 房主权限校验：backend/app/server.py 里的 _ROOM_OWNERS 内存字典仅供演示，
+    生产环境请替换为你自己会议系统里真实的房主/管理员判断逻辑。
+  - 房间级会话状态（meeting-ops 内存态）在多实例部署下不共享，如需水平扩展，
+    自行接入 Redis 等外部状态存储替换 fanout.py 的内存字典。
+  - 端口：默认后端 8020 / 前端开发 5173；生产建议前端构建后由后端统一托管。
+  - HTTPS：start.sh 会自动生成自签名证书；生产环境请用真实证书的反向代理替换。

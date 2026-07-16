@@ -1,0 +1,63 @@
+# meeting-ops 能力自描述 manifest
+# 类型：业务能力（可选安装）——多人房间的扇出编排，跟"翻译"这个具体业务无关
+
+name: "meeting-ops"
+version: "1.0.0"
+type: "capability"
+description: "按参会人列表批量起停 conversation-core 会话（扇出编排）+ 房间级会话状态存储。不含任何权限/AuthZ 逻辑——调用方必须自行完成权限校验后再转发请求。"
+
+dependencies:
+  - name: "conversation-core"
+    version: ">=1.0.0,<2.0.0"
+
+# ---------------------------------------------------------------------------
+# 与业务能力的连接方式：不直接 import，而是通过 capability 参数 + 动态加载约定接口
+# ---------------------------------------------------------------------------
+integration_contract:
+  description: >
+    session/start 请求体里的 `capability` 字段指定要扇出哪种业务（默认 "realtime-translation"）。
+    本能力包通过 conversation-core 的 _capability_loader 动态加载
+    capabilities/<capability>/src/service.py 里的 build_lifecycle_config(params) 函数，
+    换取 conversation-core 的 AgentLifecycleConfig。因此 meeting-ops 可以脱离"翻译"
+    这个具体业务单独复用——未来任何"按参会人批量起会话"的场景（如会议纪要 bot）
+    只要实现同样的约定接口，就能直接换用本能力包，无需修改 meeting-ops 代码。
+  required_function: "build_lifecycle_config(params: dict) -> AgentLifecycleConfig"
+
+# ---------------------------------------------------------------------------
+# 对外暴露的 API
+# ---------------------------------------------------------------------------
+endpoints:
+  - method: POST
+    path: /api/v1/meeting/session/start
+    description: "按参会人列表批量起会话（特权操作，无内置权限校验，见安全声明）"
+  - method: POST
+    path: /api/v1/meeting/session/stop
+    description: "批量停止该房间当前所有会话（特权操作，无内置权限校验）"
+  - method: GET
+    path: /api/v1/meeting/session/state
+    description: "查询房间当前扇出状态（只读，无需权限）"
+
+# ---------------------------------------------------------------------------
+# 业务契约：无外部业务系统依赖
+# ---------------------------------------------------------------------------
+business_contract:
+  external_apis: []
+
+# ---------------------------------------------------------------------------
+# 安全声明（务必遵守）
+# ---------------------------------------------------------------------------
+security:
+  authz:
+    enforced_by_this_capability: false
+    note: >
+      本能力包的 session/start、session/stop 是特权操作端点，**不做任何调用者身份/权限校验**。
+      集成方必须在自己的后端完成"调用者是否有权触发批量起会话"的校验后，才转发请求到这里。
+      切勿把这些端点直接暴露给未经身份校验的公网客户端。
+  network:
+    enforce_https: true
+
+acceptance:
+  - "meeting-ops 不 import 任何具体业务能力包（如 realtime-translation），只通过 capability 参数 + 动态加载约定接口连接"
+  - "session/start 对已有活跃扇出会先全部停掉再重开（幂等）"
+  - "不做权限校验；README/manifest 明确声明该职责边界，避免误用为'内置安全'"
+  - "单目标场景（不装本能力包）依然可以正常使用 conversation-core + realtime-translation"

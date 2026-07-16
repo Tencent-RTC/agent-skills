@@ -37,6 +37,7 @@ const TARGETS = [
   { path: "skills/trtc/SKILL.md", type: "frontmatter" },
   { path: "skills/trtc-chat/SKILL.md", type: "frontmatter" },
   { path: "skills/trtc-chat/docs/SKILL.md", type: "frontmatter" },
+  { path: "skills/trtc-push/SKILL.md", type: "frontmatter" },
 ];
 
 // 宽松 semver 校验：x.y.z，允许 -prerelease / +build 后缀。

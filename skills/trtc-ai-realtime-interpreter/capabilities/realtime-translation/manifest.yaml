@@ -1,0 +1,68 @@
+# realtime-translation 能力自描述 manifest
+# 类型：业务能力（可选安装）——「翻译」这件事本身，跟会议/客服/直播场景无关
+
+name: "realtime-translation"
+version: "1.0.0"
+type: "capability"
+description: "语言对驱动的实时翻译逻辑：STT 语种/翻译 system_prompt/TTS 音色选型 + 字幕自定义消息解析。单目标场景可独立使用，多目标扇出场景由 meeting-ops 调用本能力的约定接口。"
+
+dependencies:
+  - name: "conversation-core"
+    version: ">=1.0.0,<2.0.0"
+
+# ---------------------------------------------------------------------------
+# 约定接口（供 meeting-ops 等编排能力动态调用，而非直接依赖）
+# ---------------------------------------------------------------------------
+provides:
+  starter_capability:
+    module: "src/service.py"
+    function: "build_lifecycle_config"
+    description: >
+      入参 {mode, suppress_welcome?, max_idle_time?} -> 返回 conversation-core 的
+      AgentLifecycleConfig。任何"批量起会话"的编排能力（如 meeting-ops）都可以通过
+      _capability_loader 动态加载本模块并调用这个函数，而不需要认识"翻译"这个具体业务。
+
+# ---------------------------------------------------------------------------
+# 配置
+# ---------------------------------------------------------------------------
+config:
+  modes:
+    description: "语言对配置（zh-en / zh-yue / en-yue），定义于 src/modes.py"
+    extensible: true
+
+# ---------------------------------------------------------------------------
+# 对外暴露的 API（单目标场景）
+# ---------------------------------------------------------------------------
+endpoints:
+  - method: GET
+    path: /api/v1/translation/modes
+    description: 列出可用语言对
+  - method: POST
+    path: /api/v1/translation/start
+    description: 给单一目标（主播/客服/任意 user）起一路翻译会话
+  - method: POST
+    path: /api/v1/translation/stop
+    description: 停止该翻译会话
+
+# ---------------------------------------------------------------------------
+# 前端资产（框架无关，供 Path A Vue 封装 / Path B 各技术栈适配器复用）
+# ---------------------------------------------------------------------------
+frontend_assets:
+  - path: "frontend/subtitle-parser.ts"
+    description: "解析 cmd 10000 字幕 / cmd 10001 AI 状态自定义消息，按 sender 归属（bot 集合 vs 真人）拼装双语气泡并归档转写记录。框架无关，不依赖任何 UI 库。"
+
+# ---------------------------------------------------------------------------
+# 业务契约：无外部业务系统依赖（纯逻辑 + 复用 conversation-core 的平台级依赖）
+# ---------------------------------------------------------------------------
+business_contract:
+  external_apis: []
+
+security:
+  log_redaction:
+    enabled: true
+    patterns: ["usersig", "api_key"]
+
+acceptance:
+  - "build_lifecycle_config 是稳定的约定接口，meeting-ops 只依赖这个函数签名，不感知 modes.py 内部实现"
+  - "单目标场景可以只装 conversation-core + realtime-translation，不依赖 meeting-ops"
+  - "字幕解析模块不依赖任何前端框架，可被 Vue/React/纯JS 三种 Path A/B 场景复用"

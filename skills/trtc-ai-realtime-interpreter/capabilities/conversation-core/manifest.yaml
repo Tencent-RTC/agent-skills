@@ -1,0 +1,110 @@
+# conversation-core 能力自描述 manifest
+# 类型：骨架（必装；不含任何行业/场景业务逻辑）
+
+name: "conversation-core"
+version: "1.0.0"
+type: "skeleton"
+description: "通用语音 Agent 骨架：三把钥匙管理、UserSig 签发、单路 Conversational AI 起停/控制，无业务逻辑"
+
+dependencies: []   # 骨架层无依赖
+
+# ---------------------------------------------------------------------------
+# 配置接口
+# ---------------------------------------------------------------------------
+config:
+  credentials:
+    - key: "TENCENT_CLOUD_SECRET_ID"
+      required: true
+      description: "腾讯云 API SecretId（钥匙 1）"
+    - key: "TENCENT_CLOUD_SECRET_KEY"
+      required: true
+      description: "腾讯云 API SecretKey（钥匙 1）"
+    - key: "TENCENT_CLOUD_REGION"
+      required: false
+      default: "ap-guangzhou"
+    - key: "TRTC_SDK_APP_ID"
+      required: true
+      description: "TRTC 应用 SDKAppID（钥匙 2）"
+    - key: "TRTC_SDK_SECRET_KEY"
+      required: true
+      description: "TRTC 应用 SDKSecretKey（钥匙 2）"
+    - key: "TRTC_REGION"
+      required: false
+      default: "intl"
+      description: "intl=国际站"
+    - key: "LLM_API_KEY"
+      required: true
+      description: "外部 LLM 访问密钥（钥匙 3）"
+    - key: "LLM_API_URL"
+      required: false
+      default: "https://api.openai.com/v1/chat/completions"
+    - key: "LLM_MODEL"
+      required: false
+      default: "gpt-4o-mini"
+
+# ---------------------------------------------------------------------------
+# 对外暴露的 API
+# ---------------------------------------------------------------------------
+endpoints:
+  - method: GET
+    path: /api/v1/health
+    description: 三把钥匙实时连通性自检
+  - method: POST
+    path: /api/v1/usersig
+    description: 给任意 user_id 签发 UserSig（供旁听客户端等通用场景使用）
+  - method: POST
+    path: /api/v1/agent/start
+    description: 起一路 Conversational AI 会话（单目标，room_id 由调用方给定）
+  - method: POST
+    path: /api/v1/agent/stop
+    description: 停一路会话
+  - method: POST
+    path: /api/v1/agent/control
+    description: 文本注入 / 打断
+  - method: GET
+    path: /api/v1/sessions
+    description: 内存态会话列表（调试用）
+
+# ---------------------------------------------------------------------------
+# 业务契约：骨架只对接腾讯云 TRTC 控制面 + LLM，均为平台级依赖，不提供 contract-adapt
+# ---------------------------------------------------------------------------
+business_contract:
+  external_apis:
+    - name: llm.chat_completions
+      direction: outbound
+      method: POST
+      path: /v1/chat/completions
+      description: "调用外部 LLM 做文本生成（OpenAI Chat Completions 兼容协议）"
+      auth:
+        type: bearer
+        location: header
+        name: Authorization
+      timeout_ms: 30000
+    - name: trtc.start_ai_conversation
+      direction: outbound
+      method: POST
+      path: "tencentcloudapi.com/?Action=StartAIConversation"
+      description: "腾讯云 TRTC 控制面：启动 AI 会话（平台级协议，不可适配）"
+      timeout_ms: 10000
+
+# ---------------------------------------------------------------------------
+# 安全声明
+# ---------------------------------------------------------------------------
+security:
+  log_redaction:
+    enabled: true
+    patterns: ["secret_id", "secret_key", "api_key", "usersig", "authorization"]
+  credential_storage:
+    source: "env-only"
+    env_file_permission: "0600"
+  network:
+    enforce_https: true
+
+# ---------------------------------------------------------------------------
+# 验收标准
+# ---------------------------------------------------------------------------
+acceptance:
+  - "三把钥匙实时自检，全部通过后 /api/v1/health 返回 status=ok"
+  - "start/stop 不含任何行业 prompt / 语言对，纯协议编排"
+  - "同一 room_id 可被多次调用 start（供 meeting-ops 扇出场景），互不冲突"
+  - "日志脱敏生效，.env 权限 600，无明文密钥落盘/落日志"

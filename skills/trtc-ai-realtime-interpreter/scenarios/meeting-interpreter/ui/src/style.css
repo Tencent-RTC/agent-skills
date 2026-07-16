@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background: #f5f6f7;
+}
+body {
+  font-feature-settings: 'tnum' on, 'ss01' on;
+}
+.font-serif {
+  font-family: 'Source Serif 4', 'Source Han Serif SC', Georgia, serif;
+}
+
+::selection {
+  background: #0f1115;
+  color: #fff;
+}

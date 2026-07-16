@@ -1,0 +1,29 @@
+# trtc-ai-realtime-interpreter trigger word registry
+#
+# Documentation only — routing logic is inlined in SKILL.md frontmatter.
+# Do NOT reference this file as a runtime routing dependency.
+#
+# Purpose: single source of truth for what triggers the interpreter fast-path,
+# so edits happen here and get back-ported to SKILL.md manually.
+
+triggers:
+  include:
+    # Chinese
+    - "实时翻译"
+    - "AI 翻译"
+    - "AI翻译"
+    - "同声传译"
+    - "会议翻译"
+    - "TRTC 翻译"
+    - "TRTC翻译"
+    - "会议实时翻译"
+    - "跨语言会议"
+    - "多语言会议"
+    # English
+    - "real-time interpreter"
+    - "real-time translation"
+    - "AI interpreter"
+    - "TRTC Conversational AI"
+    - "meeting interpreter"
+    - "live translation"
+    - "simultaneous interpretation"

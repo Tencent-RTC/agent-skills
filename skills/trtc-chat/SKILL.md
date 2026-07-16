@@ -4,7 +4,7 @@ description: >
   Internal Chat (IM) integration domain skill — enter ONLY via skills/trtc/SKILL.md
   after product=chat routing. Not a standalone dispatcher entry. Handles Vue 3 Web
   full/direct chat integration (Path A/B/C/D).
-version: 0.1.6
+version: 0.1.8
 ---
 
 # Chat Integration Domain Skill

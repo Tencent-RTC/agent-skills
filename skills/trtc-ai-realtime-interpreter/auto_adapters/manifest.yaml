@@ -1,0 +1,49 @@
+# auto_adapters 索引 manifest（Path B：无 UI，直接接入已有系统）
+#
+# 与 Path A 的关系：Path A（scenarios/meeting-interpreter）交付的是一整套可运行的
+# Vue3 会议室 demo；Path B 不生成任何 UI，只交付「API 契约 + 按目标模式挑选的
+# 集成示例代码」，供集成方把能力接进自己已有的会议室/直播间/App。
+
+version: "1.0.0"
+description: "无 UI 集成资产：REST API 契约 + 前端片段（静默旁听+字幕解析）+ 后端反代示例"
+
+# ---------------------------------------------------------------------------
+# 目标模式（Path B 引导时二选一，决定装哪些能力包）
+# ---------------------------------------------------------------------------
+target_modes:
+  - id: single_target
+    label: "单目标：给一个人（主播/客服/任意角色）配一路实时翻译"
+    capabilities: ["conversation-core", "realtime-translation"]
+    api_prefix: "/api/v1/translation"
+    guide: "integration_templates/single-target-integration.md"
+
+  - id: multi_target_fanout
+    label: "多目标：多人房间场景，谁说话都要翻译（会议/多人直播间）"
+    capabilities: ["conversation-core", "realtime-translation", "meeting-ops"]
+    api_prefix: "/api/v1/meeting"
+    guide: "integration_templates/multi-target-fanout-integration.md"
+    note: "meeting-ops 不做权限校验，务必在你自己的后端先校验调用者权限再转发，见 room-owner-authz-note.md"
+
+# ---------------------------------------------------------------------------
+# 前端资产（框架无关，按需拷贝进集成方项目）
+# ---------------------------------------------------------------------------
+frontend_assets:
+  - source: "../capabilities/conversation-core/frontend/silent-listener.ts"
+    description: "静默旁听 TRTC 客户端封装（进房收自定义消息，不推流/不播音频）"
+  - source: "../capabilities/realtime-translation/frontend/subtitle-parser.ts"
+    description: "字幕/AI状态自定义消息解析（cmd 10000/10001），产出双语气泡+转写记录"
+
+# ---------------------------------------------------------------------------
+# 后端反代模板（按检测到的技术栈渲染，转发到 conversation-core 的 REST API）
+# ---------------------------------------------------------------------------
+adapters:
+  - name: "python-backend"
+    path: "python"
+    tech_stack: ["flask", "fastapi", "django"]
+    description: "Python 后端反代示例：转发到 conversation-core / meeting-ops 的 REST API，并在转发前插入权限校验钩子"
+
+# ---------------------------------------------------------------------------
+# 三级降级兜底
+# ---------------------------------------------------------------------------
+fallback_templates:
+  manual_rest_api: "integration_templates/generic-rest-api.md"

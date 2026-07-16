@@ -3,7 +3,7 @@ name: trtc-chat-docs
 description: >
   Internal Chat IM docs query (Path D) — enter ONLY via skills/trtc/SKILL.md routing.
   Not a standalone dispatcher entry. IM product/SDK/REST/Webhook/TUIKit/billing/errors.
-version: 0.1.6
+version: 0.1.8
 ---
 
 # Chat Docs Query — Path D
