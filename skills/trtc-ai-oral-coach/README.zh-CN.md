@@ -107,7 +107,7 @@ ai-oral-coach/
 │   └── integration_templates/  # L3 降级指南 + KB 规范
 ├── scenarios/speaking-coach/
 │   ├── recipe.yaml          # Path A 默认装配清单
-│   └── ui/                  # 三屏 SPA（coach.html / i18n.js / tokens.css）
+│   └── ui/                  # 三屏 SPA（coach.html / i18n.js）— 自包含，Tailwind CDN
 ├── scripts/
 │   ├── verify-credentials.py
 │   └── add-capability.py

@@ -1,5 +1,5 @@
 ---
-name: trtc-ai-oral-coach-skill
+name: ai-oral-coach-skill
 version: 0.1.0
 description: |
   Build an AI English speaking coach powered by Tencent Cloud TRTC Conversational AI (voice-first).
@@ -183,6 +183,13 @@ LLM_MODEL=yourModelName
 
 **First tell the user** what will be automatically set up: scenario practice / sentence correction / reply suggestions / 4-dimension report (all default adapters + built-in question bank).
 
+**Built-in UX features (shipped in the SPA — the Agent should preserve these when recreating):**
+- **Reply pace switch** (Setup → More settings): `Auto reply` = full-duplex (server auto-detects end of speech via `TurnDetectionMode=0` + user can interrupt via `InterruptMode=0`; for advanced learners); `Think first` = push-to-talk tap-to-speak / tap-when-done flow using `TurnDetectionMode=1`+`InterruptMode=1` and manual `InvokeLLM` (gives beginners time to think). Default `Auto reply`.
+- **Conversation mode switch**: `Coach` = after each turn with a mistake, a dismissible correction **flashcard** pops up (text only, no voice, does not interrupt the conversation); `Buddy` = only the inline ✱ marker next to the bubble. Default `Coach`.
+- **Dark mode**: top-nav moon/sun toggle, persisted in `localStorage` (`coach-theme`), applied before paint to avoid FOUC; first visit follows OS `prefers-color-scheme`.
+- **In practice, the mic button label reflects state**: `Listening`/`Tap to speak` (Auto pace) or `Tap to talk`/`I'm done` (Think-first pace).
+- All UI copy is localized in 5 languages (zh-CN / zh-TW / en / ja / ko) in `i18n.js`. **Language is UI-only — the speaking practice is always English** (STT fixed to `en`, English TTS voices). New UI strings must be added to all 5 language tables.
+
 > UI design standards: **no emoji**, colors via CSS variables, 4px spacing grid, font `Inter/SF Pro`. See `$SKILL_ROOT/references/design-specs.md`.
 
 | Step | Action |
@@ -194,12 +201,14 @@ LLM_MODEL=yourModelName
 | 5 | Health check: `sleep 10 && curl -sS http://localhost:8000/api/v1/health` (if fails, `sleep 25` retry / `tail -80 /tmp/coach-start.log`) |
 | 6 | `status:ok` → output entry points (see below) |
 
+> **Windows note (Agent)**: `start.sh` is bash-only. On Windows PowerShell, do the equivalent natively: `python -m venv .venv`; install with `.venv\Scripts\python.exe -m pip install -r capabilities\conversation-core\requirements.txt`; launch with `$env:WEB_DEMO_DIR="<...>\ai-oral-coach-demo"; $env:PYTHONIOENCODING="utf-8"; .venv\Scripts\python.exe -m uvicorn src.server:app --host 0.0.0.0 --port 8000` (run from `capabilities\conversation-core`). Set `PYTHONIOENCODING=utf-8` — the console is cp1252 and crashes on the scripts' Chinese output otherwise.
+
 ```
 All set! Open in your browser:
   · Oral Coach         http://localhost:8000
   · API Docs (Swagger) http://localhost:8000/docs
   · Health Check       http://localhost:8000/api/v1/health
-Try it: pick a scenario → Start → speak English → see live subtitles + correction cards → End → view 4-dimension report.
+Try it: pick a scenario (optionally set reply pace / conversation mode / dark mode in More settings) → Start → speak English → see live subtitles + correction flashcards → End → view 4-dimension report.
 ```
 
 ### 6.1 After Launch: Output Advanced Config Hints (Passive Mode)

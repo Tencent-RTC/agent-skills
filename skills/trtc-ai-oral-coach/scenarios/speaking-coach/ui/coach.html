@@ -28,6 +28,18 @@ tailwind.config={
 </script>
 </head>
 <body class="bg-bg text-fg font-sans antialiased overflow-x-hidden">
+<script>
+/* Dark mode: 尽早应用保存的偏好，避免刷新时白屏闪烁（FOUC） */
+(function(){
+  try{
+    var saved=localStorage.getItem('coach-theme');
+    if(saved==='dark' || (saved===null && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)){
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    }
+  }catch(e){}
+})();
+</script>
 
 <div class="mx-auto" style="max-width:1440px">
 <div class="px-5 md:px-10 pt-4 pb-16 relative">
@@ -40,7 +52,9 @@ tailwind.config={
       </div>
       <div class="font-semibold tracking-tight">Lumen</div>
     </div>
-    <div></div>
+    <button id="theme-toggle" class="theme-toggle" data-i18n-title="theme.toggle" title="切换深色模式" aria-label="toggle dark mode">
+      <i data-lucide="moon" id="theme-icon" style="width:16px;height:16px"></i>
+    </button>
   </header>
 
   <!-- ============ VIEW: SETUP ============ -->
@@ -140,6 +154,21 @@ tailwind.config={
               </div>
             </div>
             <div class="more-row">
+              <span class="more-label-inline" data-i18n="pref.mode">对话模式</span>
+              <div class="flex-1 min-w-0">
+                <div id="mode-list-seg" class="seg"></div>
+                <p id="mode-desc" class="text-xs text-muted mt-2 leading-relaxed"></p>
+              </div>
+            </div>
+            <div class="more-row">
+              <span class="more-label-inline" data-i18n="pref.pace2">应答节奏</span>
+              <div class="flex-1 min-w-0">
+                <div id="pace-list-seg" class="seg"></div>
+                <p id="pace-desc" class="text-xs text-muted mt-2 leading-relaxed"></p>
+                <p class="pace-hint" data-i18n="pref.paceHint">新手建议选「想好再说」，可以慢慢组织语言；进阶可选「自动应答」，更接近真实对话。</p>
+              </div>
+            </div>
+            <div class="more-row">
               <span class="more-label-inline" data-i18n="pref.lang">界面语言</span>
               <div class="flex-1 min-w-0">
                 <div id="lang-seg" class="lang-seg-list"></div>
@@ -207,6 +236,18 @@ tailwind.config={
         <div class="dock-divider"></div>
         <button id="btn-transcript" class="dock-icon" data-i18n-title="practice.subtitle" title="实时字幕"><i data-lucide="messages-square" style="width:18px;height:18px"></i></button>
         <button id="btn-end" class="dock-icon dock-danger" data-i18n-title="practice.end" title="结束练习"><i data-lucide="square" style="width:16px;height:16px"></i></button>
+      </div>
+
+      <!-- Correction flashcard (Coach mode) — auto pops after a turn with a correction; dismissible -->
+      <div id="flashcard" class="flashcard" aria-live="polite">
+        <div class="flashcard-head">
+          <div class="flashcard-title">
+            <i data-lucide="sparkles" style="width:14px;height:14px"></i>
+            <span data-i18n="practice.fcTitle">口语纠正卡</span>
+          </div>
+          <button id="flashcard-close" class="dock-icon-mini" aria-label="close"><i data-lucide="x" style="width:15px;height:15px"></i></button>
+        </div>
+        <div id="flashcard-body" class="flashcard-body"></div>
       </div>
 
       <!-- Transcript drawer -->
@@ -312,7 +353,7 @@ tailwind.config={
 
 <style>
 /* ===== GLOBAL STYLES ===== */
-html,body{ background:#FAFAFA; }
+html,body{ background:#FAFAFA; transition:background .3s ease; }
 body{ min-height:100vh; }
 body::before{
   content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
@@ -320,6 +361,81 @@ body::before{
               radial-gradient(900px 600px at 10% 110%, rgba(31,41,55,.03), transparent 60%);
 }
 body > div{ position:relative; z-index:1; }
+
+/* ===== Theme toggle button ===== */
+.theme-toggle{
+  width:38px; height:38px; border-radius:999px; display:grid; place-items:center;
+  color:#374151; background:rgba(255,255,255,.6); border:1px solid rgba(15,23,42,.08);
+  cursor:pointer; transition:all .2s ease;
+}
+.theme-toggle:hover{ background:#EEF1F4; color:#0F172A; }
+
+/* ===== DARK MODE ===== */
+/* 用 body.dark 覆盖关键配色。定稿 UI 有大量硬编码 hex + Tailwind 语义色，
+   这里集中在深色下重写背景/文字/玻璃/气泡/坞/抽屉/卡片等主要面，保证对比度可读。 */
+html.dark, body.dark{ background:#0B0F1A; }
+body.dark{ color:#E5E7EB; }
+body.dark::before{
+  background: radial-gradient(700px 500px at 50% -10%, rgba(120,150,180,.10), transparent 60%),
+              radial-gradient(900px 600px at 10% 110%, rgba(120,150,180,.06), transparent 60%);
+}
+body.dark .theme-toggle{ color:#CBD5E1; background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.12); }
+body.dark .theme-toggle:hover{ background:rgba(255,255,255,.12); color:#fff; }
+/* 文字色阶 */
+body.dark .text-fg,body.dark #sd-title,body.dark #report-title{ color:#F1F5F9 !important; }
+body.dark .text-muted{ color:#94A3B8 !important; }
+body.dark .text-subtle{ color:#64748B !important; }
+/* 玻璃面板 */
+body.dark .glass{
+  background:rgba(24,32,48,.62); border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 10px 40px -18px rgba(0,0,0,.5), 0 30px 80px -40px rgba(0,0,0,.6);
+}
+/* 场景左栏 / 分段控件 / 更多设置 */
+body.dark .setup-left{ background:rgba(20,27,42,.55); border-right-color:rgba(255,255,255,.06); }
+body.dark .scene-row .ttl{ color:#E5E7EB; }
+body.dark .scene-row:hover{ background:rgba(255,255,255,.05); }
+body.dark .scene-row .ic{ background:rgba(255,255,255,.08); color:#CBD5E1; }
+body.dark .seg{ background:rgba(255,255,255,.07); }
+body.dark .seg button{ color:#94A3B8; }
+body.dark .seg button:hover{ color:#F1F5F9; }
+body.dark .setup-right::before{ background:radial-gradient(circle at 85% -5%, rgba(24,32,48,0) 30%, rgba(24,32,48,.85) 60%); }
+body.dark .more-overlay{ background:rgba(17,23,38,.97); border-top-color:rgba(255,255,255,.08); }
+body.dark .more-overlay-head,body.dark .more-overlay-foot{ border-color:rgba(255,255,255,.08); }
+body.dark .more-trigger{ border-color:rgba(255,255,255,.1); color:#CBD5E1; }
+body.dark .more-trigger:hover{ background:rgba(255,255,255,.06); color:#fff; }
+body.dark .role-row{ background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.08); }
+body.dark .role-name{ color:#E5E7EB; }
+body.dark .phrase-card{ background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.08); }
+body.dark .phrase-en{ color:#E5E7EB; }
+body.dark .pace-hint{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.08); color:#94A3B8; }
+/* 坞 / 抽屉 / 气泡 / 提示 / flashcard / 卡片 */
+body.dark .dock{ background:rgba(24,32,48,.75); border-color:rgba(255,255,255,.1); }
+body.dark .dock-icon{ color:#CBD5E1; }
+body.dark .dock-icon:hover{ background:rgba(255,255,255,.08); color:#fff; }
+body.dark .dock-icon-mini{ color:#94A3B8; }
+body.dark .dock-icon-mini:hover{ background:rgba(255,255,255,.08); color:#fff; }
+body.dark .drawer{ background:rgba(17,23,38,.9); border-left-color:rgba(255,255,255,.08); }
+body.dark .drawer-head,body.dark .drawer-foot{ border-color:rgba(255,255,255,.08); }
+body.dark .bubble.ai{ background:rgba(255,255,255,.06); color:#E5E7EB; border-color:rgba(255,255,255,.08); }
+body.dark .hint-trigger,body.dark .idle-hint-bar{ background:rgba(24,32,48,.8); border-color:rgba(255,255,255,.12); color:#CBD5E1; }
+body.dark .hint-pop,body.dark .idle-hint-pop{ background:rgba(24,32,48,.95); border-color:rgba(255,255,255,.1); }
+body.dark .hint-pop li,body.dark #idle-list li{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.06); color:#E5E7EB; }
+body.dark .flashcard{ background:rgba(24,32,48,.94); border-color:rgba(255,255,255,.1); }
+body.dark .fc-fix{ color:#F1F5F9; }
+body.dark .flashcard-title{ color:#E5E7EB; }
+body.dark .suggest-box{ background:rgba(224,74,74,.10); border-color:rgba(224,74,74,.4); color:#E5E7EB; }
+body.dark .stat-card{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.08); }
+body.dark .transcript-row{ background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.06); }
+body.dark .transcript-row .tx{ color:#E5E7EB; }
+body.dark .skill-tab{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.1); color:#94A3B8; }
+body.dark .skill-content p{ color:#E5E7EB; }
+body.dark .lang-pill{ background:rgba(255,255,255,.07); color:#94A3B8; }
+body.dark .lang-pill:hover{ background:rgba(255,255,255,.12); color:#F1F5F9; }
+body.dark .ctrl-ghost{ color:#CBD5E1; border-color:rgba(255,255,255,.12); }
+body.dark .ctrl-ghost:hover{ color:#fff; border-color:rgba(255,255,255,.25); }
+body.dark .loading-overlay{ background:rgba(11,15,26,.82); }
+body.dark .loading-card{ background:rgba(24,32,48,.9); border-color:rgba(255,255,255,.08); }
+body.dark .loading-card p{ color:#E5E7EB; }
 
 .glass{
   background: rgba(255,255,255,.62); backdrop-filter: blur(22px) saturate(140%);
@@ -494,6 +610,12 @@ body > div{ position:relative; z-index:1; }
 .more-row{ display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap; }
 .more-row .more-label-inline{ padding-top:6px; }
 .more-label-inline{ font-size:11px; font-weight:600; color:#6B7280; min-width:44px; }
+/* 应答节奏的新手/进阶引导提示 */
+.pace-hint{
+  margin-top:8px; padding:8px 11px; border-radius:10px;
+  background:rgba(31,41,55,.045); border:1px solid rgba(15,23,42,.06);
+  font-size:11.5px; line-height:1.5; color:#6B7280;
+}
 
 /* ===== Practice stage ===== */
 .practice-stage{ position:relative; min-height:580px; padding:12px 0 100px; }
@@ -571,6 +693,31 @@ body > div{ position:relative; z-index:1; }
 .dock-icon-mini:hover{ background:#EEF1F4; color:#0F172A; }
 .dock-danger{ color:#E04A4A; }
 .dock-danger:hover{ background:#FFF1F0; color:#E04A4A; }
+
+/* ===== Correction flashcard (Coach mode) ===== */
+.flashcard{
+  position:fixed; right:24px; bottom:92px; width:min(360px, calc(100vw - 40px)); z-index:45;
+  background:rgba(255,255,255,.92); backdrop-filter:blur(22px) saturate(150%);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid rgba(15,23,42,.08); border-radius:18px;
+  box-shadow:0 4px 6px -1px rgba(15,23,42,.06), 0 24px 60px -18px rgba(15,23,42,.24);
+  opacity:0; transform:translateY(14px) scale(.98); pointer-events:none;
+  transition:opacity .28s ease, transform .34s cubic-bezier(.2,.7,.3,1);
+}
+.flashcard.open{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+.flashcard-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 14px 8px; border-bottom:1px solid rgba(15,23,42,.06);
+}
+.flashcard-title{ display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:700; color:#1F2937; }
+.flashcard-body{ padding:12px 16px 16px; max-height:min(46vh, 340px); overflow-y:auto; }
+.fc-sec{ margin-bottom:12px; }
+.fc-sec:last-child{ margin-bottom:0; }
+.fc-label{ font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:#9CA3AF; margin-bottom:5px; }
+.fc-fix{ font-size:14px; font-weight:600; color:#1F2937; line-height:1.5; }
+.fc-better{ font-size:14px; font-weight:600; color:#D97706; line-height:1.5; }
+.fc-why{ font-size:12px; color:#6B7280; line-height:1.5; margin-top:4px; }
+@media (max-width:640px){ .flashcard{ right:12px; left:12px; width:auto; bottom:86px; } }
 
 .talk-btn{
   position:relative; display:inline-flex; align-items:center; gap:8px;
@@ -765,6 +912,10 @@ window.appData = {
   styles:[
     {id:'friend',icon:'smile'},{id:'listen',icon:'ear'},{id:'local',icon:'map-pin'}
   ],
+  // 对话模式：coach=弹可关闭纠正卡片；buddy=仅气泡旁卡片、对话最流畅
+  modes:[{id:'coach'},{id:'buddy'}],
+  // 应答节奏：auto=自动应答（全双工，进阶）；manual=想好再说（push-to-talk，新手）
+  paces:[{id:'auto'},{id:'manual'}],
   difficulties:[{id:'a'},{id:'b'},{id:'c'}],
   voices:[{id:'f'},{id:'m'}],
   _skillLabels:{fluency:'流利度',vocab:'词汇',grammar:'语法',completeness:'完整度'},
@@ -793,6 +944,10 @@ const TRTC_STATE = {
   // _recordingSession: 每次开麦时生成新 ID，ASR 消息只有 session 匹配时才接受，
   // 防止关麦后迟到的 echo/回显被写入下一轮 userTurnText
   userTurnText:'', _recordingSession:0,
+  // 全双工：去重同一句用户发言的重复 end=true；对话模式（coach 走 flashcard / buddy 仅卡片）
+  _lastFinalizedTurn:'', coachMode:'coach',
+  // 对话节奏：auto=自动接管（全双工，进阶）；manual=想好再说（push-to-talk，新手）
+  pace:'auto',
   transcript:[], startedAt:null, endedAt:null, messageSeq:0,
   idleTimer:null, idleHintTimer:null,
   hintsRequestId:0, hintsState:'idle', hintsCurrent:[], hintsOpen:false,
@@ -824,7 +979,7 @@ async function callAPI(action, body={}){
   const D = window.appData;
   const state = window.cfgState = {
     sceneId:'travel',
-    styleId:'friend', diffId:'b', voiceId:'f'
+    styleId:'friend', diffId:'b', voiceId:'f', modeId:'coach', paceId:'auto'
   };
   function $(id){ return document.getElementById(id); }
   function curScene(){ return D.scenes.find(s=>s.id===state.sceneId); }
@@ -924,6 +1079,28 @@ async function callAPI(action, body={}){
       });
       $('style-desc').textContent = D.styles.find(x=>x.id===state.styleId).desc || '';
     }
+    const modeSeg = $('mode-list-seg');
+    if(modeSeg){
+      modeSeg.innerHTML = D.modes.map(x=>`
+        <button class="${x.id===state.modeId?'active':''}" data-id="${x.id}">${x.label}</button>`).join('');
+      modeSeg.querySelectorAll('button').forEach(el=>{
+        el.addEventListener('click',()=>{ state.modeId=el.dataset.id; renderPref(); });
+      });
+      const curMode = D.modes.find(x=>x.id===state.modeId);
+      const md = $('mode-desc');
+      if(md) md.textContent = (curMode && curMode.desc) || '';
+    }
+    const paceSeg = $('pace-list-seg');
+    if(paceSeg && Array.isArray(D.paces)){
+      paceSeg.innerHTML = D.paces.map(x=>`
+        <button class="${x.id===state.paceId?'active':''}" data-id="${x.id}">${x.label||x.id}</button>`).join('');
+      paceSeg.querySelectorAll('button').forEach(el=>{
+        el.addEventListener('click',()=>{ state.paceId=el.dataset.id; renderPref(); });
+      });
+      const curPace = D.paces.find(x=>x.id===state.paceId);
+      const pd = $('pace-desc');
+      if(pd) pd.textContent = (curPace && curPace.desc) || '';
+    }
   }
 
   function updateHint(){
@@ -964,7 +1141,9 @@ async function callAPI(action, body={}){
       scene:s, ai:s.aiRoles[0], me:s.meRoles[0],
       style:D.styles.find(x=>x.id===state.styleId),
       diff:D.difficulties.find(x=>x.id===state.diffId),
-      voice:D.voices.find(x=>x.id===state.voiceId)
+      voice:D.voices.find(x=>x.id===state.voiceId),
+      mode:D.modes.find(x=>x.id===state.modeId),
+      pace:D.paces.find(x=>x.id===state.paceId)
     };
   };
 })();
@@ -1068,6 +1247,38 @@ async function callAPI(action, body={}){
     if(bubble) bubble.textContent=cleanSubtitleText(newText);
   }
 
+  // Coach 模式：弹出可关闭的纠正 flashcard（独立于气泡，纯视觉、不打断对话）。
+  //   langData 为当前 UI 语言的纠正数据：{correction:{fix,why}, better:{native,why}}。
+  //   连续多轮命中时后一张覆盖前一张（只保留最新一条纠正）。
+  function showFlashcard(langData){
+    if(!langData) return;
+    const card=$('flashcard');
+    const body=$('flashcard-body');
+    if(!card||!body) return;
+    let html='';
+    if(langData.correction){
+      html+=`<div class="fc-sec"><div class="fc-label">${escapeHtml(D._suggestTitle||'建议优化')}</div>`;
+      html+=`<div class="fc-fix">${escapeHtml(langData.correction.fix||'')}</div>`;
+      if(langData.correction.why) html+=`<div class="fc-why">${escapeHtml(langData.correction.why)}</div>`;
+      html+=`</div>`;
+    }
+    if(langData.better){
+      html+=`<div class="fc-sec"><div class="fc-label">${escapeHtml(T('practice.fcBetter'))}</div>`;
+      html+=`<div class="fc-better">${escapeHtml(langData.better.native||'')}</div>`;
+      if(langData.better.why) html+=`<div class="fc-why">${escapeHtml(langData.better.why)}</div>`;
+      html+=`</div>`;
+    }
+    if(!html) return;
+    body.innerHTML=html;
+    card.classList.add('open');
+    if(window.lucide) lucide.createIcons();
+  }
+  function hideFlashcard(){
+    const card=$('flashcard');
+    if(card) card.classList.remove('open');
+  }
+  window._hideFlashcard=hideFlashcard;
+
   // Quick correct
   async function requestQuickCorrect(msgId, sentence){
     const col=document.getElementById(msgId);
@@ -1097,6 +1308,11 @@ async function callAPI(action, body={}){
       const hasCorr=langData.correction||langData.better;
       if(!hasCorr){ gm.classList.remove('pending'); gm.classList.add('ok'); gm.textContent='✓'; return; }
       gm.classList.remove('pending'); gm.classList.add('warn'); gm.textContent='*';
+      // Coach 模式：命中错误时自动弹出可关闭的 flashcard 浮层（纯视觉，不发声、不打断对话）。
+      //   Buddy 模式跳过弹层，只保留下方气泡旁的 ✱ 卡片。
+      if(S.coachMode==='coach'){
+        showFlashcard(langData);
+      }
       // build suggest box
       const bubble=col.querySelector('.bubble.me');
       const w=bubble?bubble.getBoundingClientRect().width:200;
@@ -1269,6 +1485,10 @@ async function callAPI(action, body={}){
     const diffId=ctx?ctx.diff.id:'b';
     const styleId=ctx?ctx.style.id:'friend';
     const voiceId=ctx?ctx.voice.id:'f';
+    // 对话模式：coach=弹 flashcard / buddy=仅卡片；供 requestQuickCorrect 判断
+    S.coachMode=(ctx&&ctx.mode)?ctx.mode.id:'coach';
+    // 对话节奏：auto=全双工自动接管 / manual=想好再说（push-to-talk）
+    S.pace=(ctx&&ctx.pace)?ctx.pace.id:'auto';
 
     // 1. join — get TRTC credentials
     let uid='user_'+Date.now()%100000+'_'+Math.random().toString(36).slice(2,6);
@@ -1375,14 +1595,18 @@ async function callAPI(action, body={}){
               setOrbState('speaking');
               $('status-text').textContent=T('practice.statusAI');
             }else{
-              // 用户 ASR：只在麦克风打开（录音中）时接受，防止关麦后迟到的 echo 污染下一轮
-              if(S.micMuted || S._recordingSession === 0) return;  // 已关麦，丢弃
+              // 用户 ASR：只在麦克风打开（未静音）时接受，防止静音后迟到的 echo 污染下一轮
+              if(S.micMuted || S._recordingSession === 0) return;  // 已静音，丢弃
               // 先剥掉误识别混入的中/日/韩文噪声（如"嗯"/"对呀"），再修剪空白——
-              // 保证显示气泡和最终发给 InvokeLLM 的文本都是干净的纯英文
+              // 保证显示气泡和最终纠正/上下文用的文本都是干净的纯英文
               const userText=stripNonEnglishNoise(rawText);
               if(!userText) return;
               // SubtitleMode=0 全量累积，覆盖式更新
               S.userTurnText=userText;
+              // 仅 auto（全双工）节奏：服务端 ASR 判定一句说完（end=true）即自动结算本轮，
+              //   服务端会自动触发 AI 回复（TurnDetectionMode=0），前端无需再发 InvokeLLM。
+              //   manual（想好再说）节奏下不在此结算——由用户点"说完了"按钮触发，给足思考时间。
+              if(isEnd && S.pace!=='manual'){ finalizeUserTurn(userText, false); }
             }
           }else if(data.type===10001){
             const stateCode=payload&&payload.state;
@@ -1455,7 +1679,7 @@ async function callAPI(action, body={}){
         userSig:S.userSig,
       });
 
-      // 4. Mic — start then immediately mute (push-to-talk mode)
+      // 4. Mic — start；全双工下进房即保持收音（不静音），服务端自动断句接管
       try{
         await client.startLocalAudio();
         // AI 降噪：mode=1 远场消除模式，专为 ASR 场景设计，
@@ -1469,8 +1693,19 @@ async function callAPI(action, body={}){
           });
           console.log('[TRTC] AI Denoiser enabled (mode=1, ASR-optimized)');
         }catch(e){ console.warn('[TRTC] AI Denoiser plugin failed:',e); }
-        S.micMuted=true;
-        try{ client.updateLocalAudio({mute:true}); }catch(e){}
+        if(S.pace==='manual'){
+          // 想好再说（push-to-talk，新手）：进房先静音，等用户点按钮开麦说话、再点"说完了"才触发 AI。
+          S.micMuted=true;
+          S._recordingSession=0;
+          S.userTurnText='';
+          try{ client.updateLocalAudio({mute:true}); }catch(e){}
+        }else{
+          // 自动接管（全双工，进阶）：进房即开麦，服务端 VAD 自动断句；用户可随时开口，AI 自动接话/被打断。
+          S.micMuted=false;
+          S._recordingSession++;
+          S.userTurnText='';
+          try{ client.updateLocalAudio({mute:false}); }catch(e){}
+        }
       }catch(e){
         console.error('mic failed:',e);
         try{ await client.exitRoom(); }catch(e){}
@@ -1498,10 +1733,19 @@ async function callAPI(action, body={}){
           UserSig:S.robotUserSig,
           TargetUserId:S.userId,
         },
-        UserConfig:{
+        // 对话节奏决定断句/打断策略：
+        //   auto（全双工，进阶）：TurnDetectionMode=0 服务端自动断句触发 AI + InterruptMode=0 可被开口打断
+        //   manual（想好再说，新手）：TurnDetectionMode=1 前端手动触发（说完点按钮才发 InvokeLLM）+ InterruptMode=1 不自动打断
+        UserConfig: (S.pace==='manual') ? {
           TurnDetectionMode:1,
           InterruptMode:1,
           InterruptSpeechDuration:600,
+          VadLevel:2,
+          VadSilenceTime:1200,
+        } : {
+          TurnDetectionMode:0,
+          InterruptMode:0,
+          InterruptSpeechDuration:600,   // 用户持续说话 600ms 才判定为打断，避免语气词误打断
           VadLevel:2,            // 2=推荐值；3过于激进，会把英文单词当噪声抑制掉
           VadSilenceTime:1200,
         },
@@ -1550,62 +1794,97 @@ async function callAPI(action, body={}){
     }
   }
 
+  // 结算一轮用户发言。
+  //   auto 节奏：由服务端 ASR end=true 调用（triggerAI=false，服务端已自动触发 AI）。
+  //   manual 节奏：由用户点"说完了"按钮调用（triggerAI=true，前端手动发 InvokeLLM 触发 AI）。
+  //   去重：同一句可能重复到达，用 _lastFinalizedTurn 记录上一句原文，相同则跳过。
+  //   顺序：渲染用户气泡 → 记入 transcript → 后台预生成 report → 触发 quick-correct（Coach 弹 flashcard）。
+  function finalizeUserTurn(userText, triggerAI){
+    const clean=(userText||'').trim();
+    if(!clean) return;
+    if(S._lastFinalizedTurn===clean) return;  // 同一句重复，跳过
+    S._lastFinalizedTurn=clean;
+    S.userTurnText='';
+    addBubble('user',clean,fmt(sec));  // addBubble 内部已对 user 角色调 requestQuickCorrect
+    S.transcript.push({role:'user',text:clean,ts:fmt(sec)});
+    maybePreloadReport();
+    $('caption').textContent=T('practice.captionThinking');
+    // 用户说完 → 与 AI 回复并行发起 hints 预取（基于最新上下文）
+    scheduleHintsAfterUserTurn();
+    // manual 节奏：手动触发 AI 回复（auto 节奏由服务端自动触发，无需再发）
+    if(triggerAI && S.taskId){
+      callAPI('InvokeLLM',{TaskId:S.taskId, Text:clean}).catch(e=>{ console.error('InvokeLLM failed:',e); });
+    }
+  }
+
   function toggleMic(){
     if(S.callState!=='active'){
       startTRTC();
       return;
     }
+    if(S.pace==='manual'){ toggleMicManual(); }
+    else { toggleMicAuto(); }
+    if(window.lucide) lucide.createIcons();
+  }
+
+  // auto（全双工）：mic-btn 是「取消静音 / 静音」开关，不手动触发 AI（服务端自动接管）。
+  function toggleMicAuto(){
     if(S.micMuted){
       S.micMuted=false;
-      S._recordingSession++;           // 新录音轮次：递增 session ID，使旧的 ASR echo 失效
-      S.userTurnText='';               // 清空上一轮残留
+      S._recordingSession++;           // 新收音轮次：递增 session ID，使旧的 ASR echo 失效
+      S.userTurnText='';
       if(S.trtcClient) try{ S.trtcClient.updateLocalAudio({mute:false}); }catch(e){}
-      $('mic-btn').classList.add('recording');
-      $('mic-icon').setAttribute('data-lucide','mic-off');
-      $('mic-label').textContent=T('practice.stop');
-      setOrbState('recording');
+      $('mic-btn').classList.remove('recording');
+      $('mic-icon').setAttribute('data-lucide','mic');
+      $('mic-label').textContent=T('practice.micOn');
+      if(!S.aiTurnBubbleId) setOrbState('recording');
       $('status-text').textContent=T('practice.statusRecording');
-      // 开麦：只停计时器，保留 hint UI（用户可能需要看着 hint 内容说话）
-      if(S.idleHintTimer){clearTimeout(S.idleHintTimer);S.idleHintTimer=null;}
-      if(S.hintsTimer){clearTimeout(S.hintsTimer);S.hintsTimer=null;}
     }else{
       S.micMuted=true;
-      const closedSession=S._recordingSession;  // 记录本轮 session
-      S._recordingSession=0;                    // 置 0：此后迟到的 ASR 全部丢弃
+      S._recordingSession=0;           // 置 0：此后迟到的 ASR 全部丢弃
+      S.userTurnText='';
+      if(S.trtcClient) try{ S.trtcClient.updateLocalAudio({mute:true}); }catch(e){}
+      $('mic-btn').classList.add('recording');   // 复用红色态表示"已静音"
+      $('mic-icon').setAttribute('data-lucide','mic-off');
+      $('mic-label').textContent=T('practice.micMuted');
+      if(!S.aiTurnBubbleId){ setOrbState('idle'); $('status-text').textContent=T('practice.statusTurn'); }
+    }
+  }
+
+  // manual（想好再说，新手）：push-to-talk 循环。
+  //   静音态 → 点一下开始说话（开麦、收 ASR，AI 不会自动插话，给足思考时间）；
+  //   收音态 → 点一下"说完了"→ 结算本轮 + 手动触发 AI 回复。
+  function toggleMicManual(){
+    if(S.micMuted){
+      // 开始说话
+      S.micMuted=false;
+      S._recordingSession++;
+      S.userTurnText='';
+      if(S.trtcClient) try{ S.trtcClient.updateLocalAudio({mute:false}); }catch(e){}
+      $('mic-btn').classList.add('recording');
+      $('mic-icon').setAttribute('data-lucide','mic');
+      $('mic-label').textContent=T('practice.imDone');   // 下一步动作提示：说完了
+      setOrbState('recording');
+      $('status-text').textContent=T('practice.statusRecording');
+      hideHintsUI();
+    }else{
+      // 说完了：关麦，结算本轮并触发 AI
+      S.micMuted=true;
+      S._recordingSession=0;
       if(S.trtcClient) try{ S.trtcClient.updateLocalAudio({mute:true}); }catch(e){}
       $('mic-btn').classList.remove('recording');
       $('mic-icon').setAttribute('data-lucide','mic');
-      $('mic-label').textContent=T('practice.start');
-      // push-to-talk: 用户说完话，触发 AI 回复
-      if(S.taskId){
-        const userText=S.userTurnText || '';
-        S.userTurnText='';
-        // 没有采集到 ASR 文本，不触发 AI 回复（用户没说话）
-        if(!userText){
-          setOrbState('idle');
-          $('status-text').textContent=T('practice.statusTurn');
-        }else{
-          // 显示用户气泡
-          addBubble('user',userText,fmt(sec));
-          S.transcript.push({role:'user',text:userText,ts:fmt(sec)});
-          // ★ 后台预生成 Report：用户轮次足够时（≥6 轮）就开始在后台调 GenerateReport，
-          //   等用户点"结束对话"时大概率已经预生成完，秒进 Report 屏。
-          maybePreloadReport();
-          // 显示思考状态
-          $('caption').textContent=T('practice.captionThinking');
-          // 触发 AI 回复（hints 将在 AI 说完后用 finalText 发起，避免错位）
-          callAPI('InvokeLLM',{TaskId:S.taskId, Text:userText}).catch(e=>{
-            console.error('InvokeLLM failed:',e);
-          });
-        }
-      }else{
+      $('mic-label').textContent=T('practice.tapToTalk');
+      const userText=(S.userTurnText||'').trim();
+      S.userTurnText='';
+      if(!userText){
+        // 没采集到内容（没说话）：回到待命，不触发 AI
         setOrbState('idle');
         $('status-text').textContent=T('practice.statusTurn');
+        return;
       }
-      // 结束录音后隐藏 hint UI（消失）
-      hideHintsUI();
+      finalizeUserTurn(userText, true);   // triggerAI=true：手动发 InvokeLLM
     }
-    if(window.lucide) lucide.createIcons();
   }
 
   // ===== Report 后台预生成 =====
@@ -1645,6 +1924,7 @@ async function callAPI(action, body={}){
   async function endSession(){
     window._practiceSec=stopTimer();  // save duration for report access
     clearHints();
+    hideFlashcard();
     S.endedAt=Date.now();
     S.callState='idle';
 
@@ -1735,16 +2015,21 @@ async function callAPI(action, body={}){
     S.aiRoundText={}; S.aiRoundMsgId={}; S.aiRoundLast={};
     S.aiTurnText=''; S.aiTurnBubbleId=null;
     S._curRoundId=''; S._curRoundText='';
-    S.userTurnText=''; S._recordingSession=0;
+    S.userTurnText=''; S._recordingSession=0; S._lastFinalizedTurn='';
     S.inlineCorrections={}; S.reports=null; S._preloadedReport=null; S._preloadTurns=0; S._preloading=false; S.taskId=null; S.callState='idle'; S.micMuted=true;
+    // 提前读取对话节奏，决定麦克风按钮初始文案
+    var _ctx0=window.getPracticeContext&&window.getPracticeContext();
+    S.pace=(_ctx0&&_ctx0.pace)?_ctx0.pace.id:'auto';
     $('timer').textContent='00:00';
     $('chat-stream').innerHTML='';
     $('mic-btn').classList.remove('recording');
     $('mic-icon').setAttribute('data-lucide','mic');
-    $('mic-label').textContent=T('practice.start');
+    // auto：进房自动开麦，按钮显示"收音中"；manual：进房静音，按钮显示"点击说话"
+    $('mic-label').textContent = (S.pace==='manual') ? T('practice.tapToTalk') : T('practice.micOn');
     $('drawer').classList.remove('open');
     $('caption').textContent=T('practice.captionReady');
     clearHints();
+    hideFlashcard();
     setOrbState('idle');
     $('status-text').textContent=T('practice.statusIdle');
     startTimer();
@@ -1943,6 +2228,30 @@ document.addEventListener('DOMContentLoaded',()=>{
     drawer.classList.remove('open');
     window.updateHintsForDrawer&&window.updateHintsForDrawer();
   });
+
+  // Correction flashcard close button (Coach mode)
+  const fcClose=document.getElementById('flashcard-close');
+  if(fcClose) fcClose.addEventListener('click',()=>{ window._hideFlashcard&&window._hideFlashcard(); });
+
+  // Dark mode toggle
+  (function(){
+    const btn=document.getElementById('theme-toggle');
+    const icon=document.getElementById('theme-icon');
+    if(!btn) return;
+    function syncIcon(){
+      const dark=document.body.classList.contains('dark');
+      if(icon) icon.setAttribute('data-lucide', dark?'sun':'moon');
+      if(window.lucide) lucide.createIcons();
+    }
+    syncIcon();
+    btn.addEventListener('click',()=>{
+      const dark=!document.body.classList.contains('dark');
+      document.documentElement.classList.toggle('dark', dark);
+      document.body.classList.toggle('dark', dark);
+      try{ localStorage.setItem('coach-theme', dark?'dark':'light'); }catch(e){}
+      syncIcon();
+    });
+  })();
 
   // Language switcher (inside More Settings panel)
   (function(){
