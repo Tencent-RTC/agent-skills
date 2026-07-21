@@ -46,11 +46,9 @@ ui_overlay:
   source_root: "scenarios/speaking-coach/ui"
   target: "$PROJECT_ROOT/ai-oral-coach-demo"
   files:
-    - coach.html            # 三屏 SPA 模板（自包含脚本，未引用 app.js，故不再随包）
-    - i18n.js               # 多语言：zh/en 主推，ja/ko 已内置（F4）
-    - tokens.css            # 设计变量（design-specs.md 落地）
+    - coach.html            # 三屏 SPA（自包含：内联 CSS/JS + Tailwind CDN，无外链样式/图片）
+    - i18n.js               # 多语言 UI 文案：zh-CN/zh-TW/en/ja/ko
     - practice-scenarios.json   # Setup 屏本地兜底题库；正常路径走后端 GetSceneCandidates
-    - avatars/              # friend / listener / local
 
 # ---------------------------------------------------------------------------
 # 内置数据（mock；Path B 用户自带）

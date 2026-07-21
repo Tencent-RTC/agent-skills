@@ -7,7 +7,7 @@
 | 规则 | 要求 |
 |------|------|
 | **禁用 Emoji** | 渲染层完全禁止 emoji，用 SVG 图标 + 文字替代 |
-| **颜色系统** | 全部走 CSS 变量，**禁止硬编码 hex**；变量文件：`tokens.css` |
+| **颜色系统** | 集中管理配色：定稿 `coach.html` 通过内联 `tailwind.config` 定义语义色（`bg/surface/fg/muted/primary/...`）+ 深色模式 `body.dark` 覆盖，统一在一处维护，避免散落硬编码 |
 | **字体** | `SF Pro / Inter / Helvetica Neue`，中文 fallback 系统默认；正文 ≥ 14px，标题 ≥ 20px |
 | **间距** | 统一 4px 基础网格（`--space-xs:4px` / `--space-sm:8px` / `--space-md:16px` / `--space-lg:24px` / `--space-xl:32px`）；模块间距用 `--space-lg` 起步 |
 | **圆角** | 卡片 `--radius-md:12px`；按钮 `--radius-sm:8px`；气泡 `--radius-md` |

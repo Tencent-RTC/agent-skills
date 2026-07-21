@@ -108,7 +108,7 @@ ai-oral-coach/
 │   └── integration_templates/  # L3 fallback + KB spec
 ├── scenarios/speaking-coach/
 │   ├── recipe.yaml          # Path A default assembly
-│   └── ui/                  # 3-screen SPA (coach.html/i18n.js/tokens.css)
+│   └── ui/                  # 3-screen SPA (coach.html/i18n.js) — self-contained, Tailwind CDN
 ├── scripts/
 │   ├── verify-credentials.py
 │   └── add-capability.py
