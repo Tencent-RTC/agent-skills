@@ -1,4 +1,4 @@
-# TRTC AI Integration
+# TRTC Agent Skills
 
 **English** | [简体中文](README.zh.md)
 
@@ -41,56 +41,49 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 
 The skill activates automatically when you mention TRTC or describe a real-time communication use case. No slash commands needed — just ask in plain language.
 
-| | What it does | Example prompts |
-|---|---|---|
-| **Get started** | Guides you through demo setup, SDK integration, troubleshooting, or adding a new feature — step by step | • *"I want to add video conferencing to my web app"*<br>• *"I'm getting error 6206 when users join"*<br>• *"Conference is working — now I want to add screen sharing"* |
-| **Scenario walkthrough** | Loads a complete feature scenario and walks you through each capability in order, with code and checkpoints | • *"Walk me through building a complete conference room from scratch"*<br>• *"Guide me through a 1-on-1 video consultation end to end"* |
-| **AI customer service** | Builds a voice-first AI customer service agent from scratch — or wires the AI backend into your existing app. Covers credential setup, capability assembly (knowledge base, human handoff, tool calling, session summary), and launch | • *"Build me an AI customer service agent with TRTC"*<br>• *"I want to integrate AI customer service into my existing Node.js backend"*<br>• *"Help me set up TRTC Conversational AI"* |
-| **AI oral coach** | Builds a voice-first AI oral English speaking coach from scratch — or wires the AI backend into your existing app. Covers credential setup, capability assembly (scenario roleplay, quick correction, reply suggestions, ability report, custom learning KB), and launch | • *"Build me an AI oral English coach with TRTC"*<br>• *"I want to integrate AI speaking practice into my existing app"*<br>• *"Help me set up an AI speaking coach"* |
-| **AI realtime interpreter** | Builds a real-time AI meeting interpreter from scratch — or wires the translation backend into your existing app. Covers credential setup, capability assembly (realtime translation, meeting fanout, bilingual subtitles, transcription), and launch | • *"Build me a real-time AI interpreter with TRTC"*<br>• *"I want to add real-time translation to my meeting room"*<br>• *"Help me set up AI meeting interpretation"* |
-| **Push offline push** | Guides TIMPush integration and troubleshooting via `trtc-push-mcp`, covering Android, iOS, Flutter, UniApp, vendor channel setup, APNs, badge, server API, and console limit checks | • *"Help me integrate TIMPush"*<br>• *"Integrate Tencent Cloud offline push"*<br>• *"registerPush failed with 800006"* |
-| **Docs & lookup** | Answers factual questions from the official knowledge base with cited sources | • *"What does error code 6206 mean?"*<br>• *"How much does Conference cost per participant minute?"*<br>• *"What's the max number of participants?"* |
-
-The skill saves your progress in the project. If you close the tool and come back later, it picks up where you left off.
+- **Explore and evaluate** — Run a demo or understand the available integration options before changing your project.
+- **Integrate capabilities** — Inspect your project, clarify requirements, and guide implementation step by step.
+- **Extend existing integrations** — Add supported capabilities to an existing project without restarting the integration.
+- **Troubleshoot issues** — Diagnose integration errors, configuration problems, and unexpected runtime behavior.
+- **Find official information** — Answer questions about APIs, error codes, limits, pricing, and recommended practices with links to official documentation.
+- **Resume previous work** — Save integration progress locally so you can continue in a later session.
 
 ---
 
 ## Supported Products & Platforms
 
-| Product | Description | Availability |
-|---------|-------------|--------------|
-| **Conference** | Video conferencing — multi-party meetings, screen sharing, in-meeting chat | Web ✅ (Vue3 / React) |
-| **Conversational AI** | Voice-first AI agents — AI customer service (voice agent, knowledge base, human handoff, tool calling, session summary), AI oral coach (scenario roleplay, quick correction, reply suggestions, ability report), and AI realtime interpreter (multilingual meeting interpretation, bilingual subtitles, fanout orchestration) | Web ✅ |
-| **Live** | Interactive live streaming — anchor/audience roles, co-hosting, barrage, gifts, beauty filters | Coming soon |
-| **Chat** | Instant messaging — messages, conversations, groups, user profiles | Web ✅ |
-| **Push** | Tencent Cloud IM Push / offline push — Android/iOS push setup, vendor channels, APNs, Flutter, UniApp, badge, server API, and troubleshooting | Android / iOS / Flutter / UniApp ✅ |
-| **Call** | Audio/video calling — 1-on-1 and group calls | Coming soon |
-| **RTC Engine** | Low-level real-time audio/video engine — room management, publishing, subscribing | Coming soon |
+| Product or scenario | Supported platforms | Guided capabilities | Sample prompts |
+|---|---|---|---|
+| **Conference** | Web (Vue 3 / React) | Demo setup, conference integration, screen sharing, in-meeting chat, feature extension, and troubleshooting | • *"Add video conferencing to my React app"*<br>• *"Walk me through building a complete conference room from scratch"*<br>• *"Conference is working — now add screen sharing"*<br>• *"Users get error 6206 when joining the room"* |
+| **Conversational AI: Customer Service** | Web | Voice agent setup, knowledge base, human handoff, tool calling, session summary, and integration with an existing backend | • *"Build an AI customer service agent with TRTC"*<br>• *"Add voice-based AI support to my website"*<br>• *"Connect AI customer service to my existing Node.js backend"*<br>• *"Add knowledge-base answers and human handoff to my voice agent"* |
+| **Conversational AI: Oral Coach** | Web | Scenario roleplay, quick correction, reply suggestions, ability reports, custom learning knowledge, and integration with an existing app | • *"Build an AI oral English coach with TRTC"*<br>• *"Add AI speaking practice to my existing app"* |
+| **Conversational AI: Realtime Interpreter** | Web | Realtime translation, multilingual meeting interpretation, bilingual subtitles, transcription, and meeting fanout | • *"Build a real-time AI interpreter with TRTC"*<br>• *"Add real-time translation to my meeting room"*<br>• *"Show bilingual subtitles during a video conference"* |
+| **Chat** | Web | Chat integration, messages, conversations, groups, user profiles, feature extension, and troubleshooting | • *"Add instant messaging to my web app"*<br>• *"Build a customer support chat page"*<br>• *"Add group chat to my existing React app"*<br>• *"Help me troubleshoot messages that are not being received"* |
+| **Push** | Android / iOS / Flutter / UniApp | TIMPush setup, vendor channels, APNs, badges, server APIs, console limit checks, and troubleshooting | • *"Help me integrate TIMPush into my Android app"*<br>• *"Set up APNs offline push for my iOS app"*<br>• *"Configure vendor push channels for my Flutter app"*<br>• *"Add unread-message badges to push notifications"*<br>• *"`registerPush` failed with error 800006"* |
+| **Call** | Flutter | Demo experience, 1-on-1 and group audio/video calls, embedding calls into an existing app, feature extension, and troubleshooting | • *"Let me try the Flutter calling demo"*<br>• *"Add 1-on-1 video calling to my Flutter app"*<br>• *"Add group audio calls to my existing app"*<br>• *"The incoming call screen is not appearing"* |
+| **Live** | Coming soon | Guided integration is not yet available | • *"Show me the documentation for audience co-hosting"*<br>• *"What live-streaming capabilities does Tencent RTC provide?"* |
+| **RTC Engine** | Coming soon | Guided integration is not yet available | • *"How do I publish and subscribe to audio and video tracks?"*<br>• *"Show me the RTC Engine room-management documentation"* |
 
+Documentation lookup, error-code search, pricing questions, and product-limit questions are available across all Tencent RTC products, even when guided integration is not yet supported.
 
 ---
 
 ## How It Works
 
-When you describe what you want to build, the skill:
+1. **Understand your request**  
+   The skill identifies your goal, such as evaluating a demo, starting an integration, adding a capability, troubleshooting an issue, or looking up documentation.
 
-- **Identifies** your TRTC product and platform — from your message or by reading your project files
-- **Asks** what you're trying to do: run a demo, start a new integration, troubleshoot an error, or add a feature to an existing project
-- For integrations, **picks a scenario** from the knowledge base that matches your use case and shows you the full capability list — what will be implemented, in what order — before starting
-- **Walks through** one capability at a time with production-ready code, waits for you to confirm it works, then moves to the next step
-- **Saves your progress** to `.trtc-session.yaml` in your project root (auto-added to `.gitignore`) so you can resume in a later session without re-explaining what you're building
+2. **Inspect your project**  
+   When project access is available, it detects the framework, platform, existing dependencies, and current integration state.
 
-Step-by-step integration is currently available for **Conference on Web (Vue3 / React official RoomKit path)**, **Chat on Web**, **Conversational AI (AI customer service, AI oral coach & AI realtime interpreter)**, and **TIMPush offline push (Android / iOS / Flutter / UniApp)**. The Conversational AI skills use their own capability model — they do not follow the slice/scenario pipeline; instead they guide you through credential setup, capability selection, and launch in a self-contained flow. TIMPush uses the `trtc-push-mcp` workflow engine to drive platform detection, vendor setup, credential-safe local configuration, and troubleshooting. Docs lookup, error code search, and pricing questions work across all TRTC products.
+3. **Confirm the integration path**  
+   It asks only the questions needed to determine the appropriate product, platform, and implementation approach.
 
-### Knowledge base: Slices and Scenarios
+4. **Guide and verify the implementation**  
+   For supported workflows, it explains the planned changes, implements one capability at a time, and verifies the result before continuing.
 
-The skill's knowledge is structured into two layers:
-
-**Slices** are atomic capability units — one slice per feature, such as `conference/join-room`, `conference/screen-share`, or `live/barrage`. Each slice has two levels:
-- A product-level overview (concepts, best practices, troubleshooting, cross-platform notes)
-- A platform-level implementation (exact APIs, code samples, platform-specific gotchas)
-
-**Scenarios** are curated sequences of slices for complete use cases. For example, the *Conference Room* scenario chains multiple slices — from authentication and room creation through screen sharing, member management, and cleanup — in the order a real implementation would follow.
+5. **Save progress**  
+   Integration progress is stored in `.trtc-session.yaml`, allowing a later session to continue from the previous checkpoint.
 
 ---
 

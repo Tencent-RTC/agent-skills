@@ -21,6 +21,7 @@
  *   npx @tencent-rtc/trtc-agent-skills add --ide cursor
  *   npx @tencent-rtc/trtc-agent-skills add --ide all
  *   npx @tencent-rtc/trtc-agent-skills add --clean
+ *   npx @tencent-rtc/trtc-agent-skills add --prompt-reporting off
  *   npx @tencent-rtc/trtc-agent-skills add --no-report
  *   npx @tencent-rtc/trtc-agent-skills add --list
  *   npx @tencent-rtc/trtc-agent-skills add --help
@@ -29,6 +30,8 @@
 const fs   = require("fs");
 const os   = require("os");
 const path = require("path");
+const crypto = require("crypto");
+const { spawn, spawnSync } = require("child_process");
 
 // ── tiny color helpers (no deps) ───────────────────────────────────────────────
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -60,6 +63,7 @@ const HOOKS_SRC   = path.join(PKG_ROOT, "hooks");
 const SKILL_ALLOWLIST = new Set([
   "trtc",
   "trtc-docs",
+  "trtc-call",
   "trtc-conference",
   "trtc-ai-service",
   "trtc-ai-oral-coach",
@@ -217,6 +221,7 @@ const HOOKS_TARGETS = {
     rootPlaceholder: "${CLAUDE_PLUGIN_ROOT}",
     rootRewrite:     ".claude",
     fallbackPlaceholder: "${CODEBUDDY_PLUGIN_ROOT}",
+    hostIde:           "claude",
   },
   codebuddy: {
     hooksDir:        ".codebuddy/hooks",
@@ -225,6 +230,7 @@ const HOOKS_TARGETS = {
     rootPlaceholder: "${CODEBUDDY_PLUGIN_ROOT}",
     rootRewrite:     ".codebuddy",
     fallbackPlaceholder: "${CLAUDE_PLUGIN_ROOT}",
+    hostIde:           "codebuddy",
   },
   codex: {
     hooksDir:        ".codex/hooks",
@@ -242,6 +248,7 @@ const HOOKS_TARGETS = {
     rootRewrite:     ".codex",
     fallbackPlaceholder: "${CODEBUDDY_PLUGIN_ROOT}",
     strictSchema:    true,
+    hostIde:         "codex",
   },
   cursor: {
     // Namespace under .cursor/hooks/trtc-agent-skills/ so we never collide
@@ -266,6 +273,7 @@ const HOOKS_TARGETS = {
 // hints are kept here so --clean can remove hook entries left by older installs.
 const OWNED_COMMAND_HINTS = [
   "/skills/trtc/hooks/",
+  "/skills/trtc/tools/reporting.py",
   "/skills/trtc/room-builder/guardrails/",
   "/skills/trtc-topic/guardrails/",   // legacy — removed from allowlist, kept for cleanup
   "/skills/trtc-apply/guardrails/",   // legacy — removed from allowlist, kept for cleanup
@@ -330,6 +338,79 @@ function copyRecursive(src, dest) {
     ensureDir(path.dirname(dest));
     fs.copyFileSync(src, dest);
   }
+}
+
+function reportingStatePath(projectRoot, { env = process.env, home = os.homedir() } = {}) {
+  const resolved = path.resolve(projectRoot);
+  let canonical = resolved;
+  try { canonical = fs.realpathSync.native(resolved); }
+  catch { /* Match Python Path.resolve() as closely as possible for existing projects. */ }
+  const key = crypto.createHash("sha256").update(canonical).digest("hex").slice(0, 16);
+  const base = env.XDG_CACHE_HOME || path.join(home, ".cache");
+  return path.join(base, "trtc-traces", `reporting-state-${key}.json`);
+}
+
+function readReportingPreferenceValue(projectRoot, key, options = {}) {
+  let current = path.resolve(projectRoot);
+  try { current = fs.realpathSync.native(current); }
+  catch { /* Use the resolved path for projects not created yet. */ }
+
+  while (true) {
+    const statePath = reportingStatePath(current, options);
+    try {
+      const data = JSON.parse(fs.readFileSync(statePath, "utf8"));
+      if (typeof data[key] === "boolean") return data[key];
+    } catch { /* Check the parent project preference. */ }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return undefined;
+}
+
+function readPromptReportingPreference(projectRoot, options = {}) {
+  return readReportingPreferenceValue(
+    projectRoot,
+    "prompt_reporting_enabled",
+    options
+  );
+}
+
+function readAllReportingDisabled(projectRoot, options = {}) {
+  return readReportingPreferenceValue(
+    projectRoot,
+    "all_reporting_disabled",
+    options
+  ) === true;
+}
+
+function writePromptReportingPreference(projectRoot, enabled, options = {}) {
+  const { allReportingDisabled, ...pathOptions } = options;
+  const statePath = reportingStatePath(projectRoot, pathOptions);
+  let data = {};
+  try {
+    data = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+  } catch {
+    data = {};
+  }
+  data.prompt_reporting_enabled = Boolean(enabled);
+  data.prompt_reporting_updated_at = Math.floor(Date.now() / 1000);
+  if (typeof allReportingDisabled === "boolean") {
+    data.all_reporting_disabled = allReportingDisabled;
+    data.all_reporting_updated_at = Math.floor(Date.now() / 1000);
+  }
+  ensureDir(path.dirname(statePath));
+  fs.writeFileSync(statePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+  return statePath;
+}
+
+function parsePromptReportingValue(raw) {
+  if (raw === undefined) return undefined;
+  const value = String(raw).trim().toLowerCase();
+  if (["on", "true", "yes", "1", "enabled"].includes(value)) return true;
+  if (["off", "false", "no", "0", "disabled"].includes(value)) return false;
+  throw new Error("--prompt-reporting must be on or off");
 }
 
 function rmrf(target) {
@@ -474,6 +555,7 @@ function listSkills() {
     "trtc-conference":    "Video conference / multi-person room scenarios",
     "trtc-ai-service":    "AI customer service scenarios (TRTC Conversational AI)",
     "trtc-ai-oral-coach": "AI oral speaking coach / 口语陪练 (TRTC Conversational AI)",
+    "trtc-ai-realtime-interpreter": "AI real-time interpretation / 实时翻译",
     "trtc-chat":          "IM / Chat SDK integration",
     "trtc-push":          "TIMPush offline push integration (via trtc-push-mcp)",
   };
@@ -610,6 +692,198 @@ function copyKnowledgeBase(skillsRootAbs) {
   return dest;
 }
 
+// ── isolated Python dependency bootstrap ─────────────────────────────────────
+// The Skill's routing/session tools use PyYAML. Do not modify the user's global
+// Python environment: install one cached copy and copy the importable `yaml/`
+// package into each project-local trtc skill root.
+function resolvePythonCommand({ env = process.env, runner = spawnSync } = {}) {
+  const candidates = [env.TRTC_PYTHON, "python3", "python"].filter(Boolean);
+  for (const command of candidates) {
+    const probe = runner(command, ["--version"], {
+      encoding: "utf8",
+      env,
+      timeout: 5_000,
+    });
+    if (!probe.error && probe.status === 0) return command;
+  }
+  return null;
+}
+
+function pythonCanImportYaml(command, cwd, {
+  env = process.env,
+  runner = spawnSync,
+} = {}) {
+  const probe = runner(command, ["-c", "import yaml"], {
+    cwd,
+    encoding: "utf8",
+    env,
+    timeout: 10_000,
+  });
+  return !probe.error && probe.status === 0;
+}
+
+function pythonDependencyCache(command, {
+  env = process.env,
+  home = os.homedir(),
+  runner = spawnSync,
+} = {}) {
+  const version = runner(
+    command,
+    ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+    { encoding: "utf8", env, timeout: 5_000 }
+  );
+  const tag =
+    !version.error && version.status === 0
+      ? version.stdout.trim()
+      : "unknown";
+  const base = env.XDG_CACHE_HOME || path.join(home, ".cache");
+  return path.join(base, "trtc-agent-skills", "python", tag, "site-packages");
+}
+
+function ensurePythonDependencies(ideList, resolvedRoot, options = {}) {
+  const env = options.env || process.env;
+  const runner = options.runner || spawnSync;
+  const command = resolvePythonCommand({ env, runner });
+  if (!command) {
+    return {
+      ok: false,
+      reason: "python-not-found",
+      message: "python3 was not found; TRTC routing tools cannot run",
+    };
+  }
+
+  const roots = [...new Set(
+    ideList.map(ide =>
+      path.join(resolvedRoot, IDE_TARGETS[ide].skillsRoot, "trtc")
+    )
+  )];
+  let missing = roots.filter(root =>
+    !pythonCanImportYaml(command, root, { env, runner })
+  );
+  if (missing.length === 0) {
+    return { ok: true, command, source: "python-environment", roots };
+  }
+
+  const cache = pythonDependencyCache(command, {
+    env,
+    home: options.home || os.homedir(),
+    runner,
+  });
+  const cachedYaml = path.join(cache, "yaml");
+  if (!fs.existsSync(cachedYaml)) {
+    ensureDir(cache);
+    const install = runner(
+      command,
+      [
+        "-m", "pip", "install",
+        "--disable-pip-version-check",
+        "--no-input",
+        "--target", cache,
+        "PyYAML>=6,<7",
+      ],
+      {
+        encoding: "utf8",
+        env,
+        timeout: 120_000,
+      }
+    );
+    if (install.error || install.status !== 0 || !fs.existsSync(cachedYaml)) {
+      return {
+        ok: false,
+        command,
+        reason: "pyyaml-install-failed",
+        message:
+          (install.stderr || install.stdout || install.error?.message || "")
+            .trim()
+            .split("\n")
+            .slice(-1)[0] || "PyYAML installation failed",
+      };
+    }
+  }
+
+  const skippedSymlinks = [];
+  for (const root of missing) {
+    if (isSymlink(root)) {
+      skippedSymlinks.push(root);
+      continue;
+    }
+    const destination = path.join(root, "yaml");
+    rmrf(destination);
+    copyRecursive(cachedYaml, destination);
+  }
+  missing = roots.filter(root =>
+    !pythonCanImportYaml(command, root, { env, runner })
+  );
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      command,
+      reason: skippedSymlinks.length
+        ? "local-symlink-needs-pyyaml"
+        : "pyyaml-verification-failed",
+      message: `PyYAML is still unavailable in ${missing.length} installed skill root(s)`,
+      roots,
+    };
+  }
+  return { ok: true, command, source: "isolated-cache", cache, roots };
+}
+
+function verifyInstalledRuntime(runtime, options = {}) {
+  if (!runtime.ok || !runtime.command || !runtime.roots?.length) return runtime;
+  const env = options.env || process.env;
+  const runner = options.runner || spawnSync;
+  const root = runtime.roots[0];
+  const routeProbe = runner(
+    runtime.command,
+    [
+      "-c",
+      "import yaml; from tools import query_classifier, search, session",
+    ],
+    { cwd: root, encoding: "utf8", env, timeout: 10_000 }
+  );
+  if (routeProbe.error || routeProbe.status !== 0) {
+    return {
+      ...runtime,
+      ok: false,
+      reason: "routing-runtime-check-failed",
+      message: (routeProbe.stderr || routeProbe.stdout || "routing imports failed")
+        .trim()
+        .split("\n")
+        .slice(-1)[0],
+    };
+  }
+
+  const reporter = path.join(root, "tools", "reporting.py");
+  const reportProbe = runner(
+    runtime.command,
+    [
+      reporter,
+      "send",
+      "--product", "unknown",
+      "--framework", "unknown",
+      "--version", PKG_VERSION,
+      "--sdkappid", "0",
+      "--sessionid", "sess_install_check",
+      "--method", "event",
+      "--text", "install-health-check",
+      "--dry-run",
+    ],
+    { cwd: root, encoding: "utf8", env, timeout: 10_000 }
+  );
+  if (reportProbe.error || reportProbe.status !== 0) {
+    return {
+      ...runtime,
+      ok: false,
+      reason: "reporting-runtime-check-failed",
+      message: (reportProbe.stderr || reportProbe.stdout || "reporting check failed")
+        .trim()
+        .split("\n")
+        .slice(-1)[0],
+    };
+  }
+  return { ...runtime, verified: true };
+}
+
 // ── hooks installation ────────────────────────────────────────────────────────
 // In plugin mode the IDE expands ${CLAUDE_PLUGIN_ROOT} / ${CODEBUDDY_PLUGIN_ROOT}
 // to the plugin install root. In npx mode there's no plugin root, so we
@@ -624,6 +898,9 @@ function copyKnowledgeBase(skillsRootAbs) {
 // isolation — see HOOKS_TARGETS.cursor.hooksDir.
 function rewriteHooksContent(content, target, ideAbsRoot, hooksDestAbs) {
   let out = content;
+  if (target.hostIde) {
+    out = out.split("__TRTC_HOST_IDE__").join(target.hostIde);
+  }
   if (target.rootPlaceholder) {
     // Replace BOTH ${CLAUDE_PLUGIN_ROOT} and ${CODEBUDDY_PLUGIN_ROOT} — the
     // bundled hooks.json uses `${CLAUDE_PLUGIN_ROOT:-${CODEBUDDY_PLUGIN_ROOT}}`
@@ -637,7 +914,10 @@ function rewriteHooksContent(content, target, ideAbsRoot, hooksDestAbs) {
     // The bash `${VAR:-${OTHER}}` form leaves a literal `:-` between two
     // already-replaced absolute paths, which won't run. Simplify it: collapse
     // `<abs>:-<abs>` (or any duplicated form) back to a single `<abs>`.
-    out = out.replace(/\$\{[A-Z_]+:-[^}]+\}/g, ideAbsRoot);
+    out = out.replace(
+      /\$\{(?:CLAUDE_PLUGIN_ROOT|CODEBUDDY_PLUGIN_ROOT):-[^}]+\}/g,
+      ideAbsRoot
+    );
   }
   if (target.cursorAdapterPlaceholder) {
     // hooks-cursor.json hardcodes $HOME/.cursor/plugins/local/trtc-agent-skills/hooks/cursor-adapter.py
@@ -886,21 +1166,47 @@ function installMcpToml(configPath, serverName, serverEntry) {
     `args = ${argsValue}`,
   ];
   if (serverEntry.env && typeof serverEntry.env === "object") {
-    for (const [k, v] of Object.entries(serverEntry.env)) {
+    const envEntries = Object.entries(serverEntry.env);
+    if (envEntries.length > 0) {
       lines.push(`[mcp_servers.${serverName}.env]`);
+    }
+    for (const [k, v] of envEntries) {
       lines.push(`${k} = "${String(v).replace(/"/g, '\\"')}"`);
     }
   }
   const newSection = lines.join("\n") + "\n";
 
-  const escapedName = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const sectionRegex = new RegExp(
-    `\\[mcp_servers\\.${escapedName}\\](?:\\.[^\\]\\n]+)?\\n(?:(?!\\[)[^\\n]*\\n)*`,
-    "g"
+  content = removeTomlTableHierarchy(content, `mcp_servers.${serverName}`);
+  // Clean up tables left by the old duplicate-repair fallback. They are not
+  // MCP configuration and only make subsequent installs harder to audit.
+  content = removeTomlTableHierarchy(
+    content,
+    `trtc_agent_skills_installer_duplicate.${serverName}`
   );
-  content = content.replace(sectionRegex, "");
   content = content.trimEnd() + (content.trim() ? "\n\n" : "") + newSection;
   fs.writeFileSync(configPath, content, "utf8");
+}
+
+function removeTomlTableHierarchy(content, tablePath) {
+  const lines = String(content).split(/\r?\n/);
+  const output = [];
+  let removing = false;
+
+  for (const line of lines) {
+    const tableMatch = line.match(/^\s*\[([^\[\]]+)\]\s*(?:#.*)?$/);
+    const arrayTableMatch = line.match(/^\s*\[\[([^\[\]]+)\]\]\s*(?:#.*)?$/);
+    if (tableMatch) {
+      const currentPath = tableMatch[1].trim();
+      removing =
+        currentPath === tablePath ||
+        currentPath.startsWith(`${tablePath}.`);
+    } else if (arrayTableMatch) {
+      removing = false;
+    }
+    if (!removing) output.push(line);
+  }
+
+  return output.join("\n");
 }
 
 // ── Claude Code permissions (pre-approve MCP tool) ──────────────────────────────
@@ -972,11 +1278,11 @@ function reportInstall({ ide }) {
   });
 
   try {
-    const { spawn } = require("child_process");
     const child = spawn("npx", ["-y", MCP_SERVER_ENTRY, "--report", payload], {
       detached: true,
       stdio: "ignore",
     });
+    child.on("error", () => {});
     child.unref();
   } catch {
     // never block install on reporting failure
@@ -984,7 +1290,7 @@ function reportInstall({ ide }) {
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const cmd  = args[0];
 
@@ -996,10 +1302,16 @@ function main() {
     process.exit(1);
   }
   if (args.includes("--list")) { listSkills(); process.exit(0); }
+  if (args.includes("--help") || args.includes("-h")) { printHelp(); process.exit(0); }
 
   const isClean   = args.includes("--clean");
   const noReport  = args.includes("--no-report");
+  const promptReportingFlagPresent = args.includes("--prompt-reporting");
+  const promptReportingArg = getFlag(args, "--prompt-reporting");
   const ideArg    = getFlag(args, "--ide");
+  if (promptReportingFlagPresent && promptReportingArg === undefined) {
+    throw new Error("--prompt-reporting requires on or off");
+  }
 
   // Resolve ideList:
   //   no --ide        → auto-detect installed IDEs (default behavior)
@@ -1028,6 +1340,26 @@ function main() {
   let resolvedRoot = findProjectRoot(cwd);
   // Guard: don't install into the package's own tree during local dev.
   if (resolvedRoot === PKG_ROOT) resolvedRoot = cwd;
+
+  let promptReportingEnabled;
+  let allReportingDisabled;
+  const savedAllReportingDisabled = readAllReportingDisabled(resolvedRoot);
+  if (noReport) {
+    promptReportingEnabled = false;
+    allReportingDisabled = true;
+  } else if (promptReportingArg !== undefined) {
+    promptReportingEnabled = parsePromptReportingValue(promptReportingArg);
+    allReportingDisabled = promptReportingEnabled ? false : savedAllReportingDisabled;
+  } else {
+    const existingPreference = readPromptReportingPreference(resolvedRoot);
+    if (typeof existingPreference === "boolean") {
+      promptReportingEnabled = existingPreference;
+      allReportingDisabled = savedAllReportingDisabled;
+    } else {
+      promptReportingEnabled = true;
+      allReportingDisabled = false;
+    }
+  }
 
   console.log(`\n  ${c.bold(c.cyan("@tencent-rtc/trtc-agent-skills"))}  ${c.dim("v" + PKG_VERSION)}`);
   console.log(`  ${c.gray("cwd         : " + cwd)}`);
@@ -1067,25 +1399,58 @@ function main() {
     console.log(c.green("    ✓ ") + "knowledge-base/ " + c.dim("→ " + kbDest));
   }
 
-  // 2. Install hooks (per-IDE: copy hooks dir + merge settings.json hooks).
+  // 2. Ensure the installed Python tools can load their isolated YAML runtime.
+  console.log(`\n  ${c.bold("PYTHON RUNTIME")}`);
+  const pythonRuntime = verifyInstalledRuntime(
+    ensurePythonDependencies(ideList, resolvedRoot)
+  );
+  if (pythonRuntime.ok) {
+    const source =
+      pythonRuntime.source === "isolated-cache"
+        ? "isolated PyYAML"
+        : "existing PyYAML";
+    console.log(
+      c.green("    ✓ ") +
+      `${pythonRuntime.command} + ${source}` +
+      c.dim(pythonRuntime.verified ? " (routing + reporting verified)" : "")
+    );
+  } else {
+    console.log(
+      c.yellow("    ⚠ ") +
+      `Python runtime incomplete: ${pythonRuntime.message || pythonRuntime.reason}`
+    );
+    console.log(
+      c.dim("      Skill responses continue, but Python-backed routing may degrade.")
+    );
+  }
+
+  // 3. Install hooks (per-IDE: copy hooks dir + merge settings.json hooks).
   console.log(`\n  ${c.bold("HOOKS")}`);
   installHooks(ideList, resolvedRoot);
 
-  // 3. Install AI instruction files (CLAUDE.md / AGENTS.md / CODEBUDDY.md /
+  // 4. Install AI instruction files (CLAUDE.md / AGENTS.md / CODEBUDDY.md /
   //    .cursor/rules/ui-mode.mdc) so the agent has routing rules.
   console.log(`\n  ${c.bold("AI INSTRUCTIONS")}`);
   installAiInstructions(ideList, resolvedRoot);
 
-  // 4. Install MCP server config + permissions.
+  // 5. Install MCP server config + permissions.
   console.log(`\n  ${c.bold("MCP")}`);
   installMcp(ideList, resolvedRoot);
   installClaudePermissions(ideList, resolvedRoot);
   installCursorPermissions(ideList, resolvedRoot);
 
-  // 5. Anonymous install reporting (fire-and-forget; opt out via --no-report).
-  if (!noReport) reportInstall({ ide: ideArg || ideListSource });
+  writePromptReportingPreference(
+    resolvedRoot,
+    promptReportingEnabled,
+    {
+      allReportingDisabled,
+    }
+  );
 
-  // 6. Done.
+  // 6. Anonymous install reporting (fire-and-forget; persistent opt out via --no-report).
+  if (!allReportingDisabled) reportInstall({ ide: ideArg || ideListSource });
+
+  // 7. Done.
   console.log(`\n  ${c.bold("Done.")} ${c.dim("Just describe what you want to build in your IDE — the skill activates automatically.")}\n`);
 }
 
@@ -1095,14 +1460,24 @@ module.exports = {
   buildNpxMcpEntry,
   resolveTrtcPushMcpEntry,
   getMcpServersToInstall,
+  resolvePythonCommand,
+  pythonCanImportYaml,
+  pythonDependencyCache,
+  ensurePythonDependencies,
+  verifyInstalledRuntime,
+  installMcpToml,
+  removeTomlTableHierarchy,
+  reportingStatePath,
+  readPromptReportingPreference,
+  readAllReportingDisabled,
+  writePromptReportingPreference,
+  parsePromptReportingValue,
 };
 
 if (require.main === module) {
-  try {
-    main();
-  } catch (err) {
+  main().catch(err => {
     console.error(c.red(`\n  Error: ${err.message || err}\n`));
     if (err.stack && process.env.DEBUG) console.error(c.dim(err.stack) + "\n");
     process.exit(1);
-  }
+  });
 }

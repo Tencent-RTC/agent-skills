@@ -20,7 +20,7 @@ python3 -m tools.kb read docs/chat/gen-usersig.md        # 小文件可直接 st
 python3 -m tools.kb exists slices/chat/web/style-guide.md # 存在性检查（exit 0/1）
 ```
 
-**实现与 shim**：`kb` / `session` / `flow` / `reporting_v2` 的**唯一实现**在 `skills/trtc/tools/`；`skills/trtc-chat/tools/` 为 shim（委托，非副本）。reference 内继续写 `python3 -m tools.kb`，**不要**改写成硬编码路径。
+**实现与 shim**：`kb` / `session` / `flow` / `reporting` 的**唯一实现**在 `skills/trtc/tools/`；`skills/trtc-chat/tools/` 为 shim（委托，非副本）。旧版 reporting 入口仅保留命令兼容，不包含实现。reference 内继续写 `python3 -m tools.kb`，**不要**改写成硬编码路径。
 
 `resolve` 的 `<path>` 是 **knowledge-base 内部相对路径**（不含 `knowledge-base/` 前缀），第一段必须是 `chat/` `slices/` `docs/` `scenarios/` `tooling/` 之一。
 
@@ -195,7 +195,8 @@ PHASE=$(python3 -m tools.session read --field flow_state.chat.phase)
 ## §8.8 Path D — `.docs-query.yaml`（与 Session 正交）
 
 > 路径：`skills/trtc-chat/.docs-query.yaml`（与 `SKILL.md` 同目录）。  
-> Schema 与源 chat-skills Path D helper 文件 **一致**；**无** `framework` 字段（`framework` 由 `13-reporting.md` 按 `platform` / `types` 推导）。
+> Schema 与源 chat-skills Path D helper 文件 **一致**；**无** `framework` 字段
+>（`framework` 由 `13-reporting.md` 仅按 `platform` 推导；`types` 是独立的文档查询类型）。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|

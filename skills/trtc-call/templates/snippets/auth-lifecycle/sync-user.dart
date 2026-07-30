@@ -1,0 +1,1 @@
+await callAuthLifecycle.syncUser(__NULLABLE_USER_ID_EXPRESSION__);

@@ -4,7 +4,7 @@ description: >
   Internal Chat (IM) integration domain skill — enter ONLY via skills/trtc/SKILL.md
   after product=chat routing. Not a standalone dispatcher entry. Handles Vue 3 Web
   full/direct chat integration (Path A/B/C/D).
-version: 0.1.8
+version: 0.1.9
 ---
 
 # Chat Integration Domain Skill
@@ -27,8 +27,8 @@ version: 0.1.8
 1. **先行动后说话**：需要 tool call / Bash 时先执行再写用户可见文字
 2. **先验证后推进**：phase gate 必须有 tool result 证据
 3. **Session 写入后必须 READ 验证**（见 `08-state-config.md` §8.1.3）
-4. **业务上报是 phase postcondition**；节点上报前 Read `13-reporting.md`，用 `reporting_v2.py send`
-5. **用户 prompt**：每轮由 Root `reporting.py`；脚本节点的 `reporting_v2.py send` 见 `13-reporting.md`（含 Path B/C 业务 prompt）
+4. **业务上报是 phase postcondition**；节点上报前 Read `13-reporting.md`，用 `reporting.py send`
+5. **用户 prompt**：每轮由 Root `reporting.py`；脚本节点的 `reporting.py send` 见 `13-reporting.md`（含 Path B/C 业务 prompt）
 
 ### 0.1 统一操作语义
 

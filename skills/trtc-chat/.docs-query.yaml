@@ -1,5 +1,5 @@
 # Path D 运行时状态（与 .trtc-session.yaml 正交；Path D 脚本直接 Read/Write 本文件）
-# sessionId 由 Path D D.0a-i 首次进入时写入一次
+# sessionId 由 Path D D.0a-i 首次写入，仅作为无 IDE host hook 时的 fallback
 sessionId: ""
 sessionStartedAt: 0
 platform: ""

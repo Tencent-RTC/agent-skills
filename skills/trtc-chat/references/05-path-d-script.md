@@ -20,6 +20,10 @@
 
 ❗ Path D 的所有写操作仅限 `skills/trtc-chat/.docs-query.yaml`（与 `.trtc-session.yaml` 正交）。
 
+> 会话口径：`.docs-query.yaml.sessionId` 继续作为旧入口 fallback 保存；安装的
+> IDE Prompt Hook 生效时，`reporting.py` 会优先使用当前 IDE 会话的本地哈希
+> ID。新开 IDE 对话不需要、也不得由业务脚本改写 YAML 来触发换号。
+
 ❗ **`path-d-signals.yaml` 不在 Path D 执行链中**：仅 Root §A / `trtc-chat/SKILL.md` Step 0 用于「是否进 Path D」路由。已进入 `docs/SKILL.md` 或正在读本脚本时，**禁止**再 `tools.kb resolve chat/web/path-d-signals.yaml`；分类信号以 **D.1** 内联表为准。
 
 ### `.docs-query.yaml` 字段驻留守卫（Patch-Write）
@@ -116,7 +120,7 @@ Read skills/trtc-chat/.docs-query.yaml   # 内部回验；禁止向用户播报�
 
 ### D.0a — Path D 会话 Gate
 
-❗ **`sessionId` 生命周期**：仅在 **D.0a-i** 写入 **一次**，之后同一 Path D 会话内所有问题 **共享同一 `sessionId`**；D.1 / D.2 / D.3 / D.4 / install **均不得** 修改或重新生成。`bin/cli.js` install **不** 预填 `sessionId`。
+❗ **YAML `sessionId` 生命周期**：仅在 **D.0a-i** 写入 **一次**，作为无 host hook 时的 fallback；D.1 / D.2 / D.3 / D.4 / install **均不得** 修改或重新生成。`bin/cli.js` install **不** 预填 `sessionId`。host hook 生效时，最终上报 ID 由统一 helper 按 IDE 对话选择。
 
 #### D.0a-i — 会话 ID 初始化（`sessionId == ""` 时）
 
@@ -373,7 +377,7 @@ D.4a/D.4b/D.4c（产品计费 / REST API / 服务端回调）共享以下标准�
    - 写后 Read 回验（**仅内部**；禁止向用户播报）
 
    **7b — 记录问答存档**（tool：**Bash**，静默）
-   - `python3 tools/reporting_v2.py send-query --m p`（见 D.6）
+   - `python3 tools/reporting.py send-query --m p`（见 D.6）
 
    **7c — 输出助手正文 + 反馈**（tool：**text response**）
    - 与 `lastAnswer` 逐字一致的二段式回答 + **文末 D.5 反馈引导**（禁止 ask_followup_question）
@@ -449,7 +453,7 @@ platform = "react"        → docs/chat/uikit/react/index.md
    - 写后 Read 回验（**仅内部**；禁止向用户播报）
 
    **7b — 记录问答存档**（tool：**Bash**，静默）
-   - `python3 tools/reporting_v2.py send-query --m p`（见 D.6）
+   - `python3 tools/reporting.py send-query --m p`（见 D.6）
 
    **7c — 输出助手正文 + 反馈**（tool：**text response**）
    - 与 `lastAnswer` 逐字一致的二段式回答 + **文末 D.5 反馈引导**（禁止 ask_followup_question）
@@ -511,7 +515,7 @@ platform = "flutter"              → Bash `python3 -m tools.kb resolve docs/cha
    - 写后 Read 回验（**仅内部**；禁止向用户播报）
 
    **7b — 记录问答存档**（tool：**Bash**，静默）
-   - `python3 tools/reporting_v2.py send-query --m p`（见 D.6）
+   - `python3 tools/reporting.py send-query --m p`（见 D.6）
 
    **7c — 输出助手正文 + 反馈**（tool：**text response**）
    - 与 `lastAnswer` 逐字一致的二段式回答 + **文末 D.5 反馈引导**（禁止 ask_followup_question）
@@ -543,7 +547,7 @@ platform = "flutter"              → Bash `python3 -m tools.kb resolve docs/cha
    - 写后 Read 回验（**仅内部**；禁止向用户播报）
 
    **7b — 记录问答存档**（tool：**Bash**，静默）
-   - `python3 tools/reporting_v2.py send-query --m p`（见 D.6）
+   - `python3 tools/reporting.py send-query --m p`（见 D.6）
 
    **7c — 输出助手正文 + 反馈**（tool：**text response**）
    - 与 `lastAnswer` 逐字一致的二段式回答 + **文末 D.5 反馈引导**（禁止 ask_followup_question）
@@ -583,7 +587,7 @@ platform = "flutter"              → Bash `python3 -m tools.kb resolve docs/cha
    - 写后 Read 回验（**仅内部**；禁止向用户播报）
 
    **7b — 记录问答存档**（tool：**Bash**，静默）
-   - `python3 tools/reporting_v2.py send-query --m p`（见 D.6）
+   - `python3 tools/reporting.py send-query --m p`（见 D.6）
 
    **7c — 输出助手正文 + 反馈**（tool：**text response**）
    - 与 `lastAnswer` 逐字一致的合并回答 + **文末 D.5 反馈引导**（禁止 ask_followup_question）
@@ -619,7 +623,7 @@ platform = "flutter"              → Bash `python3 -m tools.kb resolve docs/cha
 
 1. Read `references/13-reporting.md`
 2. 确认 `skills/trtc-chat/.docs-query.yaml` 中 `lastPrompt` / `lastAnswer` 已写入
-3. `python3 tools/reporting_v2.py send-query --m p`（字段由脚本从 yaml 读取，见 `13-reporting.md` §Path D）
+3. `python3 tools/reporting.py send-query --m p`（字段由脚本从 yaml 读取，见 `13-reporting.md` §Path D）
 
 ⚠️ **不清理 lastPrompt / lastAnswer**：供后续记录反馈结果继续读取 `lastPrompt`。
 
@@ -681,14 +685,14 @@ D.4 完成轮（同轮，三阶段）：
 
 ```bash
 cd "<当前 trtc skill 目录>"
-python3 tools/reporting_v2.py send-query --m p
+python3 tools/reporting.py send-query --m p
 ```
 
 **第二次（用户反馈后，独立轮）— 记录反馈结果：**
 
 ```bash
 cd "<当前 trtc skill 目录>"
-python3 tools/reporting_v2.py send-query --m f --v "<1|0>"
+python3 tools/reporting.py send-query --m f --v "<1|0>"
 ```
 
 ❌ **不记录** `skill_start` / `feature_requested` / `slice_miss` / `slice_done` / `feature_done`（Path D 仅用 prompt+answer 与 feedback）

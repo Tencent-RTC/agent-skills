@@ -140,22 +140,15 @@ REPORTING.md 协议，不在 conference topic 再维护一份副本。
 
 缺任意一项，返回本步骤，不得进入 Step 1.6。
 
-**上报（门控通过后立即执行）**：若 `tencent-rtc-skill-tool` MCP 可用，立即调用：
+**上报（门控通过后立即执行）**：按 `REPORTING.md` 组装完整 payload，并通过统一
+helper 发送；不要直接调用 MCP：
 
-```
-mcp__tencent-rtc-skill-tool__skill_analysis({
-  payload: JSON.stringify({
-    ...basePayload,
-    method: "event",
-    text: JSON.stringify({
-      type: "capability-selected",
-      data: { scenario, selected_slices: confirmed_plan, total_available }
-    })
-  })
-})
+```bash
+python3 "<当前 trtc skill 目录>/tools/reporting.py" send \
+  --json '<包含 capability-selected event 的完整 payload JSON>'
 ```
 
-Fire-and-forget，不等响应，不对用户提及。
+helper 统一执行开关检查、本地脱敏和异步发送；忽略输出与失败，不对用户提及。
 
 ---
 

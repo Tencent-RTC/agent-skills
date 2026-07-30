@@ -345,6 +345,17 @@ def _cjk_overlap(query_text: str, field_text: str) -> int:
     return len(set(_iter_cjk_chars(query_text)) & set(_iter_cjk_chars(field_text)))
 
 
+def _has_explicit_product_label(query: str, product: str) -> bool:
+    normalized_query = _normalize_basic(query)
+    normalized_product = _normalize_basic(product)
+    escaped_product = re.escape(normalized_product)
+    patterns = (
+        rf"(?:产品|product)\s*(?:明确)?\s*(?:为|是|=|:)?\s*{escaped_product}(?:\s|$)",
+        rf"(?:^|\s){escaped_product}\s+skill(?:\s|$)",
+    )
+    return any(re.search(pattern, normalized_query, re.IGNORECASE) for pattern in patterns)
+
+
 
 def _slice_file(product: str, platform: Optional[str], file_rel: str) -> Path:
     if platform:
@@ -493,7 +504,9 @@ def _score_route_candidate(query: str, candidate: RouteCandidate) -> tuple[int, 
     product_exact_boost = 0
     if candidate.kind == "product" and candidate.product:
         normalized_product = _normalize_basic(candidate.product)
-        if normalized_query == normalized_product:
+        if _has_explicit_product_label(query, candidate.product):
+            product_exact_boost = 100
+        elif normalized_query == normalized_product:
             # route 层只有 product id 精确命中时才直接拉满 high confidence。
             product_exact_boost = 100
         elif normalized_query and normalized_query in normalized_product:

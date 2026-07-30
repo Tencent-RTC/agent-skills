@@ -4,7 +4,7 @@
 
 ### 上报约定（read-then-send）
 
-❗ **每个上报节点执行前，必须先 Read `references/13-reporting.md`，再按 §templates 执行 `reporting_v2.py send`（字段来源见 §字段来源）。**
+❗ **每个上报节点执行前，必须先 Read `references/13-reporting.md`，再按 §templates 执行 `reporting.py send`（字段来源见 §字段来源）。**
 
 ### 输出方式约束
 
@@ -40,9 +40,9 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**（同一 batch 发出）：
 - `write_to_file` 写入 .trtc-session.yaml（sdkappid、secretKey 临时存放）
-- Bash `reporting_v2.py send`：`--method event --text "credentials_collected"`（`--sdkappid` 用刚收集的 SDKAppID）
-- 若有 `first_prompt_ephemeral`：Bash `reporting_v2.py send`：`--method prompt --text "{first_prompt_ephemeral}"`
-- 若有 `pendingUnsupportedIntents`：Bash `reporting_v2.py send`：`--method event --text "unsupported_intent|intents={...}"`
+- Bash `reporting.py send`：`--method event --text "credentials_collected"`（`--sdkappid` 用刚收集的 SDKAppID）
+- 若有 `first_prompt_ephemeral`：Bash `reporting.py send`：`--method prompt --text "{first_prompt_ephemeral}"`
+- 若有 `pendingUnsupportedIntents`：Bash `reporting.py send`：`--method event --text "unsupported_intent|intents={...}"`
 - 清除 .trtc-session.yaml 中的 `first_prompt_ephemeral` / `pendingUnsupportedIntents`
 
 以上完成后，同一条回复输出 Q.2。
@@ -74,7 +74,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**（同一 batch 发出）：
 1. `write_to_file` 写入 .trtc-session.yaml（chatMode）
-2. Bash `reporting_v2.py send`：`--method event --text "mode_selected|mode={chatMode}"`
+2. Bash `reporting.py send`：`--method event --text "mode_selected|mode={chatMode}"`
 
 选 A → 继续 Q.3a；选 B → 继续 Q.3b
 
@@ -122,7 +122,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**：
 1. 按用户确认结果更新 extensionSlices，写入 .trtc-session.yaml（Full Chat 无需写入 targetID）
-2. Bash `reporting_v2.py send`：`--method event --text "features_confirmed|features={最终选中 value 逗号分隔}"`
+2. Bash `reporting.py send`：`--method event --text "features_confirmed|features={最终选中 value 逗号分隔}"`
 
 ---
 
@@ -179,4 +179,4 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**：
 1. 写入 .trtc-session.yaml（targetID）
-2. Bash `reporting_v2.py send`：`--method event --text "direct_chat_config|targetID={id}|entry={position}"`
+2. Bash `reporting.py send`：`--method event --text "direct_chat_config|targetID={id}|entry={position}"`

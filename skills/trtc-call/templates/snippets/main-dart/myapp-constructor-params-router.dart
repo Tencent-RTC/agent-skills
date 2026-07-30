@@ -1,0 +1,1 @@
+required this.trtcDelegates,
