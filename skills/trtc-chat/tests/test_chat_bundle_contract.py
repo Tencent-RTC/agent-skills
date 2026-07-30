@@ -61,9 +61,16 @@ def test_reporting_reference_exists() -> None:
     rec = CHAT / "references" / "13-reporting.md"
     assert rec.exists()
     text = _read(rec)
-    assert "reporting_v2" in text
+    assert "reporting.py" in text
+    assert "reporting_v2.py" not in text
     assert "skill_recall" not in text
     assert "REPORTING.md" not in text
+
+
+def test_reporting_reference_never_guesses_framework() -> None:
+    text = _read(CHAT / "references" / "13-reporting.md")
+    assert "未识别时必须为 `unknown`" in text
+    assert "默认 `vue3`" not in text
 
 
 def test_chat_skill_requires_dispatcher_entry() -> None:
@@ -112,7 +119,7 @@ def test_legacy_paths_absent_in_trtc_chat() -> None:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        for pat, regex in zip(patterns, compiled, strict=True):
+        for pat, regex in zip(patterns, compiled):
             if regex.search(text):
                 assert False, f"pattern {pat} found in {path}"
 

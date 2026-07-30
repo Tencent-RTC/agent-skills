@@ -1249,11 +1249,17 @@ def main() -> int:
         "validate": _cli_validate,
         "migrate": _cli_migrate,
     }
+    if cmd in {"-h", "--help"}:
+        print(__doc__)
+        return 0
     handler = handlers.get(cmd)
     if not handler:
         print(f"未知子命令：{cmd}", file=sys.stderr)
         print(f"可用：{', '.join(handlers)}", file=sys.stderr)
         return 2
+    if any(arg in {"-h", "--help"} for arg in rest):
+        print(handler.__doc__ or __doc__)
+        return 0
     return handler(rest)
 
 

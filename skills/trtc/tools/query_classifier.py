@@ -62,6 +62,8 @@ _BUILD_PATTERNS = (
     re.compile(r"^[\w\u4e00-\u9fff\s.+/-]{1,48}(?:集成|接入|搭建)$", re.IGNORECASE),
     re.compile(r"(?:如何|怎么|how to).{0,12}(?:实现|集成|接入|搭建|新增|添加|嵌入|迁移|改造|重构|定制)", re.IGNORECASE),
     re.compile(r"(?:帮我|请|继续|需要|我要|我想|想要|想做).{0,12}(?:实现|集成|接入|搭建|新增|添加|迁移|做)", re.IGNORECASE),
+    re.compile(r"(?:重新|再次|重复|重跑).{0,16}(?:执行|运行|接入|集成|流程|测试)", re.IGNORECASE),
+    re.compile(r"(?:执行|运行).{0,16}(?:接入|集成)(?:流程|测试)?", re.IGNORECASE),
     re.compile(r"(?:给现有项目加|加到项目里|接到现有项目里|接到项目里|接进现有项目里|接进项目里)", re.IGNORECASE),
     re.compile(r"(?:在|给).{0,16}(?:项目|应用|页面|直播间|房间).{0,16}(?:集成|接入|增加|新增|添加|加)", re.IGNORECASE),
     re.compile(r"(?:实现|implement).{0,24}(?:功能|页面|模块|场景|workflow|battle|gift|barrage|co-guest|cohost|comments?|feature)", re.IGNORECASE),

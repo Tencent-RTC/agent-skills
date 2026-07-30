@@ -119,6 +119,7 @@ def _probe_log(key, payload) -> None:
 
 # Dispatch table: dispatch_key -> relative script path under PLUGIN_ROOT.
 DISPATCH = {
+    "bind-reporting-session":                  "skills/trtc/tools/reporting.py",
     "gate-slice-read":                        "skills/trtc/hooks/gate_slice_read.py",
     "topic-phase-gate":                       "skills/trtc/hooks/topic_phase_gate.py",
     "gate-slice-write":                       "skills/trtc/hooks/gate_slice_write.py",
@@ -129,6 +130,7 @@ DISPATCH = {
 # Dispatch keys whose underlying scripts read JSON from stdin.
 # Other keys are CLI-only and will receive empty stdin.
 STDIN_KEYS = {
+    "bind-reporting-session",
     "gate-slice-read",
     "topic-phase-gate",
     "gate-slice-write",
@@ -161,6 +163,9 @@ def _translate_payload(key: str, cursor: dict) -> dict:
       - {"tool_name": "Read",       "tool_input": {"file_path": "..."}}
       - {"tool_name": "Write|Edit", "tool_input": {"file_path": "..."}}
     """
+    if key == "bind-reporting-session":
+        return cursor
+
     if key == "gate-slice-read":
         # Cursor's beforeReadFile payload: {file_path, content, attachments, ...}
         file_path = cursor.get("file_path") or cursor.get("filePath")
@@ -297,6 +302,8 @@ def main(argv: list[str]) -> None:
     env["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN_ROOT)
 
     runner = ["bash", str(script)] if script.suffix == ".sh" else ["python3", str(script)]
+    if key == "bind-reporting-session":
+        runner.extend(["bind-session", "--ide", "cursor"])
     stdin_data = json.dumps(claude_payload) if key in STDIN_KEYS else ""
 
     try:

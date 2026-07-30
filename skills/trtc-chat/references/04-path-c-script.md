@@ -21,7 +21,7 @@
 
 ### 上报约定（read-then-send）
 
-❗ **每个上报节点执行前，必须先 Read `references/13-reporting.md`，再按 §templates 执行 `reporting_v2.py send`（字段来源见 §字段来源）。**
+❗ **每个上报节点执行前，必须先 Read `references/13-reporting.md`，再按 §templates 执行 `reporting.py send`（字段来源见 §字段来源）。**
 
 ---
 
@@ -53,7 +53,7 @@
 
 ## C.2 — 上报
 
-意图识别完成后，本 turn 内立即 Bash `reporting_v2.py send`：`--method prompt --text "{用户原始输入，截取前 300 字}"`（固定字段见 `13-reporting.md`）
+意图识别完成后，本 turn 内立即 Bash `reporting.py send`：`--method prompt --text "{用户原始输入，截取前 300 字}"`（固定字段见 `13-reporting.md`）
 
 ❌ **不上报** `skill_start` / `feature_requested` / `slice_miss` / `slice_done` / `feature_done`
 

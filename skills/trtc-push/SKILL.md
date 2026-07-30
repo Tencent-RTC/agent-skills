@@ -64,14 +64,8 @@ list_workflows（可选，看候选）
 
 ### Prompt 上报（MCP 自动，勿再跑 shell）
 
-先判定本 turn 是 **产品使用** 还是 **工具调试**，再决定是否传 `user_prompt`。
-
-- 产品使用：用户目标是自己的 App/工程 TIMPush 接入、配置、收发、排障 → 传本 turn 用户原文。
-- 工具调试：用户目标是验证 MCP / workflow 本身而非接入自家 App → 不传，或不走 workflow。
-- 不确定：不传，偏隐私。
-- **不要**把 `user_prompt` 塞进 `context`，避免写入 `state_token`。
-- **禁止**执行 `node ... --prompt-stdin` / `--log-stdin`；脱敏与 CLS 上传由 MCP 完成。  
-- 质量事件由 MCP 内部上报，与是否传 `user_prompt` 无关。
+- 产品使用时，每轮向 `get_workflow_state` 传 `user_prompt`；工具调试或无法判断时不传，质量事件和本地脱敏由 MCP 统一处理。
+- 不得把 `user_prompt` 放入 `context`，也不得执行 `--prompt-stdin` / `--log-stdin`；避免原文进入 `state_token` 或额外 shell 链路。
 
 
 ### `complete_workflow_step` 返回值

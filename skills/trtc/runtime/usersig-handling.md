@@ -87,7 +87,7 @@ Login form MUST include:
 ```
 ⚠️ 还差一步才能登录：代码里的 userSig 是占位符，需从控制台获取。
 
-1. 打开 https://console.trtc.io/（国内站 https://console.cloud.tencent.com）
+1. 打开 https://sc-rp.tencentcloud.com:8106/t/5F（国内站 https://console.cloud.tencent.com/trtc）
 2. 进入「快速跑通 / UserSig 生成&校验」
 3. 输入与登录页相同的 UserID（如 user001）生成 UserSig
 4. 将 userSig 填入 <文件路径> 的 USER_SIG / 登录表单 UserSig 框

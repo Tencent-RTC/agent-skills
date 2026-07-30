@@ -1,7 +1,12 @@
 {
   "version": 1,
   "hooks": {
-      "beforeReadFile": [
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 $HOME/.cursor/plugins/local/trtc-agent-skills/hooks/cursor-adapter.py bind-reporting-session"
+      }
+    ],
+    "beforeReadFile": [
       {
         "command": "python3 $HOME/.cursor/plugins/local/trtc-agent-skills/hooks/cursor-adapter.py gate-slice-read"
       }

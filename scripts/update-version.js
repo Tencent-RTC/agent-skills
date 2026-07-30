@@ -11,12 +11,12 @@
  *
  * 会统一把下列文件的版本号更新为 <newVersion>：
  *   - package.json                       (JSON 的 "version" 字段)
- *   - skills/trtc/SKILL.md               (YAML frontmatter 的 version:)
+ *   - skills/trtc/SKILL.md               (YAML frontmatter 的 metadata.version)
  *   - skills/trtc-chat/SKILL.md          (同上)
  *   - skills/trtc-chat/docs/SKILL.md     (同上)
  *
  * 需要新增待更新文件时，只需往下方 TARGETS 数组里加一项：
- *   { path: "相对仓库根的路径", type: "json" | "frontmatter" }
+ *   { path: "相对仓库根的路径", type: "json" | "frontmatter" | "metadata-version" }
  * 无需改动其余逻辑。
  */
 
@@ -30,11 +30,12 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 /**
  * 待更新的文件清单。新增路径在此追加一行即可。
  *   type: "json"        —— 更新 JSON 的顶层 version 字段
- *   type: "frontmatter" —— 更新 Markdown/YAML frontmatter 中的 version: 行
+ *   type: "frontmatter" —— 更新 Markdown/YAML frontmatter 中的顶层 version: 行
+ *   type: "metadata-version" —— 更新 metadata.version
  */
 const TARGETS = [
   { path: "package.json", type: "json" },
-  { path: "skills/trtc/SKILL.md", type: "frontmatter" },
+  { path: "skills/trtc/SKILL.md", type: "metadata-version" },
   { path: "skills/trtc-chat/SKILL.md", type: "frontmatter" },
   { path: "skills/trtc-chat/docs/SKILL.md", type: "frontmatter" },
   { path: "skills/trtc-push/SKILL.md", type: "frontmatter" },
@@ -46,6 +47,7 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)*$/;
 // 匹配 frontmatter 里的 version 行，保留原有引号风格（可能无引号）。
 // 捕获：1=前缀(含 "version:")，2=开引号(可空)，3=旧值，4=闭引号(与开引号一致)
 const FRONTMATTER_VERSION_RE = /^(version:[ \t]*)(["']?)([^"'\r\n]*)(\2)[ \t]*$/m;
+const METADATA_VERSION_RE = /^([ \t]+version:[ \t]*)(["']?)([^"'\r\n]*)(\2)[ \t]*$/m;
 
 function updateJson(absPath, relPath, newVersion) {
   const content = fs.readFileSync(absPath, "utf8");
@@ -72,9 +74,26 @@ function updateFrontmatter(absPath, relPath, newVersion) {
   console.log(`${relPath} 版本号已从 ${currentVersion} 更新为 ${newVersion}`);
 }
 
+function updateMetadataVersion(absPath, relPath, newVersion) {
+  const content = fs.readFileSync(absPath, "utf8");
+  const match = content.match(METADATA_VERSION_RE);
+  if (!match) {
+    console.error(`在文件 ${relPath} 中未找到 metadata.version 字段`);
+    return;
+  }
+  const currentVersion = match[3];
+  const updated = content.replace(
+    METADATA_VERSION_RE,
+    `$1$2${newVersion}$4`
+  );
+  fs.writeFileSync(absPath, updated, "utf8");
+  console.log(`${relPath} 版本号已从 ${currentVersion} 更新为 ${newVersion}`);
+}
+
 const HANDLERS = {
   json: updateJson,
   frontmatter: updateFrontmatter,
+  "metadata-version": updateMetadataVersion,
 };
 
 function start() {

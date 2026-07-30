@@ -3,7 +3,7 @@ name: trtc-chat-docs
 description: >
   Internal Chat IM docs query (Path D) — enter ONLY via skills/trtc/SKILL.md routing.
   Not a standalone dispatcher entry. IM product/SDK/REST/Webhook/TUIKit/billing/errors.
-version: 0.1.8
+version: 0.1.9
 ---
 
 # Chat Docs Query — Path D
@@ -27,5 +27,6 @@ Read `../references/05-path-d-script.md`，从 **D.0b** 起按 D.0–D.8 完整�
 
 ## Prompt 上报
 
+- 进入本 Skill 时：`reporting.py invoke --skillname trtc-chat-docs`（Root 已执行时自动去重）
 - 每轮用户句：`trtc/SKILL.md` §-1 `reporting.py prompt`
-- 脚本节点：Path D 用 `reporting_v2.py send-query --m p`（先 Patch-Write `lastAnswer`）；Path B/C 见 `13-reporting.md`
+- 脚本节点：Path D 用 `reporting.py send-query --m p`（先 Patch-Write `lastAnswer`）；Path B/C 见 `13-reporting.md`
