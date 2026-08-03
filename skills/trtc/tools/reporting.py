@@ -358,7 +358,15 @@ def _short_hash(text: str) -> str:
 
 
 def _package_version() -> str:
-    """Read the package version from the repository/package root."""
+    """Read the version bundled with an installed Skill or repository package."""
+    try:
+        installed_version = (TRTC_SKILL_ROOT / ".package-version").read_text(
+            encoding="utf-8"
+        ).strip()
+        if installed_version:
+            return installed_version
+    except Exception:
+        pass
     for parent in (TRTC_SKILL_ROOT, *TRTC_SKILL_ROOT.parents):
         pkg = parent / "package.json"
         if not pkg.exists():
@@ -380,22 +388,27 @@ def _fallback_sessionid() -> str:
 
 
 def _state_file_for_project(project_root: Any) -> Path:
-    """Return the cache file shared with the Node installer for one project."""
-    root = project_root
-    key = hashlib.sha256(str(Path(root).resolve()).encode("utf-8")).hexdigest()[:16]
+    """Return the canonical project-writable state shared by IDE processes."""
+    root = Path(project_root).resolve()
+    return root / ".trtc-reporting" / "state.json"
+
+
+def _legacy_state_file_for_project(project_root: Any) -> Path:
+    """Return the pre-0.2 cache path used only for one-time migration."""
+    key = hashlib.sha256(
+        str(Path(project_root).resolve()).encode("utf-8")
+    ).hexdigest()[:16]
     base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
     return base / "trtc-traces" / f"reporting-state-{key}.json"
 
 
 def _state_path() -> Path:
-    """Project-scoped reporting state stored outside the customer repo."""
+    """Project-scoped state on the IDE's writable workspace surface."""
     try:
         root = find_project_root()
     except Exception:
         root = os.getcwd()
-    path = _state_file_for_project(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+    return _state_file_for_project(root)
 
 
 def _read_state_file(path: Path) -> dict[str, Any]:
@@ -410,17 +423,45 @@ def _read_state_file(path: Path) -> dict[str, Any]:
 
 
 def _load_state() -> dict[str, Any]:
-    return _read_state_file(_state_path())
+    path = _state_path()
+    if path.exists():
+        # Once the canonical file exists it is authoritative, even when empty.
+        # Falling back to a stale cache would resurrect an older Prompt/turn.
+        return _read_state_file(path)
 
-
-def _save_state(state: dict[str, Any]) -> None:
     try:
-        _state_path().write_text(
-            json.dumps(state, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        root = find_project_root()
     except Exception:
-        pass
+        root = os.getcwd()
+    legacy = _read_state_file(_legacy_state_file_for_project(root))
+    if legacy:
+        _write_state_file(path, legacy)
+    return legacy
+
+
+def _write_state_file(path: Path, state: dict[str, Any]) -> bool:
+    """Atomically persist JSON state without exposing partial cross-process data."""
+    tmp = path.with_name(
+        f".{path.name}.tmp-{os.getpid()}-{random.randrange(1_000_000)}"
+    )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tmp.open("w", encoding="utf-8") as handle:
+            handle.write(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return False
+
+
+def _save_state(state: dict[str, Any]) -> bool:
+    return _write_state_file(_state_path(), state)
 
 
 def _project_preference(key: str) -> Any:
@@ -431,9 +472,13 @@ def _project_preference(key: str) -> Any:
     try:
         root = Path(find_project_root()).resolve()
         for parent in root.parents:
-            inherited = _read_state_file(_state_file_for_project(parent)).get(key)
-            if isinstance(inherited, bool):
-                return inherited
+            for candidate in (
+                _state_file_for_project(parent),
+                _legacy_state_file_for_project(parent),
+            ):
+                inherited = _read_state_file(candidate).get(key)
+                if isinstance(inherited, bool):
+                    return inherited
     except Exception:
         pass
     return None
@@ -455,16 +500,19 @@ def is_reporting_enabled(scope: str = "experience") -> bool:
     """Return the reporting preference for experience or separately-consented runtime data."""
     if scope not in {"experience", "runtime"}:
         raise ValueError(f"unsupported reporting scope: {scope}")
+    override = os.environ.get(REPORTING_ENV)
+    if scope == "experience" and override is not None:
+        normalized = override.strip().lower()
+        if normalized in _FALSE_VALUES:
+            # An explicit process-level opt-out must not touch local state.
+            return False
     if is_all_reporting_disabled():
         return False
     if scope == "runtime":
         return True
 
-    override = os.environ.get(REPORTING_ENV)
     if override is not None:
         normalized = override.strip().lower()
-        if normalized in _FALSE_VALUES:
-            return False
         if normalized in _TRUE_VALUES:
             return True
     value = _project_preference("prompt_reporting_enabled")
@@ -476,16 +524,17 @@ def is_reporting_enabled(scope: str = "experience") -> bool:
 def set_reporting_preference(
     enabled: bool, *, all_reporting_disabled: bool | None = None
 ) -> dict[str, Any]:
-    """Persist a project-scoped preference outside the customer repository."""
+    """Persist a project-scoped preference in the local reporting state."""
     state = _load_state()
     state["prompt_reporting_enabled"] = bool(enabled)
     state["prompt_reporting_updated_at"] = int(time.time())
     if all_reporting_disabled is not None:
         state["all_reporting_disabled"] = bool(all_reporting_disabled)
         state["all_reporting_updated_at"] = int(time.time())
-    _save_state(state)
+    persisted = _save_state(state)
     return {
-        "action": "updated",
+        "action": "updated" if persisted else "skip",
+        "reason": None if persisted else "state-unavailable",
         "enabled": bool(enabled),
         "all_reporting_disabled": state.get("all_reporting_disabled", False),
     }
@@ -678,7 +727,8 @@ def bind_host_session(
     ):
         if host_ide != "unknown" and state.get("host_ide") != host_ide:
             state["host_ide"] = host_ide
-            _save_state(state)
+            if not _save_state(state):
+                return {"action": "skip", "reason": "state-unavailable"}
             return _attach_hook_prompt({
                 "action": "bound",
                 "changed": False,
@@ -699,7 +749,8 @@ def bind_host_session(
     state["host_sessionid"] = sessionid
     state["host_ide"] = host_ide
     state["host_session_bound_at"] = int(time.time())
-    _save_state(state)
+    if not _save_state(state):
+        return {"action": "skip", "reason": "state-unavailable"}
     return _attach_hook_prompt({
         "action": "bound",
         "changed": True,
@@ -950,6 +1001,8 @@ def _normalize_payload(data: dict[str, Any]) -> dict[str, Any]:
     payload["method"] = payload["method"].strip().lower()
     if payload["method"] not in SUPPORTED_METHODS:
         raise ValueError("method must be one of: " + ", ".join(SUPPORTED_METHODS))
+    if not payload["sessionid"].strip():
+        raise ValueError("sessionid must be non-empty")
     if not payload["text"].strip() and payload["method"] != "feedback":
         raise ValueError("text must be non-empty")
     payload["product"] = _normalize_product(payload["product"])
@@ -975,6 +1028,18 @@ def _build_routed_prompt_payload(
         raise ValueError("routed skillname is only valid on a prompt payload")
     payload["skillname"] = normalized_skill
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _validate_transport_payload(payload_str: str) -> str:
+    """Revalidate the exact JSON handed to skill-tool at the final boundary."""
+    data = json.loads(payload_str)
+    if not isinstance(data, dict):
+        raise ValueError("reporting payload must be a JSON object")
+
+    skillname = str(data.get("skillname") or "").strip()
+    if skillname:
+        return _build_routed_prompt_payload(data, skillname=skillname)
+    return build_payload(data)
 
 
 def prepare_send(data: dict[str, Any]) -> dict[str, Any]:
@@ -1329,6 +1394,8 @@ def prepare_prompt(text: str) -> dict[str, Any]:
     preference = _preference_from_text(text)
     if preference is not None:
         result = set_reporting_preference(preference)
+        if result.get("action") != "updated":
+            return {"action": "skip", "reason": "state-unavailable"}
         return {
             "action": "preference",
             "enabled": result["enabled"],
@@ -1357,7 +1424,8 @@ def prepare_prompt(text: str) -> dict[str, Any]:
             digest=digest,
             sessionid=sessionid,
         )
-        _save_state(state)
+        if not _save_state(state):
+            return {"action": "skip", "reason": "state-unavailable"}
         return {"action": "staged", "dedupe": "no-session"}
     except SessionError:
         state = _load_state()
@@ -1374,7 +1442,8 @@ def prepare_prompt(text: str) -> dict[str, Any]:
             digest=digest,
             sessionid=sessionid,
         )
-        _save_state(state)
+        if not _save_state(state):
+            return {"action": "skip", "reason": "state-unavailable"}
         return {"action": "staged", "dedupe": "session-unavailable"}
 
     data = session.to_dict()
@@ -1641,6 +1710,7 @@ def _fire_via_mcp_stdio(payload_str: str) -> bool:
     """Call skill_analysis via the skill-tool MCP server's stdio protocol."""
     proc = None
     try:
+        payload_str = _validate_transport_payload(payload_str)
         npx_env = os.environ.copy()
         npx_env["NPM_CONFIG_PREFER_OFFLINE"] = "true"
         proc = Popen(

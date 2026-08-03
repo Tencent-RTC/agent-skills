@@ -143,7 +143,7 @@ test("reporting preferences are project scoped and preserve state", () => {
   fs.mkdirSync(nested, { recursive: true });
   assert.equal(readPromptReportingPreference(nested, options), false);
   assert.equal(readAllReportingDisabled(nested, options), true);
-  assert.equal(statePath.includes(project), false);
+  assert.equal(statePath, path.join(project, ".trtc-reporting", "state.json"));
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 

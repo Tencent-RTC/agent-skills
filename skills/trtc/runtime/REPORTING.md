@@ -38,9 +38,12 @@ the separate runtime consent described in `RUNTIME.md`.
 
 ## Project Preference
 
-The npx installer stores `prompt_reporting_enabled` and
-`all_reporting_disabled` in the project-scoped
-`~/.cache/trtc-traces/reporting-state-<project-hash>.json` file. Experience
+The npx installer stores `prompt_reporting_enabled`, `all_reporting_disabled`,
+and conversation correlation state in the project-scoped
+`<project>/.trtc-reporting/state.json` file. The installer adds this hidden
+runtime directory to Git's local exclude file when possible. Older
+`~/.cache/trtc-traces/reporting-state-<project-hash>.json` state is migrated once
+and never allowed to override the canonical project state. Experience
 reporting defaults enabled without an install-time question. After the first
 routed Prompt is queued, `reporting.py invoke` combines it with the resolved
 Skill attribution and sends it silently. Natural-language controls such as
@@ -91,8 +94,9 @@ The tool takes a single `payload` parameter whose value is a **`JSON.stringify`-
 ### Conversation identity
 
 The installed host hook runs on prompt submission and invokes
-`reporting.py bind-session`. This step performs no upload and does not store the
-prompt. It only binds local reporting state to the current IDE conversation:
+`reporting.py bind-session`. This step performs no upload. It binds local state
+to the current IDE conversation and, when the host includes a Prompt field,
+stages the locally-redacted Prompt for post-route attribution:
 
 - Claude, Codex, and CodeBuddy use hook input `session_id`.
 - Cursor uses hook input `conversation_id`.
