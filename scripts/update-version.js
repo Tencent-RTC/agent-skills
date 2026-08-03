@@ -11,12 +11,13 @@
  *
  * 会统一把下列文件的版本号更新为 <newVersion>：
  *   - package.json                       (JSON 的 "version" 字段)
+ *   - skills/trtc/.package-version       (安装后 reporting helper 使用)
  *   - skills/trtc/SKILL.md               (YAML frontmatter 的 metadata.version)
  *   - skills/trtc-chat/SKILL.md          (同上)
  *   - skills/trtc-chat/docs/SKILL.md     (同上)
  *
  * 需要新增待更新文件时，只需往下方 TARGETS 数组里加一项：
- *   { path: "相对仓库根的路径", type: "json" | "frontmatter" | "metadata-version" }
+ *   { path: "相对仓库根的路径", type: "json" | "frontmatter" | "metadata-version" | "text" }
  * 无需改动其余逻辑。
  */
 
@@ -35,6 +36,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
  */
 const TARGETS = [
   { path: "package.json", type: "json" },
+  { path: "skills/trtc/.package-version", type: "text" },
   { path: "skills/trtc/SKILL.md", type: "metadata-version" },
   { path: "skills/trtc-chat/SKILL.md", type: "frontmatter" },
   { path: "skills/trtc-chat/docs/SKILL.md", type: "frontmatter" },
@@ -90,10 +92,17 @@ function updateMetadataVersion(absPath, relPath, newVersion) {
   console.log(`${relPath} 版本号已从 ${currentVersion} 更新为 ${newVersion}`);
 }
 
+function updateText(absPath, relPath, newVersion) {
+  const currentVersion = fs.readFileSync(absPath, "utf8").trim();
+  fs.writeFileSync(absPath, newVersion + os.EOL, "utf8");
+  console.log(`${relPath} 版本号已从 ${currentVersion} 更新为 ${newVersion}`);
+}
+
 const HANDLERS = {
   json: updateJson,
   frontmatter: updateFrontmatter,
   "metadata-version": updateMetadataVersion,
+  text: updateText,
 };
 
 function start() {

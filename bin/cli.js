@@ -340,7 +340,11 @@ function copyRecursive(src, dest) {
   }
 }
 
-function reportingStatePath(projectRoot, { env = process.env, home = os.homedir() } = {}) {
+function reportingStatePath(projectRoot) {
+  return path.join(path.resolve(projectRoot), ".trtc-reporting", "state.json");
+}
+
+function legacyReportingStatePath(projectRoot, { env = process.env, home = os.homedir() } = {}) {
   const resolved = path.resolve(projectRoot);
   let canonical = resolved;
   try { canonical = fs.realpathSync.native(resolved); }
@@ -356,11 +360,15 @@ function readReportingPreferenceValue(projectRoot, key, options = {}) {
   catch { /* Use the resolved path for projects not created yet. */ }
 
   while (true) {
-    const statePath = reportingStatePath(current, options);
-    try {
-      const data = JSON.parse(fs.readFileSync(statePath, "utf8"));
-      if (typeof data[key] === "boolean") return data[key];
-    } catch { /* Check the parent project preference. */ }
+    for (const statePath of [
+      reportingStatePath(current),
+      legacyReportingStatePath(current, options),
+    ]) {
+      try {
+        const data = JSON.parse(fs.readFileSync(statePath, "utf8"));
+        if (typeof data[key] === "boolean") return data[key];
+      } catch { /* Check the next state source or parent project. */ }
+    }
     const parent = path.dirname(current);
     if (parent === current) break;
     current = parent;
@@ -386,13 +394,20 @@ function readAllReportingDisabled(projectRoot, options = {}) {
 
 function writePromptReportingPreference(projectRoot, enabled, options = {}) {
   const { allReportingDisabled, ...pathOptions } = options;
-  const statePath = reportingStatePath(projectRoot, pathOptions);
+  const statePath = reportingStatePath(projectRoot);
   let data = {};
   try {
     data = JSON.parse(fs.readFileSync(statePath, "utf8"));
     if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
   } catch {
-    data = {};
+    try {
+      data = JSON.parse(
+        fs.readFileSync(legacyReportingStatePath(projectRoot, pathOptions), "utf8")
+      );
+      if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+    } catch {
+      data = {};
+    }
   }
   data.prompt_reporting_enabled = Boolean(enabled);
   data.prompt_reporting_updated_at = Math.floor(Date.now() / 1000);
@@ -402,7 +417,24 @@ function writePromptReportingPreference(projectRoot, enabled, options = {}) {
   }
   ensureDir(path.dirname(statePath));
   fs.writeFileSync(statePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+  excludeLocalReportingState(projectRoot);
   return statePath;
+}
+
+function excludeLocalReportingState(projectRoot) {
+  const gitDir = path.join(path.resolve(projectRoot), ".git");
+  if (!fs.existsSync(gitDir) || !fs.statSync(gitDir).isDirectory()) return false;
+  const excludePath = path.join(gitDir, "info", "exclude");
+  ensureDir(path.dirname(excludePath));
+  const current = fs.existsSync(excludePath)
+    ? fs.readFileSync(excludePath, "utf8")
+    : "";
+  if (current.split(/\r?\n/).some(line => line.trim() === ".trtc-reporting/")) {
+    return false;
+  }
+  const prefix = current && !current.endsWith("\n") ? "\n" : "";
+  fs.appendFileSync(excludePath, `${prefix}.trtc-reporting/\n`, "utf8");
+  return true;
 }
 
 function parsePromptReportingValue(raw) {
@@ -1468,6 +1500,7 @@ module.exports = {
   installMcpToml,
   removeTomlTableHierarchy,
   reportingStatePath,
+  legacyReportingStatePath,
   readPromptReportingPreference,
   readAllReportingDisabled,
   writePromptReportingPreference,

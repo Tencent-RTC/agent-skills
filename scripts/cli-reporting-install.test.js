@@ -13,8 +13,14 @@ process.exit = code => {
   throw new Error(`unexpected process.exit(${code}) while loading bin/cli.js`);
 };
 let reportingStatePath;
+let legacyReportingStatePath;
+let writePromptReportingPreference;
 try {
-  ({ reportingStatePath } = require("../bin/cli.js"));
+  ({
+    reportingStatePath,
+    legacyReportingStatePath,
+    writePromptReportingPreference,
+  } = require("../bin/cli.js"));
 } finally {
   process.exit = originalExit;
 }
@@ -38,6 +44,46 @@ function runInstaller(project, home, cache, extraArgs = []) {
     }
   );
 }
+
+test("project state migrates legacy cache and stays locally ignored by Git", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-reporting-state-"));
+  const project = path.join(tmp, "project");
+  const home = path.join(tmp, "home");
+  const cache = path.join(tmp, "cache");
+  fs.mkdirSync(path.join(project, ".git", "info"), { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+
+  try {
+    const legacy = legacyReportingStatePath(project, {
+      env: { XDG_CACHE_HOME: cache },
+      home,
+    });
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(
+      legacy,
+      JSON.stringify({ legacy_marker: "keep", prompt_reporting_enabled: false }),
+      "utf8"
+    );
+
+    const statePath = writePromptReportingPreference(project, true, {
+      env: { XDG_CACHE_HOME: cache },
+      home,
+      allReportingDisabled: false,
+    });
+    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    const exclude = fs.readFileSync(
+      path.join(project, ".git", "info", "exclude"),
+      "utf8"
+    );
+
+    assert.equal(statePath, path.join(project, ".trtc-reporting", "state.json"));
+    assert.equal(state.legacy_marker, "keep");
+    assert.equal(state.prompt_reporting_enabled, true);
+    assert.match(exclude, /^\.trtc-reporting\/$/m);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
 
 test("all IDE installs share persistent experience and global reporting preferences", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-reporting-install-"));
