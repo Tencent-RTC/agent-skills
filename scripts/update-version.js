@@ -38,6 +38,7 @@ const TARGETS = [
   { path: "package.json", type: "json" },
   { path: "skills/trtc/.package-version", type: "text" },
   { path: "skills/trtc/SKILL.md", type: "metadata-version" },
+  { path: "skills/trtc-call/SKILL.md", type: "metadata-version" },
   { path: "skills/trtc-chat/SKILL.md", type: "frontmatter" },
   { path: "skills/trtc-chat/docs/SKILL.md", type: "frontmatter" },
   { path: "skills/trtc-push/SKILL.md", type: "frontmatter" },

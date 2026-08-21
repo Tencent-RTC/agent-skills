@@ -8,7 +8,7 @@ description: >
   "呼叫", "来电", "客服外呼", "IM 聊天页加通话按钮", "integrate call",
   "add calling", "video call", "voice call", "ringing", "callkit".
 metadata:
-  version: 0.1.0
+  version: 0.1.11
 ---
 
 # trtc-call — Call 集成域 dispatcher
@@ -107,9 +107,14 @@ Read `{project_root}/.trtc-session.yaml`：
 |---|---|
 | `status = active` 且 `active_flow = basic-call` | Read `flows/basic-call.md` 续接对应 Phase，STOP |
 | `status = active` 且 `active_flow = demo-experience` | Read `flows/demo-experience.md`，STOP |
-| `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/floating-window, floating-window}` | 告知“Flutter Call 悬浮窗当前暂不支持”，写 `active_flow = playbook-done` + `active_slice = null`，STOP；短 ID 仅用于兼容旧 session |
+| `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/floating-window, floating-window}` | Read `../../../knowledge-base/slices/call/flutter/floating-window.md`，STOP；短 ID 仅用于兼容旧 session |
+| `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/call-observer, call-observer}` | Read `../../../knowledge-base/slices/call/flutter/call-observer.md`，STOP；短 ID 仅用于兼容旧 session |
 | `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/login-recovery, login-recovery}` | Read `../../../knowledge-base/slices/call/flutter/login-recovery.md`，STOP；短 ID 仅用于兼容旧 session |
-| `status = active` 且 `active_flow = slice-adding`、其他 `active_slice` | 告知该能力当前暂不支持，写 `active_flow = playbook-done` + `active_slice = null`，STOP |
+| `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/device-control, device-control}` | Read `../../../knowledge-base/slices/call/flutter/device-control.md`，STOP；短 ID 仅用于兼容旧 session |
+| `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/call-invitation, call-invitation}` | 告知"通话中追加邀请的 UIKit 内置按钮仅 IM 群聊场景（chatGroupId 非空）；临时多人通话需自建按钮调 `CallStore.shared.invite`。详见 optional-tweaks 的 call-invitation 节"，写 `active_flow = playbook-done` + `active_slice = null`，STOP |
+| `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/group-call, group-call}` | Read `../../../knowledge-base/slices/call/flutter/group-call.md`，STOP；短 ID 仅用于兼容旧 session |
+| `status = active` 且 `active_flow = slice-adding`、`active_slice ∈ {call/virtual-background, virtual-background}` | 告知"Flutter Call 虚拟背景在 tencent_calls_uikit 5.0.0 未提供 UI（enableVirtualBackground 为占位接口）；底层能力在 rtc_room_engine 的 TUICallEngine.setBlurBackground/setVirtualBackground，需自绘 UI + 模型文件 + 套餐。详见 slice 文档"，写 `active_flow = playbook-done` + `active_slice = null`，STOP |
+| `status = active` 且 `active_flow = slice-adding`、其他 `active_slice` | Read `playbooks/capability-catalog.md`：命中(AI降噪/云端录制/美颜/虚拟背景)则按其类别应对；未命中才告知"该能力当前暂不支持"+原因。写 `active_flow = playbook-done` + `active_slice = null`，STOP |
 | `status = active` 且 `active_flow = waiting-run-result` | Read `flows/basic-call.md` §Phase 7.5（运行结果分支），STOP |
 | `status = active` 且 `active_flow = playbook-done` | Read `flows/basic-call.md` §Phase 7.6（微调 + P1 slice 菜单），STOP |
 | `status = active` 且 `active_flow = troubleshoot` | Read `flows/troubleshoot.md` 续接排查，STOP |
@@ -193,3 +198,10 @@ Read `{project_root}/.trtc-session.yaml`：
 8. **确定性修改边界**：项目结构只认 `project_probe.py` 输出；任何平台或代码文件修改
    必须出现在当前阶段的 apply plan 中，且 plan_id 已由用户确认。Apply 后必须记录实际
    修改与计划差异；存在未计划修改时不得宣布完成。
+9. **不对已知能力一刀切拒绝**：用户明确提到官网「高级功能」(AI降噪/云端录制/美颜/虚拟背景)时，
+   查 `playbooks/capability-catalog.md` 按类别应对，禁止直接说「做不了」：
+   - `default-on`（AI降噪）→ 告知已默认生效，无需集成；
+   - `stackable`（云端录制）→ 走「说明控制台前置 → 等用户开通回填 → 帮加参数」；
+   - `relayer`（美颜/虚拟背景）→ **诚实告知这是界面重构级岔路口**（要脱离 UIKit 自建通话页），
+     拿到用户明确确认再给 engine API + 方向；不下场代写整套自建通话页。
+   只有 catalog 未登记的能力才可回落「暂不支持」+ 说明原因。

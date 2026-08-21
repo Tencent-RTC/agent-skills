@@ -1027,16 +1027,40 @@ troubleshoot.md T1 命中 `-1002 errSdkNotInitialized` 且 session
   • 静音模式（来电不响铃，适合客服场景）
   • 自定义来电铃声
   • 来电横幅（App 在前台时以横幅代替全屏弹出，不打断当前操作）
+  • 悬浮窗（通话中缩小为小窗，不中断通话）
+  • AI 转录翻译（通话实时字幕，增值服务）
 
 如需处理账号登录态失效，可叠加：
   • call/login-recovery（被踢下线 / UserSig 过期处理）
+
+如需监听通话事件（计时/状态/跳转），可叠加：
+  • call/call-observer（通话生命周期 + 成员动态监听）
+
+如需通话中控制设备，可叠加：
+  • call/device-control（摄像头/麦克风/音量控制）
+
+如需通话中追加成员（群组通话）：
+  • 注意：UIKit 内置「添加成员」按钮仅 IM 群聊场景（chatGroupId 非空）；
+    临时多人通话无按钮，需自建按钮调 CallStore.shared.invite（见 optional-tweaks）
+
+如需独立的群组通话工具（含 join 加入已有通话），可叠加：
+  • call/group-call（发起/加入多人通话）
 ```
 
-等用户选微调 / 登录恢复 / "暂时就这些"：
+等用户选微调 / P1 slice / "暂时就这些"：
 - 选微调 → Read `playbooks/optional-tweaks.md` → 小型 Preview + Apply
 - 选 `call/login-recovery` → 写 `active_slice = call/login-recovery` +
   `active_flow = slice-adding`，Read
   `../../../knowledge-base/slices/call/flutter/login-recovery.md`
+- 选 `call/device-control` → 写 `active_slice = call/device-control` +
+  `active_flow = slice-adding`，Read
+  `../../../knowledge-base/slices/call/flutter/device-control.md`
+- 选 `call/group-call` → 写 `active_slice = call/group-call` +
+  `active_flow = slice-adding`，Read
+  `../../../knowledge-base/slices/call/flutter/group-call.md`
+- 选 `call/call-observer` → 写 `active_slice = call/call-observer` +
+  `active_flow = slice-adding`，Read
+  `../../../knowledge-base/slices/call/flutter/call-observer.md`
 - "暂时就这些" → 写 `status = completed`，结束
 
 ---

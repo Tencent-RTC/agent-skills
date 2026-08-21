@@ -13,7 +13,7 @@ description: >
   TIMPush, APNs, businessID). Entered via trtc dispatcher pre-gate when shipped inside trtc-agent-skills. Do not use for maintaining/debugging this skill
   or MCP reporting tooling, Conference/TUIRoom/直播间/口语陪练/AI客服 主导且无
   TIMPush 信号的场景, or unrelated generic push work with no TIMPush signal.
-version: 0.1.10
+version: 0.1.11
 ---
 
 # TIMPush 开发者助手

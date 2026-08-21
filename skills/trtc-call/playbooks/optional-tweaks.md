@@ -186,3 +186,82 @@ await TUICallKit.instance.setCallingBell('assets/audio/custom_ringtone.mp3');
 ```
 
 **支持格式**：MP3 / AAC（iOS）；MP3 / OGG（Android）。
+
+---
+
+## float-window — 悬浮窗（通话中最小化）
+
+**用途**：通话中点击左上角按钮缩小为悬浮窗，用户可切换到其他页面而不中断通话。
+
+**API**：`TUICallKit.instance.enableFloatWindow(bool enable)`
+
+**默认值**：`false`（关闭）
+
+**插入位置**：App 启动时或登录成功后调用一次。建议放在 `TencentCallSdkAdapter.login` 成功后。
+
+```
+// PATCH lib/trtc_call/call_service.dart
+// AT:  TencentCallSdkAdapter.login 成功后
+TUICallKit.instance.enableFloatWindow(true);
+```
+
+**注意**：
+- 悬浮窗按钮出现在通话界面左上角
+- 悬浮窗是 **App 内 overlay**，只在 App 前台可见；切出 App 后不可见（通话仍在后台继续）
+- 这不是系统级悬浮窗，**无需** `SYSTEM_ALERT_WINDOW` 权限，也不受厂商悬浮窗开关控制
+- 若需切出 App 后仍显示小窗，那是 Android **系统画中画（PiP）**，独立能力，需要
+  `android:supportsPictureInPicture="true"` + Android 8.0+，按 Home 键自动进入（与悬浮窗按钮无关）
+
+---
+
+## ai-transcriber — AI 转录翻译（通话实时字幕）
+
+**用途**：通话中实时将语音转为文字字幕，支持多语言翻译。增值服务，有免费试用时长。
+
+**API**：`TUICallKit.instance.enableAITranscriber(bool enable)`
+
+**默认值**：`true`（开启）。如需关闭，在发起通话前调用。
+
+**插入位置**：发起通话前调用。建议放在 `TencentCallSdkAdapter.login` 成功后全局设置。
+
+```
+// PATCH lib/trtc_call/call_service.dart
+// AT:  TencentCallSdkAdapter.login 成功后
+TUICallKit.instance.enableAITranscriber(false);  // 关闭转录
+// TUICallKit.instance.enableAITranscriber(true); // 开启转录（默认）
+```
+
+**注意**：
+- 这是增值服务（付费），但提供免费试用时长
+- 默认已开启，大多数场景下无需手动调用
+- 如果你的业务不需要转录功能（如纯语音社交），建议关闭以节省费用
+
+---
+
+## call-invitation — 通话中追加邀请（群组通话）
+
+**用途**：群组通话进行中，邀请新成员加入当前通话。
+
+**API**：`CallStore.shared.invite(List<String> userIdList, CallParams? params)`（返回 `CompletionHandler`，用 `isSuccess` 判断）
+
+**⚠️ 重要约束（UIKit 无内置按钮）**：
+- 通话界面右上角的「添加成员」按钮**只在从 IM 群聊发起的通话**（`chatGroupId` 非空）时才会渲染。
+- 纯临时多人通话（无 IM 群）**没有这个按钮**，也没有任何注入点。要邀请，必须**自己写按钮**调本 API，否则主叫方无任何交互入口。
+- 即：这个 tweak 提供的是「能力 API」，不是「开箱即用的 UI」。
+
+**插入位置**：你自建通话 UI 的「邀请」按钮回调里。
+
+```
+// PATCH <你的邀请按钮回调>
+// 调用：
+final result = await CallStore.shared.invite(['user_003', 'user_004'], CallParams());
+if (!result.isSuccess) {
+  // result.errorCode / result.errorMessage
+}
+```
+
+**注意**：
+- 只能在群组通话进行中调用（1v1 不支持追加）
+- 总人数上限 9 人（含自己）
+- 被邀请方需完成 basic call 集成才能收到来电
+- 内置邀请页调用的正是本 API（`invite_user_widget.dart` 内 `CallStore.shared.invite(userIdList, CallParams())`），故不依赖 `chatGroupId` 也能拉人
