@@ -15,7 +15,7 @@ description: >
   TIMPush triggers also include 腾讯云 push, 腾讯云离线推送, registerPush, error
   800006, and APNs/FCM in a Chat or TIMPush context; route these to trtc-push.
 metadata:
-  version: 0.1.10
+  version: 0.1.11
 ---
 
 # TRTC Integration Assistant

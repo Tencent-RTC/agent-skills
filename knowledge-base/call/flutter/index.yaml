@@ -7,11 +7,17 @@ slices:
 
   - id: call/floating-window
     name: 悬浮窗
-    status: unsupported
-    tags: [floating-window, pip, overlay, navigator, go_router, background]
-    keywords: [悬浮窗, 小窗, enableFloatWindow, 切出通话, navigatorObserver]
+    tags: [floating-window, pip, overlay, enableFloatWindow, picture-in-picture]
+    keywords: [悬浮窗, 小窗, enableFloatWindow, 切出通话, 画中画, PiP]
     file: slices/call/flutter/floating-window.md
-    description: Flutter Call 悬浮窗当前暂不支持，不提供自动接入或代码生成
+    description: 通话中缩小为悬浮窗，用户可切换页面而不中断通话；一行 API 开启
+
+  - id: call/call-observer
+    name: 通话状态监控
+    tags: [observer, callback, TUICallObserver, TUICallEngine, onCallReceived, onCallBegin, onCallEnd]
+    keywords: [通话状态, 监控, 回调, onCallReceived, onCallBegin, onCallEnd, onUserJoin, onUserLeave, 通话计时, 状态感知, addObserver]
+    file: slices/call/flutter/call-observer.md
+    description: 监听通话生命周期（来电/接通/结束）和成员动态（加入/离开/拒接），用于通话计时、状态更新和页面跳转
 
   - id: call/login-recovery
     name: 登录态恢复
@@ -19,3 +25,31 @@ slices:
     keywords: [被踢下线, kickedOffline, loginExpired, UserSig过期, LoginEventListenerWidget, loginEventStream, 重新登录, 自动刷新]
     file: slices/call/flutter/login-recovery.md
     description: 处理同账号多端登录被踢（kickedOffline）和 UserSig 过期（loginExpired）两类事件；支持跳登录页、弹窗提示、自动刷新 UserSig 三种策略
+
+  - id: call/device-control
+    name: 设备控制
+    tags: [device, camera, microphone, volume, DeviceStore, openLocalCamera, closeLocalCamera, switchCamera]
+    keywords: [摄像头, 麦克风, 音量, 开关摄像头, 静音, openLocalCamera, closeLocalCamera, switchCamera, openLocalMicrophone, closeLocalMicrophone, DeviceControl]
+    file: slices/call/flutter/device-control.md
+    description: 通话中摄像头开关/前后切换、麦克风开关和采集/播放音量调节
+
+  - id: call/call-invitation
+    name: 通话中追加邀请
+    tags: [invitation, group-call, invite, add-member, CallStore, invite]
+    keywords: [邀请, 追加成员, 通话中拉人, 群组通话邀请, invite, CallStore.invite, 转接]
+    file: slices/call/flutter/call-invitation.md
+    description: 通话中追加邀请；UIKit 内置按钮仅 IM 群聊场景，临时多人通话需自建按钮调 CallStore.shared.invite
+
+  - id: call/group-call
+    name: 群组通话
+    tags: [group-call, multi-party, calls, join, callId, CallParams, groupId]
+    keywords: [群组通话, 多人通话, 多方通话, groupCall, join, callId, 加入通话, 群聊通话, 临时多人]
+    file: slices/call/flutter/group-call.md
+    description: 发起和加入多人音视频通话（≤9人），支持 IM 群聊发起和临时拉人两种模式
+
+  - id: call/virtual-background
+    name: 虚拟背景
+    tags: [virtual-background, background-blur, background-replace, TUICallEngine, setBlurBackground, setVirtualBackground, enableVirtualBackground]
+    keywords: [虚拟背景, 背景虚化, 背景替换, 隐私保护, 视频面试, Professional]
+    file: slices/call/flutter/virtual-background.md
+    description: 虚拟背景（虚化/替换）；tencent_calls_uikit 5.0.0 无 UI（enableVirtualBackground 占位），能力在 rtc_room_engine 的 TUICallEngine，需自绘 UI + 模型 + 套餐

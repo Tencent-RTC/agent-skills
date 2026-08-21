@@ -168,3 +168,5 @@ snippet 直接复用到该构造函数。GoRouter 场景必须保留用户已有
 | `PlatformException` 或 SDK crash，发生在 `Supabase.initialize()` / `Firebase.initializeApp()` 之前的 `TrtcCallBootstrap.run()` 调用处 | `async main()` 里 binding 未初始化就调用了需要 platform channel 的 SDK | 在 `main()` 函数体第一行加 `WidgetsFlutterBinding.ensureInitialized();`（async main 必备，TrtcCallBootstrap 不再代劳）|
 | `setSelfInfo` 成功但对方来电界面看不到昵称/头像 | 非好友之间的通话，被叫方用户信息同步有延迟（隐私限制） | 完成一次成功通话（接通后正常挂断）后即可正常显示，无需代码改动 |
 | `setSelfInfo` 成功但头像始终显示默认占位图 | 头像 URL 所在域名（如 Pinterest、YouTube）设有防盗链，SDK 内置图片加载器（SDWebImage / Glide）加载时被 403 拦截 | 将头像图片托管到无防盗链限制的 CDN（腾讯云 COS、阿里云 OSS 等）；测试可用 `https://liteav.sdk.qcloud.com/app/res/picture/voiceroom/avatar/user_avatar1.png` 验证 |
+| 登录/通话报 `-3301` 或 "Services not available in your region" | SDKAppID 的部署区域与 App 实际访问区域不匹配（控制台里该应用绑定的地域不对） | 换用与业务区域一致的 SDKAppID。登录阶段即会暴露，与集成代码无关 |
+| 群组通话报 `6017 get tinyid by userid failed` | 被叫 userId 从未用该 SDKAppID 登录过（或 userId 不存在） | 先让被叫端用同一 SDKAppID 登录一次；确认 userId 真实存在。不是发起方代码 bug |
