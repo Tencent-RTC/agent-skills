@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -29,4 +30,9 @@ def run_trtc_tool_main(name: str, argv: list[str] | None = None) -> int:
     main = getattr(module, "main", None)
     if main is None:
         raise ImportError(f"{name}.py has no main()")
+    # Canonical tools written with argparse read sys.argv directly, while
+    # newer tools expose main(argv).  Domain shims must support both without
+    # catching an unrelated TypeError raised inside the tool.
+    if len(inspect.signature(main).parameters) == 0:
+        return main()
     return main(argv)

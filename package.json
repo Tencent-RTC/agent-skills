@@ -1,20 +1,38 @@
 {
   "name": "@tencent-rtc/trtc-agent-skills",
-  "version": "0.1.11",
-  "description": "Installer for the TRTC Agent Skills suite (Chat, Call, RTC Engine, Live, Conference) + knowledge base, with one-command MCP setup for Claude Code / Cursor / CodeBuddy / Codex.",
+  "version": "1.0.0",
+  "description": "Installer for the TRTC Agent Skills suite (Chat, Call, RTC Engine, Live, Conference) plus manual SDK runtime log troubleshooting and knowledge base, with one-command MCP setup for Claude Code / Cursor / CodeBuddy / Codex.",
   "bin": {
     "trtc-agent-skills": "bin/cli.js"
   },
   "scripts": {
-    "test:reporting": "node --test scripts/cli.test.js scripts/cli-reporting-install.test.js && python3 -m unittest skills.trtc.tests.test_reporting skills.trtc.tests.test_reporting_docs_query skills.trtc.tests.test_reporting_contract -v",
+    "test": "npm run test:reporting-release && npm run test:sdk-log",
+    "build:telemetry": "node scripts/build-telemetry.js",
+    "check:telemetry-bundle": "node scripts/build-telemetry.js --check",
+    "test:reporting": "node --test scripts/cli.test.js scripts/cli-reporting-install.test.js scripts/cli-c19-mode.test.js scripts/cli-c19-migration.test.js scripts/test-reporting-python.test.js && node scripts/test-reporting-python.js",
+    "test:telemetry-bundle": "node --test tests/reporting-v2/integration/test_telemetry_bundle.js",
+    "test:telemetry-node16": "node scripts/test-telemetry-node16.js",
+    "test:reporting-package": "node scripts/test-reporting-package.js",
+    "test:reporting-v2-hook-performance": "node tests/reporting-v2/scripts/benchmark-hook.js --entry skills/trtc/runtime/telemetry.cjs",
+    "test:reporting-c14-local": "npm --prefix tests/reporting-v2 run test:reporting-c14-local",
+    "test:reporting-c20-6-local": "npm --prefix tests/reporting-v2 run test:c20-6-e2e",
+    "test:reporting-c14-host": "node tests/reporting-v2/scripts/run-c14-host-matrix.js",
+    "test:reporting-c14-ide-evidence": "node tests/reporting-v2/scripts/run-c14-ide-evidence.js",
+    "test:reporting-release": "npm run check:telemetry-bundle && npm --prefix tests/reporting-v2 run test:all && npm run test:reporting && npm run test:telemetry-bundle && npm run test:telemetry-node16 && npm run test:reporting-v2-hook-performance && npm run test:reporting-package && npm run test:reporting-c14-local",
+    "test:sdk-log": "node --test skills/trtc-sdk-log-analysis/scripts/lib/*.test.js skills/trtc-sdk-log-analysis/scripts/*.test.js",
+    "prepack": "npm run build:telemetry",
     "version": "node scripts/update-version.js",
     "release": "npm publish --access public"
   },
   "files": [
     "bin/",
     "skills/",
+    "skills/trtc/runtime/continuation-notice.json",
+    "skills/trtc/runtime/continuation-notice.md",
+    "skills/trtc/runtime/continuation-notice.js",
     "knowledge-base/",
     "hooks/",
+    "commands/",
     "ai-instructions/",
     ".cursor/rules/",
     "CLAUDE.md",
@@ -34,12 +52,22 @@
     "webrtc",
     "sdk-integration",
     "ai-skill",
-    "mcp"
+    "mcp",
+    "sdk-log",
+    "troubleshooting"
   ],
   "author": {
     "name": "Tencent TRTC Team"
   },
   "homepage": "https://trtc.io",
   "repository": "https://git.woa.com/jackyixue/trtc-ai-integration",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/parser": "7.29.8",
+    "@babel/traverse": "7.29.8",
+    "@babel/types": "7.29.8",
+    "@vue/compiler-dom": "3.5.41",
+    "@vue/compiler-sfc": "3.5.41",
+    "esbuild": "0.18.20"
+  }
 }

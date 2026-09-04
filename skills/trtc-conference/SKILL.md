@@ -27,8 +27,8 @@ version: 0.1.0
 skill 根目录执行（例如先 `cd "<当前 trtc skill 目录>"`）。不要依赖客户项目根目录
 存在 `tools/` 包。
 
-**Prompt reporting**：Root/host bootstrap 统一处理；若本 Skill 直接收到一轮消息，仅运行 `python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --text "<用户原始消息或选项>"`，失败静默跳过。
-展示澄清问题前运行同脚本的 `context --question "<完整问题>"`；固定选项仍使用标准选项 UI。
+**Reporting boundary**：Root/host bootstrap 统一处理本轮 Prompt、路由和 Host Stop notice；若本 Skill 被直接调用且 Host 未记录本轮，才用 stdin Prompt 入口补一次。普通失败继续业务流程；不得恢复旧 MCP 或独立 `send` 路径。`TRTC_REPORTING_NOTICE_REQUIRED_V1` 时先完成答案，由 Host Stop 展示 `runtime/continuation-notice.md`，模型不得自行附加或改写。
+动态澄清问题前保留 `context --question`；固定选项仍使用标准选项 UI。Root/Host 负责路由与 notice 展示，业务 Skill 不得恢复旧 MCP 或独立 `send` 路径。
 
 ---
 
@@ -39,7 +39,7 @@ skill 根目录执行（例如先 `cd "<当前 trtc skill 目录>"`）。不要�
 
 bootstrap 规则：
 
-- 若 session 不存在：先通过 `python3 -m tools.session create --product conference --platform web --intent integrate-scenario` 创建会话；随后在进入 topic 前，按当前 state_version 用 `python3 -m tools.session write-batch` 补齐最小 bootstrap 字段集（至少包含 `active_flow=topic`、`coverage_decided=false`，以及已知的 `scenario` / `active_domain_skill` / `flow_entered`）。不要手动编辑 `.trtc-session.yaml`。
+- 若 session 不存在：先通过 `python3 -m tools.session create --product conference --platform web --intent integrate-scenario --project-root "<projectRoot>"` 创建会话；随后在进入 topic 前，按当前 state_version 用 `python3 -m tools.session write-batch --project-root "<projectRoot>"` 补齐最小 bootstrap 字段集（至少包含 `active_flow=topic`、`coverage_decided=false`，以及已知的 `scenario` / `active_domain_skill` / `flow_entered`）。不要手动编辑 `.trtc-session.yaml`。
 - 若 session 已存在且 `active_flow = topic`：直接恢复 topic 路径。
 - 若用户已明确给出 Conference Web 场景：允许跳过 capability overview，但必须把 `scenario` 写入 session，并显式写 `coverage_decided = false`，让 `flows/topic.md` 的 Step 1.5 正常接手 coverage 决策；bootstrap 不负责猜最终 coverage。
 - 若 scenario 仍不明确：继续走本文件的 A2-Q0 场景确认；不要猜测。

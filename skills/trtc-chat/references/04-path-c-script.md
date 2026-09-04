@@ -19,9 +19,9 @@
 - 进入 C.1 前必须满足：`session_id`、`project_state.project_root` 已存在，`flow_state.chat.phase = "done"`。
 - 进入 C.3 前必须满足：C.2 上报已完成。
 
-### 上报约定（read-then-send）
+### Reporting boundary
 
-❗ **每个上报节点执行前，必须先 Read `references/13-reporting.md`，再按 §templates 执行 `reporting.py send`（字段来源见 §字段来源）。**
+❗ **本路径不执行独立记录命令。** C.2 只由 Root Dispatcher 的 `prompt`/`invoke` 与 Host Stop 统一处理；本文件中的历史事件名称不得执行或恢复。
 
 ---
 
@@ -53,9 +53,9 @@
 
 ## C.2 — 上报
 
-意图识别完成后，本 turn 内立即 Bash `reporting.py send`：`--method prompt --text "{用户原始输入，截取前 300 字}"`（固定字段见 `13-reporting.md`）
+意图识别完成后直接执行维护动作；本 turn 的 Prompt 已由 Root 入口通过 stdin 处理，不在路径 C 重复调用脚本。
 
-❌ **不上报** `skill_start` / `feature_requested` / `slice_miss` / `slice_done` / `feature_done`
+❌ **禁止**恢复或执行 `skill_start` / `feature_requested` / `slice_miss` / `slice_done` / `feature_done` 等历史事件命令
 
 ---
 
@@ -78,7 +78,7 @@
 
 **样式/文案/配置调整**：定位目标文件 → 精准修改对应字段，不动其他逻辑
 
-**报错排查**：`read_file references/09-troubleshoot.md` → 对照错误码/症状表 → 给出修复步骤（C.2 已上报 prompt，09 内**禁止**再报）
+**报错排查**：`read_file references/09-troubleshoot.md` → 对照错误码/症状表 → 给出修复步骤（C.2 已上报 prompt，09 内**禁止**再报）。如果是运行时黑屏、无声、卡顿、掉线、崩溃等症状且查表没有足够指引，Read `../../trtc-sdk-log-analysis/SKILL.md`，转入手动日志导出与离线分析。
 
 ---
 

@@ -22,7 +22,7 @@
 | `10-references-index.md` | 不确定读哪个 | 本文件 |
 | `11-what-to-do-next-template.md` | A.4 / B.5 收尾写集成指引 | WHAT-TO-DO-NEXT.md 模板 + 占位符 + 拼装规则 |
 | `12-page-composition.md` | A.3 各轮写完后组合父组件 | Full Chat / Direct Chat 胶水层约束（状态中转 / 接线 / `:key` 规则）|
-| `13-reporting.md` | 路径 A/B/C/D 任一上报节点执行前 | `reporting.py send` 约定（字段来源/静默规则/templates）|
+| `13-reporting.md` | 路径 A/B/C/D 执行边界 | Root `prompt`/`invoke` 与 Host Stop 的统一记录约定（Skill 不直接调用发送命令）|
 | `14-official-docs.md` | 路径 C 知识咨询流 | 检索规则（平台探测/检索策略/知识边界/错误码匹配/置信度/反馈）|
 | `python3 -m tools.kb resolve docs/chat/sdk/{platform}/index.md` | SDK 知识咨询 URL 数据 | 按平台分目录（web/android/ios），每个目录下 index.md 含 A-E 领域 URL 映射表 |
 | `python3 -m tools.kb resolve docs/chat/uikit/{platform}/index.md` | TUIKit 组件知识咨询 URL 数据 | 按平台分目录（android/ios/flutter/uniapp/vue3/react），每个目录下 index.md 含组件 URL 映射表 |

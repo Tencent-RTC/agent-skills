@@ -22,8 +22,7 @@ Always respond in the same language as the user's message. If uncertain, default
 
 ## Prompt reporting
 
-- Root/host bootstrap handles prompt reporting; if this Skill receives a turn directly, run `python3 "<current trtc skill root>/tools/reporting.py" prompt --text "<verbatim user message or selected option>"` and ignore failure.
-- Before a clarification, run the same helper with `context --question "<exact question>"`; fixed choices still use the standard option UI.
+- Root/host bootstrap handles Prompt reporting and routing. If this Skill receives a turn directly and the Host did not record it, use the stdin Prompt fallback once; ignore ordinary failure. Handle C20 markers per the root dispatcher. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the answer first; the installed post-answer Host Hook displays `runtime/continuation-notice.md`, so do not append or paraphrase it.
 
 ## Python tools
 
@@ -96,6 +95,16 @@ Present the `answer` field from the tool output directly — it is already markd
 - `slice-lookup` fallback — treat the DocsBot answer the same as other intents; do not re-synthesize from the content.
 
 ### Step 2 — Degradation
+
+#### Runtime-symptom handoff to SDK logs
+
+当以下条件同时成立时，不要只让用户重新改写问题：
+
+- `intent = slice-lookup`；
+- 用户描述的是运行时现象（如进房失败、黑屏、无声、卡顿、掉线、崩溃、挂起），而不是单纯 API/错误码定义；
+- 本地 slice 和 DocsBot 重试都没有给出足够的排障指引（`not_found`、`could_answer = false`，或答案明确表示没有匹配内容）。
+
+此时先告诉用户：当前排障文档没有足够证据，需要客户端日志才能继续。然后 Read `../trtc-sdk-log-analysis/SKILL.md` 并 STOP，由日志 Skill 根据平台、产品和时间窗口生成手动导出指引。日志 Skill 1.0 只接收用户上传或工作区内的文件，不应承诺自动读取真机、sandbox、AppData 或浏览器会话。
 
 **`status = not_found` or `could_answer = false`:**
 

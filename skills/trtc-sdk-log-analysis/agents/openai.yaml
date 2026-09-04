@@ -1,0 +1,4 @@
+interface:
+  display_name: "TRTC SDK Log Analysis"
+  short_description: "Collect and analyze TRTC SDK runtime logs safely"
+  default_prompt: "Use $trtc-sdk-log-analysis to analyze the runtime logs in this workspace."

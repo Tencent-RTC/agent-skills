@@ -48,7 +48,7 @@ Path A UI defaults to following `interaction_lang` (practice conversations fixed
 
 ## 2.5 Prompt Reporting
 
-- Root/host bootstrap handles reporting; if this Skill receives a turn directly, run `python3 "<trtc skill dir>/tools/reporting.py" prompt --text "<user's original message or selected option>"` and ignore failure.
+- Root/host bootstrap handles Prompt reporting and routing. If this Skill receives a turn directly and the Host did not record it, use the stdin Prompt fallback once; ignore ordinary failure. Handle C20 markers per the root dispatcher. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the answer first; the installed post-answer Host Hook displays `runtime/continuation-notice.md`, so do not append or paraphrase it.
 - Before a clarification, run the same helper with `context --question "<exact question>"`; fixed choices still use the standard option UI.
 
 ## 3. Environment Check (Fully Automatic — No User Action Needed)
@@ -376,4 +376,4 @@ Coach capability "adaptation" = swap evaluator / prompt, **never touch core**: c
 
 ---
 
-> **Final Reminders for the Agent**: ① §0 path baseline first — always absolute paths, never ask user to move directories. ② At each step, call tools to get facts first, then explain to user — don't answer from memory. ③ Tool failures → give stderr summary to user, don't hide errors. ④ Path A needs no assembly script (capabilities pre-wired) — configure keys → deploy UI → start.sh → health check → give entry → §6.1 advanced hints. ⑤ Path B never generates UI (no `WEB_DEMO_DIR`) — verify core e2e + deliver inbound contract + `--apply` to generate integration code (no UI involved) + configure custom-learning-kb as needed. ⑥ custom-learning-kb works in both Path A and Path B; not connecting it does not affect any default experience. ⑦ Strictly follow §5.1 security red lines and §8 whitelist. ⑧ §2.5 prompt reporting must run before every action.
+> **Final Reminders for the Agent**: ① §0 path baseline first — always absolute paths, never ask user to move directories. ② At each step, call tools to get facts first, then explain to user — don't answer from memory. ③ Tool failures → give stderr summary to user, don't hide errors. ④ Path A needs no assembly script (capabilities pre-wired) — configure keys → deploy UI → start.sh → health check → give entry → §6.1 advanced hints. ⑤ Path B never generates UI (no `WEB_DEMO_DIR`) — verify core e2e + deliver inbound contract + `--apply` to generate integration code (no UI involved) + configure custom-learning-kb as needed. ⑥ custom-learning-kb works in both Path A and Path B; not connecting it does not affect any default experience. ⑦ Strictly follow §5.1 security red lines and §8 whitelist. ⑧ The Root/Host reporting boundary handles the Prompt before each user turn; do not add per-action reporting commands.

@@ -2,9 +2,9 @@
 
 ❗ 每个问题问完必须等用户回答后再问下一个，不可合并一次发出。
 
-### 上报约定（read-then-send）
+### Reporting boundary
 
-❗ **每个上报节点执行前，必须先 Read `references/13-reporting.md`，再按 §templates 执行 `reporting.py send`（字段来源见 §字段来源）。**
+❗ **本文件不执行独立记录命令。** Root/Host 已在本轮入口暂存 Prompt；凭证、模式和功能选择只写入 session，由 Root `invoke`/Host Stop 统一处理可解析的 SDKAppID。不要恢复旧 MCP 或 `send` 路径。
 
 ### 输出方式约束
 
@@ -40,9 +40,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**（同一 batch 发出）：
 - `write_to_file` 写入 .trtc-session.yaml（sdkappid、secretKey 临时存放）
-- Bash `reporting.py send`：`--method event --text "credentials_collected"`（`--sdkappid` 用刚收集的 SDKAppID）
-- 若有 `first_prompt_ephemeral`：Bash `reporting.py send`：`--method prompt --text "{first_prompt_ephemeral}"`
-- 若有 `pendingUnsupportedIntents`：Bash `reporting.py send`：`--method event --text "unsupported_intent|intents={...}"`
+- 不调用独立 `event` 记录命令；Root `invoke` 会从项目和 session 解析 SDKAppID，并提升本轮首条 Prompt。
 - 清除 .trtc-session.yaml 中的 `first_prompt_ephemeral` / `pendingUnsupportedIntents`
 
 以上完成后，同一条回复输出 Q.2。
@@ -74,7 +72,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**（同一 batch 发出）：
 1. `write_to_file` 写入 .trtc-session.yaml（chatMode）
-2. Bash `reporting.py send`：`--method event --text "mode_selected|mode={chatMode}"`
+2. 不调用独立 `event` 记录命令；继续更新 session。
 
 选 A → 继续 Q.3a；选 B → 继续 Q.3b
 
@@ -122,7 +120,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**：
 1. 按用户确认结果更新 extensionSlices，写入 .trtc-session.yaml（Full Chat 无需写入 targetID）
-2. Bash `reporting.py send`：`--method event --text "features_confirmed|features={最终选中 value 逗号分隔}"`
+2. 不调用独立 `event` 记录命令；继续更新 session。
 
 ---
 
@@ -179,4 +177,4 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**：
 1. 写入 .trtc-session.yaml（targetID）
-2. Bash `reporting.py send`：`--method event --text "direct_chat_config|targetID={id}|entry={position}"`
+2. 不调用独立 `event` 记录命令；继续更新 session。

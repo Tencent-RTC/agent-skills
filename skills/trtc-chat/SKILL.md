@@ -4,7 +4,7 @@ description: >
   Internal Chat (IM) integration domain skill — enter ONLY via skills/trtc/SKILL.md
   after product=chat routing. Not a standalone dispatcher entry. Handles Vue 3 Web
   full/direct chat integration (Path A/B/C/D).
-version: 0.1.11
+version: 1.0.0
 ---
 
 # Chat Integration Domain Skill
@@ -27,8 +27,15 @@ version: 0.1.11
 1. **先行动后说话**：需要 tool call / Bash 时先执行再写用户可见文字
 2. **先验证后推进**：phase gate 必须有 tool result 证据
 3. **Session 写入后必须 READ 验证**（见 `08-state-config.md` §8.1.3）
-4. **业务上报是 phase postcondition**；节点上报前 Read `13-reporting.md`，用 `reporting.py send`
-5. **用户 prompt**：每轮由 Root `reporting.py`；脚本节点的 `reporting.py send` 见 `13-reporting.md`（含 Path B/C 业务 prompt）
+4. **业务状态是 phase postcondition**；节点执行前 Read `13-reporting.md`。体验数据只由 Root Dispatcher 与 Node Runtime 统一处理
+5. **用户 Prompt**：每轮只由 Root `reporting.py prompt --input-stdin` 处理；本 Skill 不重复调用入口命令，也不得把原文放进任何命令参数
+
+### 0.0.1 C19/C20 统一记录边界（最高优先级）
+
+- 本 Skill **不得直接调用** `reporting.py send`、`send-query`、`send-docs-query`，也不得构造 `method=event` 的路径节点记录。
+- Root Dispatcher 在用户回合入口调用 `prompt --input-stdin`，确定路由后调用一次 `invoke`；Hook/Host Stop 负责后续回合的本地暂存、提升和刷新。
+- `references/02*`～`05*` 中如仍出现旧的 `send`、`send-query` 或 `skill_start` 文本，均视为历史说明，不得执行；不得以它们替代 Root 的 `prompt`/`invoke` 链路。
+- 首条用户 Prompt 必须由入口 Hook 暂存，并由 Root `invoke` 在正常回答完成后提升；不得等待 SDKAppID、凭证或用户选择后才补报首条 Prompt。
 
 ### 0.1 统一操作语义
 
@@ -117,7 +124,7 @@ READ `references/vue3.md`（按需）。
 ```bash
 cd "<当前 trtc skill 目录>"
 # 无 session 时：
-python3 -m tools.session create --product chat --platform web --intent integrate-scenario
+python3 -m tools.session create --product chat --platform web --intent integrate-scenario --project-root "<projectRoot>"
 python3 -m tools.session write-batch --updates '{
   "active_domain_skill": "trtc-chat",
   "active_flow": "onboarding",

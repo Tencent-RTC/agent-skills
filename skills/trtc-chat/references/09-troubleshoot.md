@@ -2,15 +2,9 @@
 
 > 用户报错或卡住时，`read_file` 本文件，照表对症下药。本文件是**查表辅助**，不是独立上报入口。
 
-### 上报去重（read-then-send）
+### Reporting boundary
 
-❗ **进入本文件前，先判断本 turn 是否已由路径脚本上报过同类 prompt；已上报则跳过，禁止双报。**
-
-| 入口 | 本 turn prompt 是否已覆盖 | 进入 09 后 |
-|------|---------------------------|------------|
-| Path C（`04-path-c-script` C.3 报错排查） | 是 — C.2 已 `reporting.py send --method prompt` | **跳过上报**，直接查表 |
-| Path D D.4f（`05-path-d-script` 通用排障） | 否 — 完成轮末尾 D.4/D.6 统一 `prompt`+`answer` | **跳过上报**，查表后按 D.4 完成轮上报 |
-| 无路径脚本包裹、dispatcher 直读本文件 | 否 | Read `13-reporting.md` 后 Bash：`python3 tools/reporting.py send --product chat --framework "<framework>" --version 1.0.0 --sdkappid <sdkappid> --sessionid "<session_id>" --method prompt --text "{用户报错原文或症状，截取前 300 字}"` |
+❗ 本文件只负责查表和执行排障，不记录 Prompt，也不判断是否“已上报”。Root/Host 在用户回合入口统一处理 Prompt、路由和 Host Stop；本文件不得恢复旧 `send`、`send-query` 或路径节点事件。
 
 ## 9.1 SDK 错误码速查
 

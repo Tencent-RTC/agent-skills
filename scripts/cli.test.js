@@ -30,10 +30,36 @@ const {
   readAllReportingDisabled,
   writePromptReportingPreference,
   parsePromptReportingValue,
+  copyRecursive,
   resolvePythonCommand,
   ensurePythonDependencies,
   installMcpToml,
 } = cli;
+
+test("copyRecursive excludes development-only dependency and cache directories", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-copy-filter-"));
+  const src = path.join(tmp, "src");
+  const dest = path.join(tmp, "dest");
+  try {
+    fs.mkdirSync(path.join(src, "kept", ".config"), { recursive: true });
+    fs.writeFileSync(path.join(src, "kept", "skill.txt"), "skill", "utf8");
+    fs.writeFileSync(path.join(src, "kept", ".config", "settings.json"), "{}", "utf8");
+    for (const excluded of [".git", ".venv", "__pycache__", "node_modules"]) {
+      fs.mkdirSync(path.join(src, excluded), { recursive: true });
+      fs.writeFileSync(path.join(src, excluded, "sentinel"), excluded, "utf8");
+    }
+
+    copyRecursive(src, dest);
+
+    assert.equal(fs.readFileSync(path.join(dest, "kept", "skill.txt"), "utf8"), "skill");
+    assert.equal(fs.existsSync(path.join(dest, "kept", ".config", "settings.json")), true);
+    for (const excluded of [".git", ".venv", "__pycache__", "node_modules"]) {
+      assert.equal(fs.existsSync(path.join(dest, excluded)), false, `${excluded} must not be copied`);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
 
 test("getDefaultPathFallbacks uses Windows system root", () => {
   assert.deepEqual(
@@ -143,7 +169,7 @@ test("reporting preferences are project scoped and preserve state", () => {
   fs.mkdirSync(nested, { recursive: true });
   assert.equal(readPromptReportingPreference(nested, options), false);
   assert.equal(readAllReportingDisabled(nested, options), true);
-  assert.equal(statePath, path.join(project, ".trtc-reporting", "state.json"));
+  assert.equal(statePath, path.join(project, ".trtc-skill-state", "state.json"));
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
