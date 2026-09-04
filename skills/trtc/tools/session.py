@@ -256,6 +256,17 @@ PROJECT_MARKERS = (
     "Podfile",             # iOS (CocoaPods)
 )
 
+# Skill commands are commonly launched from the installed Skill directory,
+# not from the user's project. Prefer an explicit project-root handoff from
+# the host when present; otherwise retain the historical cwd walk.
+PROJECT_ROOT_ENV_KEYS = (
+    "TRTC_PROJECT_ROOT",
+    "CLAUDE_PROJECT_DIR",
+    "CODEBUDDY_PROJECT_DIR",
+    "CURSOR_PROJECT_DIR",
+    "CODEX_PROJECT_DIR",
+)
+
 # 字段约束
 VALID_PRODUCTS = {"conference", "chat", "call", "live", "rtc-engine", None}
 VALID_INTENTS = {
@@ -351,6 +362,12 @@ def find_project_root(start: Optional[str] = None) -> str:
       - 用户在 monorepo 子目录仅根有 .git：用根
       - 用户从未 init 过任何项目：fallback 到 CWD（demo / 测试场景）
     """
+    if start is None:
+        for env_name in PROJECT_ROOT_ENV_KEYS:
+            candidate = os.environ.get(env_name)
+            if candidate and os.path.isdir(candidate):
+                start = candidate
+                break
     cur = Path(os.path.abspath(start or os.getcwd()))
     while True:
         for marker in PROJECT_MARKERS:
@@ -981,7 +998,7 @@ def _prepare_completed_session_for_add_feature(session_data: dict) -> dict:
 
 
 def _cli_create(args: list[str]) -> int:
-    """python3 -m tools.session create [--product X] [--platform Y] [--agent Z]"""
+    """python3 -m tools.session create [--project-root DIR] [--product X] [--platform Y] [--agent Z]"""
     # 简单 --key value 解析
     fields: dict = {}
     i = 0
@@ -1234,6 +1251,19 @@ def _cli_migrate(_args: list[str]) -> int:
 
 def main() -> int:
     argv = sys.argv[1:]
+    # Global so create/read/write all resolve the same project when commands
+    # must run from an installed Skill directory.
+    if "--project-root" in argv:
+        idx = argv.index("--project-root")
+        if idx + 1 >= len(argv) or argv[idx + 1].startswith("--"):
+            print("ERROR: --project-root 需要目录", file=sys.stderr)
+            return 2
+        project_root = os.path.abspath(argv[idx + 1])
+        if not os.path.isdir(project_root):
+            print(f"ERROR: project root 不存在：{project_root}", file=sys.stderr)
+            return 2
+        os.environ["TRTC_PROJECT_ROOT"] = project_root
+        argv = argv[:idx] + argv[idx + 2:]
     if not argv:
         print(__doc__)
         return 0

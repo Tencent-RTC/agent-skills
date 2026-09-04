@@ -51,8 +51,8 @@ Read `playbooks/integration-reference.md`。
 若 T1–T3 均未解决：
 
 1. 告知用户这是目前 integration-reference.md 未覆盖的新问题
-2. 引导用户提供完整日志（Xcode Organizer → View Device Logs → 找 Runner 崩溃 → Thread 0 调用栈）
-3. 说明：如果是 iOS native 层崩溃（Dart 层无日志），建议提腾讯云工单，说明 SDK 版本 + iOS 版本 + 复现步骤
+2. Read `../../trtc-sdk-log-analysis/SKILL.md`，按平台、产品和时间窗口生成手动导出指引，并让用户上传或把日志放入工作区
+3. 如果仍是 iOS native 层崩溃，再补充 Xcode Organizer → View Device Logs → Runner 崩溃 → Thread 0 调用栈，并建议带 SDK 版本、iOS 版本和复现步骤提腾讯云工单
 
 ---
 

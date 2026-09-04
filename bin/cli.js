@@ -8,7 +8,7 @@
  * Installs the TRTC AI Integration skill suite (cross-referencing skills:
  * trtc + trtc-onboarding/docs/topic/search/apply + trtc-ai-service) plus the
  * shared knowledge-base into your IDE's skills directory, and wires up the
- * `tencent-rtc-skill-tool` MCP server (used for prompt / runtime telemetry).
+ * `trtc-push-mcp` MCP server for offline push notifications.
  *
  * IMPORTANT — why skills are copied as SIBLING DIRECTORIES:
  *   The entry skill `trtc/SKILL.md` routes to the others via relative paths
@@ -31,7 +31,17 @@ const fs   = require("fs");
 const os   = require("os");
 const path = require("path");
 const crypto = require("crypto");
-const { spawn, spawnSync } = require("child_process");
+const { spawnSync } = require("child_process");
+const {
+  markerDir,
+  resolveReportingMode,
+  findProjectRoot,
+  writeInstallMarker,
+  writeInstallStage,
+  clearInstallStage,
+  acquireProjectInstallLock,
+  releaseProjectInstallLock,
+} = require("./reporting-mode");
 
 // ── tiny color helpers (no deps) ───────────────────────────────────────────────
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -52,6 +62,7 @@ const PKG_VERSION = PKG_JSON.version || "0.0.0";
 const SKILLS_SRC  = path.join(PKG_ROOT, "skills");
 const KB_SRC      = path.join(PKG_ROOT, "knowledge-base");
 const HOOKS_SRC   = path.join(PKG_ROOT, "hooks");
+const COMMANDS_SRC = path.join(PKG_ROOT, "commands");
 
 // Dynamically discover all skills under SKILLS_SRC. Each skill must be a
 // directory containing a SKILL.md entry point. `trtc` is always listed first;
@@ -70,6 +81,7 @@ const SKILL_ALLOWLIST = new Set([
   "trtc-ai-realtime-interpreter",
   "trtc-chat",
   "trtc-push",
+  "trtc-sdk-log-analysis",
 ]);
 
 function getSkillNames() {
@@ -98,6 +110,17 @@ const IDE_TARGETS = {
   codex:     { skillsRoot: ".codex/skills",     kind: "dir" },
 };
 
+// Project-level custom slash commands. Codex intentionally has no entry here:
+// current Codex invokes project skills with `$skill-name`, not project custom
+// slash-command files. Its explicit entry is provided by the installed Skill
+// plus agents/openai.yaml metadata.
+const COMMAND_TARGETS = {
+  claude:    { sourceDir: "claude",    commandsRoot: ".claude/commands" },
+  cursor:    { sourceDir: "cursor",    commandsRoot: ".cursor/commands" },
+  codebuddy: { sourceDir: "codebuddy", commandsRoot: ".codebuddy/commands" },
+};
+const COMMAND_MARKER = "<!-- trtc-agent-skills:sdk-log -->";
+
 // MCP config locations per IDE.
 //   claude:    project-level <root>/.mcp.json (JSON)
 //   cursor:    user-level ~/.cursor/mcp.json (JSON)
@@ -110,12 +133,14 @@ const MCP_TARGETS = {
   codex:     { configFile: path.join(os.homedir(), ".codex", "config.toml"),     format: "toml" },
 };
 
-const MCP_SERVER_NAME  = "tencent-rtc-skill-tool";
-const MCP_SERVER_ENTRY = "@tencent-rtc/skill-tool@latest";
+// C19: Legacy reporting MCP — no longer installed; migrated away on upgrade.
+const LEGACY_REPORTING_MCP_NAME    = "tencent-rtc-skill-tool";
+const LEGACY_REPORTING_MCP_COMMAND = "npx";
+const LEGACY_REPORTING_MCP_ARGS    = ["-y", "@tencent-rtc/skill-tool@latest"];
+const LEGACY_REPORTING_CLAUDE_PERM = `mcp__${LEGACY_REPORTING_MCP_NAME}__*`;
+const LEGACY_REPORTING_CURSOR_PERM = `${LEGACY_REPORTING_MCP_NAME}:skill_analysis`;
 
-// Multi-MCP registry. tencent-rtc-skill-tool is always installed via npx.
-// trtc-push-mcp is now public on npm and should be installed automatically with
-// the skill suite. Maintainers can still force a local checkout via
+// Multi-MCP registry. Maintainers can force a local checkout via
 // TRTC_PUSH_MCP_ENTRY / TIMPUSH_MCP_ENTRY when validating unpublished MCP code.
 const TRTC_PUSH_MCP_NAME = "trtc-push-mcp";
 const TRTC_PUSH_MCP_PACKAGE = process.env.TRTC_PUSH_MCP_PACKAGE || "@tencent-rtc/trtc-push-mcp@1";
@@ -182,12 +207,6 @@ function resolveTrtcPushMcpEntry({
 }
 
 function getMcpServersToInstall() {
-  const servers = [
-    {
-      name: MCP_SERVER_NAME,
-      entry: buildNpxMcpEntry(MCP_SERVER_ENTRY),
-    },
-  ];
   const trtcPushMcp = resolveTrtcPushMcpEntry();
   const entry = {
     type: "stdio",
@@ -199,13 +218,12 @@ function getMcpServersToInstall() {
     trtcPushMcp.source === "npm"
       ? `npm → ${trtcPushMcp.args[1]}`
       : `local → ${trtcPushMcp.args[0]}`;
-  servers.push({ name: TRTC_PUSH_MCP_NAME, entry, note });
-  return servers;
+  return [{ name: TRTC_PUSH_MCP_NAME, entry, note }];
 }
 
 // Hooks distribution targets per IDE.
-//   claude / codebuddy / codex: hooks/ files copied to <root>/.{ide}/hooks/, and
-//     hooks/hooks.json is rewritten + merged into <root>/.{ide}/settings.json.
+//   claude / codebuddy / codex: hooks/hooks.json is structurally rewritten and
+//     merged into project config. Shared .{ide}/hooks/ directories are untouched.
 //     The original hooks.json uses ${CLAUDE_PLUGIN_ROOT} / ${CODEBUDDY_PLUGIN_ROOT}
 //     placeholders that get expanded by the IDE in plugin mode; in npx mode we
 //     materialize them to absolute paths under the IDE's settings dir.
@@ -230,6 +248,11 @@ const HOOKS_TARGETS = {
     rootPlaceholder: "${CODEBUDDY_PLUGIN_ROOT}",
     rootRewrite:     ".codebuddy",
     fallbackPlaceholder: "${CLAUDE_PLUGIN_ROOT}",
+    // CodeBuddy's settings parser is stricter than Claude's and some desktop
+    // releases silently discard a matcher group containing our ownership
+    // marker. Ownership is also recoverable from the absolute command path,
+    // so keep the emitted config to the documented schema for this host.
+    strictSchema:    true,
     hostIde:           "codebuddy",
   },
   codex: {
@@ -274,6 +297,8 @@ const HOOKS_TARGETS = {
 const OWNED_COMMAND_HINTS = [
   "/skills/trtc/hooks/",
   "/skills/trtc/tools/reporting.py",
+  "/skills/trtc/runtime/telemetry.cjs",
+  "/skills/trtc/runtime/stop-hook-dispatcher.cjs",
   "/skills/trtc/room-builder/guardrails/",
   "/skills/trtc-topic/guardrails/",   // legacy — removed from allowlist, kept for cleanup
   "/skills/trtc-apply/guardrails/",   // legacy — removed from allowlist, kept for cleanup
@@ -281,11 +306,17 @@ const OWNED_COMMAND_HINTS = [
   "/hooks/trtc-agent-skills/cursor-adapter.py",
 ];
 
+function isOwnedHookCommand(entry) {
+  if (!entry || typeof entry !== "object" || typeof entry.command !== "string") return false;
+  const normalized = entry.command.replace(/\\/g, "/");
+  return OWNED_COMMAND_HINTS.some(hint => normalized.includes(hint));
+}
+
 function isOwnedHookEntry(entry) {
   if (!entry || typeof entry !== "object") return false;
   if (entry.__trtc_agent_skills__) return true;
   // Cursor-style: { command: "...", ... }
-  if (typeof entry.command === "string" && OWNED_COMMAND_HINTS.some(h => entry.command.includes(h))) {
+  if (isOwnedHookCommand(entry)) {
     return true;
   }
   // Claude/Codex-style: { matcher?, hooks: [{ command, ... }] }
@@ -295,6 +326,132 @@ function isOwnedHookEntry(entry) {
       && OWNED_COMMAND_HINTS.some(hint => h.command.includes(hint)));
   }
   return false;
+}
+
+// Remove only our nested command, never an entire matcher group containing
+// user-owned sibling hooks. The group is removed only when hooks[] is empty.
+function stripOwnedHookEntries(value) {
+  if (!Array.isArray(value)) return value;
+  const out = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") { out.push(entry); continue; }
+    if (Array.isArray(entry.hooks)) {
+      const hooks = entry.hooks.filter(h => !isOwnedHookEntry(h));
+      if (hooks.length > 0) {
+        const kept = { ...entry, hooks };
+        delete kept.__trtc_agent_skills__;
+        out.push(kept);
+      }
+      continue;
+    }
+    if (!isOwnedHookEntry(entry)) out.push(entry);
+  }
+  return out;
+}
+
+function quotePosixArg(value) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
+function quoteWindowsArg(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function buildPromptHookCommand({ ide, nodePath = process.execPath, runtimePath, cwd = null, platform = process.platform }) {
+  if (!HOOKS_TARGETS[ide]) throw new Error(`unsupported hook IDE: ${ide}`);
+  if (!fs.existsSync(nodePath)) {
+    const err = new Error("Node runtime not found"); err.code = "NODE_NOT_FOUND"; throw err;
+  }
+  if (!runtimePath || !fs.existsSync(runtimePath)) {
+    const err = new Error("Telemetry runtime not found"); err.code = "RUNTIME_NOT_FOUND"; throw err;
+  }
+  const cwdArg = typeof cwd === "string" && cwd.length > 0
+    ? ` --cwd ${quotePosixArg(cwd)}` : "";
+  const cwdArgWindows = typeof cwd === "string" && cwd.length > 0
+    ? ` --cwd ${quoteWindowsArg(cwd)}` : "";
+  const command = `${quotePosixArg(nodePath)} ${quotePosixArg(runtimePath)} hook --ide ${quotePosixArg(ide)}${cwdArg}`;
+  const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(runtimePath)} hook --ide ${quoteWindowsArg(ide)}${cwdArgWindows}`;
+  return { command: platform === "win32" && ide === "cursor" ? commandWindows : command, commandWindows };
+}
+
+// Post-answer lifecycle fallback. Prompt Hooks are intentionally local-only;
+// this command is wired to every host's Stop event. Stop runs after the
+// assistant response and can safely perform the bounded foreground
+// promote/flush when the host skipped the model-issued invoke instruction.
+function buildHostStopCommand({ ide, nodePath = process.execPath, runtimePath, cwd = null, platform = process.platform }) {
+  if (!HOOKS_TARGETS[ide]) throw new Error(`unsupported hook IDE: ${ide}`);
+  if (!fs.existsSync(nodePath)) {
+    const err = new Error("Node runtime not found"); err.code = "NODE_NOT_FOUND"; throw err;
+  }
+  if (!runtimePath || !fs.existsSync(runtimePath)) {
+    const err = new Error("Telemetry runtime not found"); err.code = "RUNTIME_NOT_FOUND"; throw err;
+  }
+  const runtimeDir = path.dirname(runtimePath);
+  const wrapperPath = path.join(runtimeDir, "stop-hook-dispatcher.cjs");
+  if (!fs.existsSync(wrapperPath)) {
+    const err = new Error("Stop hook dispatcher not found"); err.code = "STOP_DISPATCHER_NOT_FOUND"; throw err;
+  }
+  const guardPath = path.join(runtimeDir, "..", "hooks", "stop_require_apply_evidence.py");
+  // Cursor has its own Stop output channel and historically did not run the
+  // conference evidence guard. Keep its direct runtime command; the other
+  // hosts need the wrapper so guard failures cannot discard structured JSON.
+  const cwdArg = typeof cwd === "string" && cwd.length > 0
+    ? ` --cwd ${quotePosixArg(cwd)}` : "";
+  const cwdArgWindows = typeof cwd === "string" && cwd.length > 0
+    ? ` --cwd ${quoteWindowsArg(cwd)}` : "";
+  if (ide === "cursor") {
+    const command = `${quotePosixArg(nodePath)} ${quotePosixArg(runtimePath)} host-stop --ide ${quotePosixArg(ide)}${cwdArg}`;
+    const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(runtimePath)} host-stop --ide ${quoteWindowsArg(ide)}${cwdArgWindows}`;
+    return { command: platform === "win32" ? commandWindows : command, commandWindows };
+  }
+  const guardArg = fs.existsSync(guardPath) ? ` --guard-path ${quotePosixArg(guardPath)}` : "";
+  const guardArgWindows = fs.existsSync(guardPath) ? ` --guard-path ${quoteWindowsArg(guardPath)}` : "";
+  const command = `${quotePosixArg(nodePath)} ${quotePosixArg(wrapperPath)} --ide ${quotePosixArg(ide)} --runtime-path ${quotePosixArg(runtimePath)}${cwdArg}${guardArg}`;
+  const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(wrapperPath)} --ide ${quoteWindowsArg(ide)} --runtime-path ${quoteWindowsArg(runtimePath)}${cwdArgWindows}${guardArgWindows}`;
+  return { command: platform === "win32" && ide === "cursor" ? commandWindows : command, commandWindows };
+}
+
+function writeJsonAtomic(file, value) {
+  // Preserve dotfiles-managed config symlinks. Renaming over the symlink path
+  // would replace the link itself and silently sever future synchronization;
+  // instead atomically replace the resolved target in its own directory.
+  let target = file;
+  try {
+    if (fs.lstatSync(file).isSymbolicLink()) {
+      try { target = fs.realpathSync(file); }
+      catch {
+        const err = new Error("Hook config symlink target is unavailable");
+        err.code = "CONFIG_INVALID";
+        throw err;
+      }
+      if (!fs.statSync(target).isFile()) {
+        const err = new Error("Hook config symlink target is not a file");
+        err.code = "CONFIG_INVALID";
+        throw err;
+      }
+    }
+  } catch (err) {
+    if (err?.code !== "ENOENT") throw err;
+  }
+  ensureDir(path.dirname(target));
+  const tmp = path.join(path.dirname(target), `.${crypto.randomBytes(6).toString("hex")}.${path.basename(target)}.tmp`);
+  let fd;
+  try {
+    fd = fs.openSync(tmp, "wx", 0o600);
+    fs.writeFileSync(fd, JSON.stringify(value, null, 2) + "\n", "utf8");
+    fs.fsyncSync(fd);
+    fs.closeSync(fd); fd = undefined;
+    fs.renameSync(tmp, target);
+    try {
+      const dirFd = fs.openSync(path.dirname(target), "r");
+      try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+    } catch (err) {
+      if (!err || !["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT"].includes(err.code)) throw err;
+    }
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
+    try { fs.unlinkSync(tmp); } catch (err) { if (err?.code !== "ENOENT") throw err; }
+  }
 }
 
 // AI instruction files distribution per IDE.
@@ -316,6 +473,44 @@ const AI_INSTRUCTION_TARGETS = {
 const MD_MARKER_BEGIN = "<!-- TRTC-AGENT-SKILLS:BEGIN -->";
 const MD_MARKER_END   = "<!-- TRTC-AGENT-SKILLS:END -->";
 
+// Remove every owned marker block, including nested/leftover markers from
+// older installers.  A simple non-greedy regex only removes up to the first
+// END marker; after an interrupted or repeated install that leaves trailing
+// END markers and causes the next install to append a second dispatcher block.
+// If a BEGIN marker has no matching END, keep the file untouched rather than
+// deleting user content that may sit below the malformed block.
+function stripOwnedMarkerBlocks(existing) {
+  let output = "";
+  let cursor = 0;
+  let scan = 0;
+  let depth = 0;
+  while (scan < existing.length) {
+    const begin = existing.indexOf(MD_MARKER_BEGIN, scan);
+    const end = existing.indexOf(MD_MARKER_END, scan);
+    if (begin < 0 && end < 0) break;
+    const isBegin = begin >= 0 && (end < 0 || begin < end);
+    const index = isBegin ? begin : end;
+    if (isBegin) {
+      if (depth === 0) output += existing.slice(cursor, index);
+      depth += 1;
+      scan = index + MD_MARKER_BEGIN.length;
+    } else {
+      if (depth === 0) {
+        // An orphan END is installer residue; preserve surrounding user text
+        // but remove the marker itself.
+        output += existing.slice(cursor, index);
+        cursor = index + MD_MARKER_END.length;
+      } else {
+        depth -= 1;
+        if (depth === 0) cursor = index + MD_MARKER_END.length;
+      }
+      scan = index + MD_MARKER_END.length;
+    }
+  }
+  if (depth !== 0) return null;
+  return output + existing.slice(cursor);
+}
+
 // Knowledge-base lives next to the skills root (sibling), because skills
 // reference it via ${CLAUDE_PLUGIN_ROOT}/knowledge-base — we mirror that by
 // placing knowledge-base/ as a sibling of the skills dir's parent. To keep it
@@ -327,12 +522,28 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-function copyRecursive(src, dest) {
+// Local source checkouts can contain development-only trees that npm never
+// publishes. Copy-mode installs must not materialize those trees into every
+// IDE target: a single Python virtualenv or node_modules directory can add
+// hundreds of megabytes and make `--ide all` appear to hang.
+const COPY_EXCLUDED_DIRECTORY_NAMES = new Set([
+  ".git",
+  ".venv",
+  "__pycache__",
+  "node_modules",
+]);
+
+function shouldCopySourcePath(src) {
+  return !COPY_EXCLUDED_DIRECTORY_NAMES.has(path.basename(src));
+}
+
+function copyRecursiveFallback(src, dest) {
   const stat = fs.statSync(src);
   if (stat.isDirectory()) {
     ensureDir(dest);
     for (const entry of fs.readdirSync(src)) {
-      copyRecursive(path.join(src, entry), path.join(dest, entry));
+      if (COPY_EXCLUDED_DIRECTORY_NAMES.has(entry)) continue;
+      copyRecursiveFallback(path.join(src, entry), path.join(dest, entry));
     }
   } else {
     ensureDir(path.dirname(dest));
@@ -340,8 +551,23 @@ function copyRecursive(src, dest) {
   }
 }
 
+function copyRecursive(src, dest) {
+  // cpSync performs the directory walk natively and is substantially faster
+  // for `--ide all` (thousands of small Skill files copied four times). Keep a
+  // fallback for early Node 16 builds where cpSync was not yet available.
+  if (typeof fs.cpSync === "function") {
+    fs.cpSync(src, dest, {
+      recursive: true,
+      dereference: true,
+      filter: shouldCopySourcePath,
+    });
+    return;
+  }
+  copyRecursiveFallback(src, dest);
+}
+
 function reportingStatePath(projectRoot) {
-  return path.join(path.resolve(projectRoot), ".trtc-reporting", "state.json");
+  return path.join(markerDir(projectRoot), "state.json");
 }
 
 function legacyReportingStatePath(projectRoot, { env = process.env, home = os.homedir() } = {}) {
@@ -392,33 +618,174 @@ function readAllReportingDisabled(projectRoot, options = {}) {
   ) === true;
 }
 
+// ---------------------------------------------------------------------------
+// Installer preference lock — CJS equivalent of preference.js owner-token lock.
+// Uses the same lock file path so both runtimes coordinate on the same inode.
+// ---------------------------------------------------------------------------
+const INSTALLER_LOCK_FILE = ".pref-owner.json";
+const INSTALLER_LOCK_GRACE_MS = 5000;
+
+function _acquireInstallerLock(prefDir) {
+  const lockPath = path.join(prefDir, INSTALLER_LOCK_FILE);
+  const token = crypto.randomBytes(16).toString("hex");
+  const ownerData = JSON.stringify({ pid: process.pid, token, ts: Date.now() });
+  const mode = process.platform === "win32" ? undefined : 0o600;
+  try {
+    fs.writeFileSync(lockPath, ownerData, { flag: "wx", mode });
+    return { acquired: true, token, lockPath };
+  } catch (err) {
+    if (err.code !== "EEXIST") return { acquired: false, reason: "lock_io_error" };
+    return _staleCheckAndClaimCjs(lockPath, token, ownerData, mode);
+  }
+}
+
+function _staleCheckAndClaimCjs(lockPath, newToken, newOwnerData, mode) {
+  // Step 1: lstat for mtime
+  let stat;
+  try { stat = fs.lstatSync(lockPath); }
+  catch (statErr) {
+    if (statErr.code === "ENOENT") {
+      // Released between EEXIST and lstat; retry acquire once.
+      try {
+        fs.writeFileSync(lockPath, newOwnerData, { flag: "wx", mode });
+        return { acquired: true, token: newToken, lockPath };
+      } catch { return { acquired: false, reason: "busy" }; }
+    }
+    return { acquired: false, reason: "busy" };
+  }
+  // Step 2: age check
+  if (Date.now() - stat.mtimeMs < INSTALLER_LOCK_GRACE_MS) {
+    return { acquired: false, reason: "busy" };
+  }
+  // Step 3: read PID from lock
+  let pid = null;
+  try {
+    const existing = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+    if (typeof existing?.pid === "number") pid = existing.pid;
+  } catch { /* parse failed — rely on mtime alone */ }
+  // Step 4: PID liveness check — must not reclaim a lock held by a live process
+  if (pid !== null) {
+    try {
+      process.kill(pid, 0); // throws if process is dead
+      return { acquired: false, reason: "busy" }; // process alive
+    } catch (killErr) {
+      if (killErr.code !== "ESRCH") return { acquired: false, reason: "busy" };
+      // ESRCH: process dead → stale, can reclaim
+    }
+  }
+  // Step 5: atomic rename to claim
+  const staleFile = lockPath + ".stale." + newToken;
+  try { fs.renameSync(lockPath, staleFile); }
+  catch (renameErr) {
+    if (renameErr.code === "ENOENT") {
+      try {
+        fs.writeFileSync(lockPath, newOwnerData, { flag: "wx", mode });
+        return { acquired: true, token: newToken, lockPath };
+      } catch { return { acquired: false, reason: "busy" }; }
+    }
+    return { acquired: false, reason: "busy" };
+  }
+  // Write new owner with O_EXCL
+  try {
+    fs.writeFileSync(lockPath, newOwnerData, { flag: "wx", mode });
+  } catch { return { acquired: false, reason: "busy" }; }
+  // Step 6: clean up stale files (best-effort)
+  try { fs.unlinkSync(staleFile); } catch { /* ignore */ }
+  try {
+    for (const e of fs.readdirSync(path.dirname(lockPath))) {
+      if (e.startsWith(INSTALLER_LOCK_FILE + ".stale.")) {
+        try { fs.unlinkSync(path.join(path.dirname(lockPath), e)); } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
+  return { acquired: true, token: newToken, lockPath };
+}
+
+function _releaseInstallerLock(lockPath, token, _testHookAfterRename) {
+  if (!lockPath || !token) return;
+  const releasingFile = lockPath + ".releasing." + token;
+  try { fs.renameSync(lockPath, releasingFile); } catch { return; }
+  _testHookAfterRename?.(); // for barrier tests only
+  let tokenMatches = false;
+  try {
+    const existing = JSON.parse(fs.readFileSync(releasingFile, "utf8"));
+    tokenMatches = existing?.token === token;
+  } catch { /* parse failed */ }
+  if (tokenMatches) {
+    try { fs.unlinkSync(releasingFile); } catch { /* ignore */ }
+  } else {
+    // No-clobber restore: link if lockPath is free, otherwise clean up .releasing.*
+    try {
+      fs.linkSync(releasingFile, lockPath);
+      fs.unlinkSync(releasingFile);
+    } catch {
+      try { fs.unlinkSync(releasingFile); } catch { /* ignore */ }
+    }
+  }
+}
+
 function writePromptReportingPreference(projectRoot, enabled, options = {}) {
   const { allReportingDisabled, ...pathOptions } = options;
   const statePath = reportingStatePath(projectRoot);
-  let data = {};
+  const prefDir = path.dirname(statePath);
+  ensureDir(prefDir);
+  const lock = _acquireInstallerLock(prefDir);
+  if (!lock.acquired) {
+    console.warn("[TRTC] Skipping preference write: preference lock is busy (reason: " + (lock.reason ?? "busy") + ")");
+    return statePath;
+  }
   try {
-    data = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
-  } catch {
-    try {
-      data = JSON.parse(
-        fs.readFileSync(legacyReportingStatePath(projectRoot, pathOptions), "utf8")
-      );
-      if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
-    } catch {
-      data = {};
+    let data = null;
+    if (fs.existsSync(statePath)) {
+      // Preference file exists — detect corruption before writing.
+      let raw;
+      try { raw = fs.readFileSync(statePath, "utf8"); } catch { raw = null; }
+      if (raw !== null) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            data = parsed;
+          } else {
+            console.warn("[TRTC] Skipping preference write: preference.json is not a valid object");
+            return statePath;
+          }
+        } catch {
+          console.warn("[TRTC] Skipping preference write: preference.json is corrupt (JSON parse failed)");
+          return statePath;
+        }
+      }
     }
+    if (data === null) {
+      // Preference file absent — try legacy path; do NOT fall back to {} for corrupt legacy.
+      const legacyPath = legacyReportingStatePath(projectRoot, pathOptions);
+      if (fs.existsSync(legacyPath)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(legacyPath, "utf8"));
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            data = parsed;
+          } else {
+            console.warn("[TRTC] Skipping preference write: legacy state is not a valid object");
+            return statePath;
+          }
+        } catch {
+          console.warn("[TRTC] Skipping preference write: legacy state is corrupt (JSON parse failed)");
+          return statePath;
+        }
+      }
+      if (data === null) data = {};
+    }
+    data.prompt_reporting_enabled = Boolean(enabled);
+    data.prompt_reporting_updated_at = Math.floor(Date.now() / 1000);
+    if (typeof allReportingDisabled === "boolean") {
+      data.all_reporting_disabled = allReportingDisabled;
+      data.all_reporting_updated_at = Math.floor(Date.now() / 1000);
+    }
+    writeJsonAtomic(statePath, data);
+    excludeLocalReportingState(projectRoot);
+    return statePath;
+  } finally {
+    _releaseInstallerLock(lock.lockPath, lock.token);
   }
-  data.prompt_reporting_enabled = Boolean(enabled);
-  data.prompt_reporting_updated_at = Math.floor(Date.now() / 1000);
-  if (typeof allReportingDisabled === "boolean") {
-    data.all_reporting_disabled = allReportingDisabled;
-    data.all_reporting_updated_at = Math.floor(Date.now() / 1000);
-  }
-  ensureDir(path.dirname(statePath));
-  fs.writeFileSync(statePath, JSON.stringify(data, null, 2) + "\n", "utf8");
-  excludeLocalReportingState(projectRoot);
-  return statePath;
 }
 
 function excludeLocalReportingState(projectRoot) {
@@ -429,11 +796,12 @@ function excludeLocalReportingState(projectRoot) {
   const current = fs.existsSync(excludePath)
     ? fs.readFileSync(excludePath, "utf8")
     : "";
-  if (current.split(/\r?\n/).some(line => line.trim() === ".trtc-reporting/")) {
+  const stateDirName = path.basename(markerDir(projectRoot));
+  if (current.split(/\r?\n/).some(line => line.trim() === `${stateDirName}/`)) {
     return false;
   }
   const prefix = current && !current.endsWith("\n") ? "\n" : "";
-  fs.appendFileSync(excludePath, `${prefix}.trtc-reporting/\n`, "utf8");
+  fs.appendFileSync(excludePath, `${prefix}${stateDirName}/\n`, "utf8");
   return true;
 }
 
@@ -478,38 +846,6 @@ function installSkillDir(src, dest, { symlink }) {
   }
   copyRecursive(src, dest);
   return "copy";
-}
-
-// ── project root resolution ───────────────────────────────────────────────────
-// Walk UP from cwd for strong repo-root signals (P1 monorepo manifest,
-// P2 package.json workspaces, P3 .git). Otherwise P4 cwd-local package.json,
-// else P5 cwd. Same semantics as the reference installer.
-function findProjectRoot(startCwd) {
-  const start = path.resolve(startCwd);
-  let dir = start;
-  while (true) {
-    if (
-      fs.existsSync(path.join(dir, "pnpm-workspace.yaml")) ||
-      fs.existsSync(path.join(dir, "lerna.json")) ||
-      fs.existsSync(path.join(dir, "turbo.json"))
-    ) return dir;
-
-    const pkgPath = path.join(dir, "package.json");
-    if (fs.existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-        if (pkg && pkg.workspaces) return dir;
-      } catch { /* malformed — keep walking */ }
-    }
-
-    if (fs.existsSync(path.join(dir, ".git"))) return dir;
-
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  if (fs.existsSync(path.join(start, "package.json"))) return start;
-  return start;
 }
 
 // ── IDE auto-detection ────────────────────────────────────────────────────────
@@ -574,7 +910,7 @@ function printHelp() {
     ${c.dim("KB     :")} ${c.gray("alongside the skills root as knowledge-base/")}
     ${c.dim("Hooks  :")} ${c.gray("<projectRoot>/.{ide}/hooks/  +  settings file with hook events wired")}
     ${c.dim("Rules  :")} ${c.gray("CLAUDE.md / AGENTS.md / CODEBUDDY.md (marker-merged)")}
-    ${c.dim("MCP    :")} ${c.gray("tencent-rtc-skill-tool + npm trtc-push-mcp (local only with TRTC_PUSH_MCP_ENTRY)")}
+    ${c.dim("MCP    :")} ${c.gray("npm trtc-push-mcp (local only with TRTC_PUSH_MCP_ENTRY)")}
 
   ${c.dim("Skills are copied as sibling dirs so relative routing (../trtc-onboarding) keeps working.")}
 `);
@@ -590,6 +926,7 @@ function listSkills() {
     "trtc-ai-realtime-interpreter": "AI real-time interpretation / 实时翻译",
     "trtc-chat":          "IM / Chat SDK integration",
     "trtc-push":          "TIMPush offline push integration (via trtc-push-mcp)",
+    "trtc-sdk-log-analysis": "Manual SDK runtime log collection and offline analysis",
   };
   console.log(`\n  ${c.bold("Skills shipped in this package:")}\n`);
   for (const name of getSkillNames()) {
@@ -610,16 +947,56 @@ function cleanSkills(skillsRootAbs, ide) {
   // also wipe a co-located knowledge-base copy if present
   const kb = path.join(path.dirname(skillsRootAbs), "knowledge-base");
   if (fs.existsSync(kb)) { rmrf(kb); }
-  // Wipe only our exact hooks dir (not the IDE's hooks/ parent). For cursor
-  // this is the namespaced .cursor/hooks/trtc-agent-skills/ subdir; for other
-  // IDEs it coincides with the parent .{ide}/hooks/ dir.
+  // Only Cursor has a namespaced adapter directory owned by this package.
+  // Claude/CodeBuddy/Codex share their hooks/ directory with users and other
+  // tools, so install/clean must never recursively remove that directory.
   const hooksTarget = HOOKS_TARGETS[ide];
   const resolvedRoot = path.dirname(path.dirname(skillsRootAbs));
-  const hooksDir = hooksTarget
-    ? path.join(resolvedRoot, hooksTarget.hooksDir)
-    : path.join(path.dirname(skillsRootAbs), "hooks");
-  if (fs.existsSync(hooksDir)) { rmrf(hooksDir); }
+  if (ide === "cursor" && hooksTarget) {
+    const hooksDir = path.join(resolvedRoot, hooksTarget.hooksDir);
+    if (fs.existsSync(hooksDir)) { rmrf(hooksDir); }
+  }
   return wiped;
+}
+
+function cleanCommands(ideList, resolvedRoot) {
+  for (const ide of ideList) {
+    const target = COMMAND_TARGETS[ide];
+    if (!target) continue;
+    const commandPath = path.join(resolvedRoot, target.commandsRoot, "sdk-log.md");
+    if (!fs.existsSync(commandPath)) continue;
+    const content = fs.readFileSync(commandPath, "utf8");
+    if (content.includes(COMMAND_MARKER)) rmrf(commandPath);
+  }
+}
+
+function installCommands(ideList, resolvedRoot) {
+  for (const ide of ideList) {
+    const target = COMMAND_TARGETS[ide];
+    if (!target) {
+      if (ide === "codex") {
+        console.log(c.green("    ✓ ") + "codex explicit entry → $trtc-sdk-log-analysis");
+      }
+      continue;
+    }
+
+    const src = path.join(COMMANDS_SRC, target.sourceDir, "sdk-log.md");
+    const dest = path.join(resolvedRoot, target.commandsRoot, "sdk-log.md");
+    if (!fs.existsSync(src)) {
+      console.log(c.yellow("    ⚠ ") + `${ide} /sdk-log source missing, skipped`);
+      continue;
+    }
+    if (fs.existsSync(dest)) {
+      const existing = fs.readFileSync(dest, "utf8");
+      if (!existing.includes(COMMAND_MARKER)) {
+        console.log(c.yellow("    ⚠ ") + `${ide} /sdk-log already exists and is user-owned, skipped`);
+        continue;
+      }
+    }
+    ensureDir(path.dirname(dest));
+    fs.copyFileSync(src, dest);
+    console.log(c.green("    ✓ ") + `${ide} /sdk-log → ${dest}`);
+  }
 }
 
 // Strip our markered block from a root markdown file. If the file becomes
@@ -651,8 +1028,8 @@ function cleanAiInstructions(ideList, resolvedRoot) {
 }
 
 // Strip our hook entries from each IDE's settings file. We tag entries with
-// __trtc_agent_skills__ where the IDE schema allows (claude/codebuddy/cursor),
-// and fall back to command-path matching for strict-schema IDEs (codex).
+// __trtc_agent_skills__ where the IDE schema allows (claude/cursor), and fall
+// back to command-path matching for strict-schema IDEs (codebuddy/codex).
 function cleanHooksSettings(ideList, resolvedRoot) {
   for (const ide of ideList) {
     const target = HOOKS_TARGETS[ide];
@@ -674,7 +1051,7 @@ function cleanHooksSettings(ideList, resolvedRoot) {
       for (const event of Object.keys(settings.hooks)) {
         const val = settings.hooks[event];
         if (Array.isArray(val)) {
-          settings.hooks[event] = val.filter(e => !isOwnedHookEntry(e));
+          settings.hooks[event] = stripOwnedHookEntries(val);
           if (settings.hooks[event].length === 0) delete settings.hooks[event];
         } else if (val && typeof val === "object" && Array.isArray(val.hooks)) {
           // Some IDEs nest hooks under a single object per event instead of
@@ -970,11 +1347,11 @@ function rewriteHooksContent(content, target, ideAbsRoot, hooksDestAbs) {
   return out;
 }
 
-// Copy the hooks/ source directory into <root>/.{ide}/hooks/ so the dispatched
-// scripts (cursor-adapter.py + the underlying guardrail scripts referenced by
-// hooks.json) sit next to the IDE's skills/.
-function copyHooksDir(target, resolvedRoot) {
+// Cursor still needs its namespaced Python adapter directory for non-Prompt
+// guardrails. Other hosts execute guardrails directly from installed Skills.
+function copyHooksDir(target, resolvedRoot, ide) {
   const dest = path.join(resolvedRoot, target.hooksDir);
+  if (ide !== "cursor") return dest;
   rmrf(dest);
   copyRecursive(HOOKS_SRC, dest);
   return dest;
@@ -986,7 +1363,7 @@ function copyHooksDir(target, resolvedRoot) {
 // ~/.cursor/hooks.json we merge per-event arrays so a previously-installed
 // project's adapter path gets replaced by ours but the user's own hook
 // entries (if any) are preserved.
-function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs) {
+function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide) {
   const srcPath = path.join(HOOKS_SRC, target.sourceConfig);
   if (!fs.existsSync(srcPath)) return null;
 
@@ -1007,7 +1384,12 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs) {
   let existing = {};
   if (fs.existsSync(settingsPath)) {
     try { existing = JSON.parse(fs.readFileSync(settingsPath, "utf8")); }
-    catch { existing = {}; }
+    catch { return { settingsPath, error: "config_invalid" }; }
+    if (!existing || typeof existing !== "object" || Array.isArray(existing)
+        || (existing.hooks !== undefined
+          && (!existing.hooks || typeof existing.hooks !== "object" || Array.isArray(existing.hooks)))) {
+      return { settingsPath, error: "config_invalid" };
+    }
   }
   if (!existing || typeof existing !== "object") existing = {};
 
@@ -1015,6 +1397,72 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs) {
   // use this key). For Cursor we additionally track our injected entries so we
   // can later remove only ours on uninstall.
   const incomingHooks = parsed.hooks || {};
+  const runtimePath = path.join(resolvedRoot, IDE_TARGETS[ide].skillsRoot, "trtc", "runtime", "telemetry.cjs");
+  const promptCommand = buildPromptHookCommand({ ide, runtimePath, cwd: resolvedRoot });
+  const promptEvent = ide === "cursor" ? "beforeSubmitPrompt" : "UserPromptSubmit";
+  incomingHooks[promptEvent] = ide === "cursor"
+    ? [{ command: promptCommand.command }]
+    : [{ hooks: [{
+        type: "command",
+        command: promptCommand.command,
+        ...(ide === "codex" ? { commandWindows: promptCommand.commandWindows } : {}),
+      }] }];
+
+  // If the host skipped the model-issued foreground invoke, recover at the
+  // post-answer lifecycle boundary. This is deliberately not attached to the
+  // Prompt hook: the host-stop command runs only after the answer and is the
+  // only automatic path allowed to promote/flush or surface the C20 notice.
+  if (["cursor", "codebuddy", "claude", "codex"].includes(ide)) {
+    const stopEvent = ide === "cursor" ? "stop" : "Stop";
+    const stopCommand = buildHostStopCommand({ ide, runtimePath, cwd: resolvedRoot });
+    if (ide === "cursor") {
+      const existingStop = Array.isArray(incomingHooks[stopEvent]) ? incomingHooks[stopEvent] : [];
+      incomingHooks[stopEvent] = existingStop.concat({ command: stopCommand.command });
+    } else {
+      const existingStop = Array.isArray(incomingHooks[stopEvent]) ? incomingHooks[stopEvent] : [];
+      // The dispatcher owns both the evidence guard and host-stop.  Running
+      // them as separate hooks is unsafe because hosts may discard one
+      // command's stdout; composing them with `; exit guard_status` is also
+      // unsafe because Claude ignores structured JSON on non-zero exit.
+      // Replace only our old guard/telemetry entries and keep user hooks.
+      const keptStop = [];
+      for (const entry of existingStop) {
+        if (Array.isArray(entry?.hooks)) {
+          const hooks = entry.hooks.filter((hook) => !isOwnedHookEntry(hook));
+          if (hooks.length > 0) keptStop.push({ ...entry, hooks });
+        } else if (!isOwnedHookEntry(entry)) {
+          keptStop.push(entry);
+        }
+      }
+      incomingHooks[stopEvent] = keptStop.concat({ hooks: [{
+        type: "command",
+        command: stopCommand.command,
+        ...(ide === "codex" ? { commandWindows: stopCommand.commandWindows } : {}),
+      }] });
+
+      // CodeBuddy desktop skips its Stop-hook check when an agent turn ends
+      // after a reactive question tool (for example ask_followup_question).
+      // That is the common onboarding path, and leaves the Prompt in Pending
+      // forever even though UserPromptSubmit ran successfully. PostToolUse is
+      // the host-supported lifecycle boundary immediately after that question
+      // is rendered; restrict the fallback to those question tools so a normal
+      // tool call cannot flush before the assistant has answered.
+      if (ide === "codebuddy") {
+        const postToolEvent = "PostToolUse";
+        const existingPostTool = Array.isArray(incomingHooks[postToolEvent])
+          ? incomingHooks[postToolEvent]
+          : [];
+        const postToolFallback = {
+          matcher: "ask_followup_question|ask_user_question|AskUserQuestion",
+          hooks: [{
+            type: "command",
+            command: stopCommand.command,
+          }],
+        };
+        incomingHooks[postToolEvent] = existingPostTool.concat(postToolFallback);
+      }
+    }
+  }
   if (!existing.hooks || typeof existing.hooks !== "object") existing.hooks = {};
 
   // For strict-schema IDEs (codex) we MUST NOT embed any ownership marker —
@@ -1035,9 +1483,7 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs) {
 
   for (const [eventName, eventValue] of Object.entries(incomingHooks)) {
     if (Array.isArray(eventValue)) {
-      // Cursor format: hooks.<event> = [{command: ...}, ...]
-      const stripped = (existing.hooks[eventName] || [])
-        .filter(e => !isOwnedHookEntry(e));
+      const stripped = stripOwnedHookEntries(existing.hooks[eventName] || []);
       existing.hooks[eventName] = stripped.concat(eventValue.map(tagged));
     } else if (Array.isArray(existing.hooks[eventName])) {
       // existing is array (cursor-style), incoming is non-array (claude-style):
@@ -1074,27 +1520,69 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs) {
     if (existing[key] === undefined) existing[key] = val;
   }
 
-  fs.writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+  writeJsonAtomic(settingsPath, existing);
+  let verified;
+  try { verified = JSON.parse(fs.readFileSync(settingsPath, "utf8")); }
+  catch { return { settingsPath, error: "verification_failed" }; }
+  const promptEntries = verified?.hooks?.[promptEvent];
+  const ownedCount = Array.isArray(promptEntries)
+    ? promptEntries.reduce((count, entry) => count + (Array.isArray(entry?.hooks)
+      ? entry.hooks.filter(isOwnedHookCommand).length
+      : Number(isOwnedHookCommand(entry))), 0)
+    : 0;
+  if (ownedCount !== 1) return { settingsPath, error: "verification_failed" };
   return { settingsPath, eventCount: Object.keys(incomingHooks).length };
 }
 
 function installHooks(ideList, resolvedRoot) {
+  const results = {};
   for (const ide of ideList) {
     const target = HOOKS_TARGETS[ide];
-    if (!target) continue;
+    if (!target) {
+      results[ide] = { installed: false, activated: false, reason: "unsupported_ide" };
+      continue;
+    }
 
-    const ideAbsRoot = path.join(resolvedRoot, path.dirname(target.hooksDir));
-    const hooksDest = copyHooksDir(target, resolvedRoot);
-    console.log(c.green("    ✓ ") + `${ide} hooks → ${hooksDest}/`);
+    try {
+      const ideAbsRoot = path.join(resolvedRoot, path.dirname(target.hooksDir));
+      const hooksDest = copyHooksDir(target, resolvedRoot, ide);
+      if (ide === "cursor") console.log(c.green("    ✓ ") + `${ide} hooks → ${hooksDest}/`);
 
-    const merged = mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDest);
-    if (merged) {
+      const merged = mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDest, ide);
+      if (!merged || merged.error) {
+        results[ide] = { installed: false, activated: false, reason: merged?.error || "config_merge_failed" };
+        continue;
+      }
       const isUserLevel = path.isAbsolute(target.settingsFile);
       const prefix = isUserLevel ? c.yellow("    ⚠ ") : c.green("    ✓ ");
       const note   = isUserLevel ? c.dim(" (user-level — affects all cursor projects)") : "";
       console.log(`${prefix}${ide} hooks settings → ${merged.settingsPath} ${c.dim(`(${merged.eventCount} events)`)}${note}`);
+      // Project hooks are security-sensitive host configuration.  The
+      // installer can write the config but it cannot grant the host's trust
+      // decision or reload an already-running desktop session.  Make that
+      // activation step explicit so a successful file write is not mistaken
+      // for a live Hook.  This is especially important for Codex, which
+      // records trust by the exact command definition hash, and CodeBuddy,
+      // whose desktop /hooks panel may require review after an update.
+      if (ide === "codex") {
+        console.log(c.yellow("    ⚠ Codex: restart the session, open /hooks, and trust the new project Hook definitions before testing."));
+      } else if (ide === "codebuddy") {
+        console.log(c.yellow("    ⚠ CodeBuddy: restart the session and review/enable the project Hooks in /hooks before testing."));
+      } else if (ide === "claude") {
+        console.log(c.dim("    ↻ Claude Code: start a new session so the project Hook configuration is reloaded."));
+      }
+      results[ide] = { installed: true, activated: false };
+    } catch (err) {
+      // Telemetry receives a bounded enum-like reason, never a filesystem path
+      // or other user-local detail embedded in an exception message.
+      const reason = typeof err?.code === "string" && /^[A-Z0-9_]{2,32}$/.test(err.code)
+        ? err.code.toLowerCase()
+        : "hook_install_failed";
+      results[ide] = { installed: false, activated: false, reason };
+      console.log(c.yellow("    ⚠ ") + `${ide} hooks unavailable: ${reason}`);
     }
   }
+  return results;
 }
 
 // ── AI instruction files installation ─────────────────────────────────────────
@@ -1103,7 +1591,29 @@ function escapeRegex(s) {
 }
 
 function injectMarkered(srcAbs, destAbs) {
-  const trtcContent = fs.readFileSync(srcAbs, "utf8").trimEnd();
+  const source = fs.readFileSync(srcAbs, "utf8");
+  // The package's root instruction files can themselves be a previously
+  // installed, marker-merged file (for example after running the installer
+  // from the source checkout).  Do not wrap that owned block a second time:
+  // nested BEGIN/END markers make later installs ambiguous and can leave two
+  // dispatcher copies in the target project.  Preserve the source unchanged
+  // only when it has no markers; a malformed owned block is unsafe to copy.
+  let normalizedSource = source;
+  if (source.includes(MD_MARKER_BEGIN) || source.includes(MD_MARKER_END)) {
+    const trimmedSource = source.trim();
+    const sourceIsSingleBlock = trimmedSource.startsWith(MD_MARKER_BEGIN)
+      && trimmedSource.endsWith(MD_MARKER_END);
+    if (sourceIsSingleBlock) {
+      const innerStart = trimmedSource.indexOf(MD_MARKER_BEGIN) + MD_MARKER_BEGIN.length;
+      const innerEnd = trimmedSource.lastIndexOf(MD_MARKER_END);
+      const inner = trimmedSource.slice(innerStart, innerEnd);
+      normalizedSource = stripOwnedMarkerBlocks(inner);
+    } else {
+      normalizedSource = stripOwnedMarkerBlocks(source);
+    }
+  }
+  if (normalizedSource === null) return "skipped-malformed";
+  const trtcContent = normalizedSource.trimEnd();
   const block = `${MD_MARKER_BEGIN}\n${trtcContent}\n${MD_MARKER_END}\n`;
 
   ensureDir(path.dirname(destAbs));
@@ -1111,15 +1621,19 @@ function injectMarkered(srcAbs, destAbs) {
     fs.writeFileSync(destAbs, block, "utf8");
     return "new";
   }
-  let existing = fs.readFileSync(destAbs, "utf8");
-  const re = new RegExp(`${escapeRegex(MD_MARKER_BEGIN)}[\\s\\S]*?${escapeRegex(MD_MARKER_END)}\\n?`, "g");
-  if (re.test(existing)) {
-    existing = existing.replace(re, block);
-    fs.writeFileSync(destAbs, existing, "utf8");
-    return "replaced";
+  const existing = fs.readFileSync(destAbs, "utf8");
+  const stripped = stripOwnedMarkerBlocks(existing);
+  if (stripped === null) {
+    // Preserve malformed user-owned content and avoid making it worse. The
+    // next clean install can repair it after the user resolves the marker.
+    return "skipped-malformed";
   }
-  existing = existing.trimEnd() + "\n\n" + block;
-  fs.writeFileSync(destAbs, existing, "utf8");
+  const hadMarkers = stripped !== existing
+    || existing.includes(MD_MARKER_BEGIN)
+    || existing.includes(MD_MARKER_END);
+  const merged = stripped.trimEnd() + "\n\n" + block;
+  fs.writeFileSync(destAbs, merged, "utf8");
+  if (hadMarkers) return "replaced";
   return "appended";
 }
 
@@ -1143,6 +1657,7 @@ function installAiInstructions(ideList, resolvedRoot) {
       const action = injectMarkered(srcAbs, destAbs);
       const verb = action === "new" ? "created"
                  : action === "replaced" ? "updated marker block"
+                 : action === "skipped-malformed" ? "skipped malformed marker block"
                  : "appended marker block";
       console.log(c.green("    ✓ ") + `${ide} instructions → ${destAbs} ${c.dim(`(${verb})`)}`);
     }
@@ -1169,16 +1684,33 @@ function installMcp(ideList, resolvedRoot) {
     } else {
       let config = {};
       if (fs.existsSync(configPath)) {
-        try { config = JSON.parse(fs.readFileSync(configPath, "utf8")); }
-        catch { config = {}; }
+        let raw;
+        try { raw = fs.readFileSync(configPath, "utf8"); }
+        catch {
+          console.warn(`[trtc-install] skipping MCP write for ${ide}: cannot read config file`);
+          continue;
+        }
+        try {
+          config = JSON.parse(raw);
+          if (!config || typeof config !== "object" || Array.isArray(config)) {
+            console.warn(`[trtc-install] skipping MCP write for ${ide}: config root is not an object`);
+            continue;
+          }
+        } catch {
+          console.warn(`[trtc-install] skipping MCP write for ${ide}: config file is not valid JSON`);
+          continue;
+        }
       }
-      if (!config.mcpServers || typeof config.mcpServers !== "object") {
-        config.mcpServers = {};
+      if (config.mcpServers !== undefined &&
+          (config.mcpServers === null || typeof config.mcpServers !== "object" || Array.isArray(config.mcpServers))) {
+        console.warn(`[trtc-install] skipping MCP write for ${ide}: mcpServers field is not an object`);
+        continue;
       }
+      if (config.mcpServers === undefined) config.mcpServers = {};
       for (const server of servers) {
         config.mcpServers[server.name] = server.entry;
       }
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
+      writeJsonAtomic(configPath, config);
     }
     const labels = servers
       .map(s => s.name + (s.note ? ` (${s.note})` : ""))
@@ -1241,6 +1773,234 @@ function removeTomlTableHierarchy(content, tablePath) {
   return output.join("\n");
 }
 
+// ── C19: Legacy reporting MCP migration ─────────────────────────────────────────
+// Runs before installMcp() on every upgrade. Silently removes the old
+// tencent-rtc-skill-tool entry when (and only when) it exactly matches the
+// original installer-written form. Any user modification → leave it alone.
+
+const ALLOWED_LEGACY_ENTRY_KEYS = new Set(["command", "args", "type", "env"]);
+
+function classifyLegacyMcpEntry(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return "unknown_or_malformed";
+
+  // Any key outside the original installer's field set → user customization
+  for (const k of Object.keys(entry)) {
+    if (!ALLOWED_LEGACY_ENTRY_KEYS.has(k)) return "custom_or_modified";
+  }
+
+  if (entry.command !== LEGACY_REPORTING_MCP_COMMAND) return "custom_or_modified";
+
+  if (!Array.isArray(entry.args) ||
+      entry.args.length !== 2 ||
+      entry.args[0] !== LEGACY_REPORTING_MCP_ARGS[0] ||
+      entry.args[1] !== LEGACY_REPORTING_MCP_ARGS[1]) return "custom_or_modified";
+
+  // type: must be strictly undefined or "stdio" (rejects "", null, etc.)
+  if (entry.type !== undefined && entry.type !== "stdio") return "custom_or_modified";
+
+  // env: must be strictly undefined, or an object whose only allowed key is PATH (string)
+  if (entry.env !== undefined) {
+    if (!entry.env || typeof entry.env !== "object" || Array.isArray(entry.env)) return "custom_or_modified";
+    const envKeys = Object.keys(entry.env);
+    if (envKeys.length > 1) return "custom_or_modified";
+    if (envKeys.length === 1 && (envKeys[0] !== "PATH" || typeof entry.env.PATH !== "string")) {
+      return "custom_or_modified";
+    }
+  }
+
+  return "owned";
+}
+
+function migrateLegacyMcpJson(configPath, permPath, permKey, permArrayPath) {
+  if (!fs.existsSync(configPath)) return "not_present";
+  let raw;
+  try { raw = fs.readFileSync(configPath, "utf8"); } catch { return "read_error"; }
+  let config;
+  try { config = JSON.parse(raw); } catch { return "unknown_or_malformed"; }
+  if (!config || typeof config !== "object" || Array.isArray(config)) return "unknown_or_malformed";
+
+  const result = classifyLegacyMcpEntry(config?.mcpServers?.[LEGACY_REPORTING_MCP_NAME]);
+  if (result !== "owned") return result;
+
+  delete config.mcpServers[LEGACY_REPORTING_MCP_NAME];
+  const newContent = JSON.stringify(config, null, 2) + "\n";
+  if (newContent !== raw) writeJsonAtomic(configPath, config);
+
+  if (permPath && permKey) migrateLegacyPermEntry(permPath, permKey, permArrayPath);
+  return "migrated";
+}
+
+function migrateLegacyPermEntry(permPath, permKey, arrayPath) {
+  if (!fs.existsSync(permPath)) return;
+  let raw, obj;
+  try { raw = fs.readFileSync(permPath, "utf8"); obj = JSON.parse(raw); } catch { return; }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return;
+  const keys = arrayPath.split(".");
+  const parent = keys.slice(0, -1).reduce((o, k) => o?.[k], obj);
+  const lastKey = keys[keys.length - 1];
+  const arr = parent?.[lastKey];
+  if (!Array.isArray(arr) || !arr.includes(permKey)) return;
+  parent[lastKey] = arr.filter(x => x !== permKey);
+  const newContent = JSON.stringify(obj, null, 2) + "\n";
+  if (newContent !== raw) writeJsonAtomic(permPath, obj);
+}
+
+function isTomlLegacyMcpOwned(content) {
+  const TARGET_HEADER = `[mcp_servers.${LEGACY_REPORTING_MCP_NAME}]`;
+  const ENV_HEADER    = `[mcp_servers.${LEGACY_REPORTING_MCP_NAME}.env]`;
+  const SUBTABLE_RE   = new RegExp(`^\\[mcp_servers\\.${LEGACY_REPORTING_MCP_NAME}\\.`);
+
+  const lines = content.split("\n");
+  let mainHeaderCount = 0;
+  let envHeaderCount  = 0;
+  let inMain = false;
+  let inEnv  = false;
+  const mainLines = [];
+  const envLines  = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[")) {
+      inMain = false;
+      inEnv  = false;
+      if (trimmed === TARGET_HEADER) {
+        mainHeaderCount++;
+        if (mainHeaderCount > 1) return false;  // duplicate header → custom_or_modified
+        inMain = true;
+      } else if (trimmed === ENV_HEADER) {
+        envHeaderCount++;
+        if (envHeaderCount > 1) return false;   // duplicate env table → custom_or_modified
+        inEnv = true;
+      } else if (SUBTABLE_RE.test(trimmed)) {
+        return false;  // unexpected sub-table → custom_or_modified
+      }
+      continue;
+    }
+    if (inMain) mainLines.push(trimmed);
+    if (inEnv)  envLines.push(trimmed);
+  }
+
+  if (mainHeaderCount === 0) return null;  // section absent
+
+  // Main table: only command and args allowed (plus blank lines / comments)
+  for (const l of mainLines) {
+    if (l === "" || l.startsWith("#")) continue;
+    if (!/^(command|args)\s*=/.test(l)) return false;  // extra field
+  }
+
+  // command must appear exactly once with the correct value
+  const cmdLines  = mainLines.filter(l => /^command\s*=/.test(l));
+  const argsLines = mainLines.filter(l => /^args\s*=/.test(l));
+  if (cmdLines.length !== 1 || argsLines.length !== 1) return false;  // duplicate or missing
+  if (!/^command\s*=\s*"npx"\s*$/.test(cmdLines[0])) return false;
+  if (!/^args\s*=\s*\["-y",\s*"@tencent-rtc\/skill-tool@latest"\]\s*$/.test(argsLines[0])) return false;
+
+  // Env sub-table: only PATH = "..." allowed, exactly once
+  if (envHeaderCount === 1) {
+    const pathLines = envLines.filter(l => /^PATH\s*=/.test(l));
+    if (pathLines.length !== 1) return false;  // zero or duplicate PATH
+    for (const l of envLines) {
+      if (l === "" || l.startsWith("#")) continue;
+      if (!/^PATH\s*=\s*"[^"]*"\s*$/.test(l)) return false;  // non-PATH key or malformed PATH
+    }
+  }
+
+  return true;
+}
+
+function writeTextAtomicFollowSymlink(filePath, content) {
+  // Resolve symlinks before writing so we update the real target, not the link.
+  // Broken symlink or symlink-to-non-file → throw (fail-closed).
+  let realPath = filePath;
+  try {
+    const lstat = fs.lstatSync(filePath);
+    if (lstat.isSymbolicLink()) {
+      const resolved = fs.realpathSync(filePath);
+      const rstat = fs.lstatSync(resolved);
+      if (!rstat.isFile()) {
+        const err = new Error("CONFIG_INVALID: symlink target is not a regular file");
+        err.code = "CONFIG_INVALID";
+        throw err;
+      }
+      realPath = resolved;
+    }
+  } catch (e) {
+    if (e.code === "ENOENT" && e.message && !e.message.startsWith("CONFIG_INVALID")) {
+      realPath = filePath;  // file does not exist yet — will be created
+    } else {
+      throw e;
+    }
+  }
+
+  const dir = path.dirname(realPath);
+  ensureDir(dir);
+  const tmp = path.join(dir, `.c19mig.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`);
+  let fd;
+  try {
+    fd = fs.openSync(tmp, "w", 0o600);
+    fs.writeSync(fd, content, null, "utf8");
+    fs.fsyncSync(fd);
+    fs.closeSync(fd); fd = undefined;
+    fs.renameSync(tmp, realPath);
+    // Dir fsync after rename so the directory entry for the new file is durable.
+    try {
+      const dfd = fs.openSync(dir, "r");
+      try { fs.fsyncSync(dfd); } catch (e) {
+        if (!["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT"].includes(e?.code)) throw e;
+      } finally { fs.closeSync(dfd); }
+    } catch (e) {
+      if (!["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT"].includes(e?.code)) throw e;
+    }
+  } catch (e) {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    throw e;
+  }
+}
+
+function migrateLegacyMcpToml(configPath) {
+  if (!fs.existsSync(configPath)) return "not_present";
+  let content;
+  try { content = fs.readFileSync(configPath, "utf8"); } catch { return "read_error"; }
+  const owned = isTomlLegacyMcpOwned(content);
+  if (owned === null) return "not_present";
+  if (!owned) return "custom_or_modified";
+  const cleaned = removeTomlTableHierarchy(content, `mcp_servers.${LEGACY_REPORTING_MCP_NAME}`);
+  if (cleaned === content) return "no_change";
+  writeTextAtomicFollowSymlink(configPath, cleaned);
+  return "migrated";
+}
+
+function migrateLegacyForIde(ide, resolvedRoot) {
+  switch (ide) {
+    case "claude":
+      migrateLegacyMcpJson(
+        path.join(resolvedRoot, ".mcp.json"),
+        path.join(resolvedRoot, ".claude", "settings.json"),
+        LEGACY_REPORTING_CLAUDE_PERM,
+        "permissions.allow"
+      );
+      break;
+    case "cursor":
+      migrateLegacyMcpJson(
+        path.join(os.homedir(), ".cursor", "mcp.json"),
+        path.join(resolvedRoot, ".cursor", "permissions.json"),
+        LEGACY_REPORTING_CURSOR_PERM,
+        "mcpAllowlist"
+      );
+      break;
+    case "codebuddy":
+      migrateLegacyMcpJson(
+        path.join(os.homedir(), ".codebuddy", "mcp.json"),
+        null, null, null
+      );
+      break;
+    case "codex":
+      migrateLegacyMcpToml(path.join(os.homedir(), ".codex", "config.toml"));
+      break;
+  }
+}
+
 // ── Claude Code permissions (pre-approve MCP tool) ──────────────────────────────
 function installClaudePermissions(ideList, resolvedRoot) {
   if (!ideList.includes("claude")) return;
@@ -1251,17 +2011,40 @@ function installClaudePermissions(ideList, resolvedRoot) {
 
   let settings = {};
   if (fs.existsSync(settingsPath)) {
-    try { settings = JSON.parse(fs.readFileSync(settingsPath, "utf8")); }
-    catch { settings = {}; }
+    let raw;
+    try { raw = fs.readFileSync(settingsPath, "utf8"); }
+    catch {
+      console.warn(`[trtc-install] skipping claude permissions write: cannot read settings file`);
+      return;
+    }
+    try {
+      settings = JSON.parse(raw);
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+        console.warn(`[trtc-install] skipping claude permissions write: settings root is not an object`);
+        return;
+      }
+    } catch {
+      console.warn(`[trtc-install] skipping claude permissions write: settings file is not valid JSON`);
+      return;
+    }
   }
-  if (!settings.permissions || typeof settings.permissions !== "object") settings.permissions = {};
-  if (!Array.isArray(settings.permissions.allow)) settings.permissions.allow = [];
+  if (settings.permissions !== undefined &&
+      (settings.permissions === null || typeof settings.permissions !== "object" || Array.isArray(settings.permissions))) {
+    console.warn(`[trtc-install] skipping claude permissions write: permissions field is not an object`);
+    return;
+  }
+  if (settings.permissions === undefined) settings.permissions = {};
+  if (settings.permissions.allow !== undefined && !Array.isArray(settings.permissions.allow)) {
+    console.warn(`[trtc-install] skipping claude permissions write: permissions.allow is not an array`);
+    return;
+  }
+  if (settings.permissions.allow === undefined) settings.permissions.allow = [];
 
-  const rules = [`mcp__${MCP_SERVER_NAME}__*`, `mcp__${TRTC_PUSH_MCP_NAME}__*`];
+  const rules = [`mcp__${TRTC_PUSH_MCP_NAME}__*`];
   const added = rules.filter(r => !settings.permissions.allow.includes(r));
   if (added.length > 0) {
     settings.permissions.allow.push(...added);
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+    writeJsonAtomic(settingsPath, settings);
     console.log(c.green("    ✓ ") + `claude permissions → ${settingsPath}`);
   } else {
     console.log(c.dim(`    ✓ claude permissions already set, skipped`));
@@ -1278,51 +2061,102 @@ function installCursorPermissions(ideList, resolvedRoot) {
 
   let perms = {};
   if (fs.existsSync(permPath)) {
-    try { perms = JSON.parse(fs.readFileSync(permPath, "utf8")); }
-    catch { perms = {}; }
+    let raw;
+    try { raw = fs.readFileSync(permPath, "utf8"); }
+    catch {
+      console.warn(`[trtc-install] skipping cursor permissions write: cannot read permissions file`);
+      return;
+    }
+    try {
+      perms = JSON.parse(raw);
+      if (!perms || typeof perms !== "object" || Array.isArray(perms)) {
+        console.warn(`[trtc-install] skipping cursor permissions write: permissions root is not an object`);
+        return;
+      }
+    } catch {
+      console.warn(`[trtc-install] skipping cursor permissions write: permissions file is not valid JSON`);
+      return;
+    }
+  }
+  if (perms.mcpAllowlist !== undefined && !Array.isArray(perms.mcpAllowlist)) {
+    console.warn(`[trtc-install] skipping cursor permissions write: mcpAllowlist is not an array`);
+    return;
   }
   if (!Array.isArray(perms.mcpAllowlist)) perms.mcpAllowlist = [];
 
-  const rules = [
-    `${MCP_SERVER_NAME}:skill_analysis`,
-    `${TRTC_PUSH_MCP_NAME}:*`,
-  ];
+  const rules = [`${TRTC_PUSH_MCP_NAME}:*`];
   const added = rules.filter(r => !perms.mcpAllowlist.includes(r));
   if (added.length > 0) {
     perms.mcpAllowlist.push(...added);
-    fs.writeFileSync(permPath, JSON.stringify(perms, null, 2) + "\n", "utf8");
+    writeJsonAtomic(permPath, perms);
     console.log(c.green("    ✓ ") + `cursor permissions → ${permPath}`);
   } else {
     console.log(c.dim(`    ✓ cursor permissions already set, skipped`));
   }
 }
 
-// ── install reporting (fire-and-forget) ─────────────────────────────────────────
-// Spawns the MCP server with --report. All reporting details (endpoint, etc.)
-// live inside the MCP server; install.js only passes context fields.
-function reportInstall({ ide }) {
-  const payload = JSON.stringify({
-    method: 2,                 // 2 = trtc-agent-skills install (1=chat-web-skill, 2=trtc-agent-skills)
-    version: PKG_VERSION,
-    framework: "all",
-    ide,
-    os: os.platform(),
-  });
+// ── install reporting (durable local event + bounded synchronous flush) ──────
+// The official installer is the source of truth for install_completed. It
+// invokes this package's self-contained runtime with the active Node binary:
+// no nested npx, MCP dependency, Python, or detached child process.
+function reportInstall({
+  projectRoot,
+  installedIdes,
+  installMode,
+  hookResults,
+  eventId = crypto.randomUUID(),
+  env = process.env,
+  runner = spawnSync,
+  runtimePath = path.join(PKG_ROOT, "skills", "trtc", "runtime", "telemetry.cjs"),
+  stateRoot,
+  legacyIdentityPath,
+  installStageToken,
+} = {}) {
+  const args = [
+    runtimePath,
+    "install",
+    "--cwd", path.resolve(projectRoot),
+    "--event-id", eventId,
+    "--installed-ides", [...new Set(installedIdes || [])].join(","),
+    "--install-mode", installMode,
+    "--hook-results-json", JSON.stringify(hookResults || {}),
+    "--version", PKG_VERSION,
+    "--os", os.platform(),
+  ];
+  if (stateRoot) args.push("--state-root", path.resolve(stateRoot));
+  if (legacyIdentityPath) args.push("--legacy-identity-path", path.resolve(legacyIdentityPath));
+  if (installStageToken) args.push("--install-owner-token", String(installStageToken));
 
   try {
-    const child = spawn("npx", ["-y", MCP_SERVER_ENTRY, "--report", payload], {
-      detached: true,
-      stdio: "ignore",
+    if (!fs.existsSync(runtimePath)) {
+      return { ok: false, eventId, reason: "runtime_missing" };
+    }
+    const result = runner(process.execPath, args, {
+      cwd: path.resolve(projectRoot),
+      env,
+      encoding: "utf8",
+      timeout: 2_500,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
     });
-    child.on("error", () => {});
-    child.unref();
-  } catch {
-    // never block install on reporting failure
+    if (result.error) {
+      return { ok: false, eventId, reason: result.error.code || "runtime_failed" };
+    }
+    if (result.status !== 0) {
+      return { ok: false, eventId, reason: `runtime_exit_${result.status}` };
+    }
+    let telemetry = null;
+    try { telemetry = JSON.parse(String(result.stdout || "").trim()); }
+    catch { /* Outbox may still be durable even if stdout was malformed. */ }
+    return { ok: true, eventId, telemetry };
+  } catch (err) {
+    const reason = String(err && (err.code || err.message) || "runtime_failed").slice(0, 64);
+    return { ok: false, eventId, reason };
   }
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
-async function main() {
+async function mainUnlocked() {
   const args = process.argv.slice(2);
   const cmd  = args[0];
 
@@ -1351,15 +2185,19 @@ async function main() {
   //   --ide <name>    → install for that specific IDE only
   let ideList;
   let ideListSource;  // for the CLI hint
+  let installMode;
   if (!ideArg) {
     ideList = detectInstalledIDEs();
     ideListSource = "auto-detected";
+    installMode = "auto";
   } else if (ideArg === "all") {
     ideList = Object.keys(IDE_TARGETS);
     ideListSource = "all";
+    installMode = "all";
   } else {
     ideList = [ideArg];
     ideListSource = "explicit";
+    installMode = "specific";
   }
   for (const ide of ideList) {
     if (!IDE_TARGETS[ide]) {
@@ -1372,6 +2210,29 @@ async function main() {
   let resolvedRoot = findProjectRoot(cwd);
   // Guard: don't install into the package's own tree during local dev.
   if (resolvedRoot === PKG_ROOT) resolvedRoot = cwd;
+
+  // C19 mode is resolved while the project lock is held by main().  It is
+  // intentionally before any clean/install/write operation.
+  const reportingModeResult = resolveReportingMode(resolvedRoot, {
+    home: process.env.HOME || os.homedir(),
+  });
+  const reportingMode = reportingModeResult.mode;
+  if (isClean && reportingMode !== "node_v2") {
+    throw new Error(`--clean is not allowed for reporting mode ${reportingMode} (${reportingModeResult.reason})`);
+  }
+  if (reportingMode === "unknown") {
+    console.warn(c.yellow(`  ⚠ Reporting mode is unknown (${reportingModeResult.reason}); preserving existing configuration and skipping installation.`));
+    return;
+  }
+  if (reportingMode === "legacy_mcp") {
+    console.log(c.yellow("  ↪ Existing legacy reporting project detected; preserving legacy MCP, Hooks, Skills, and instructions."));
+    // Recording the stable grandfathered mode is the only write in this
+    // branch. It contains no prompt, identity, or SDKAppID data and prevents
+    // a later install from reclassifying the untouched project.
+    writeInstallMarker(resolvedRoot, reportingMode, { installerVersion: PKG_VERSION });
+    return;
+  }
+  const stage = writeInstallStage(resolvedRoot, reportingMode, "started", { installerVersion: PKG_VERSION });
 
   let promptReportingEnabled;
   let allReportingDisabled;
@@ -1410,6 +2271,7 @@ async function main() {
     // dirs, so we can read the existing settings.json files in place.
     cleanHooksSettings(ideList, resolvedRoot);
     cleanAiInstructions(ideList, resolvedRoot);
+    cleanCommands(ideList, resolvedRoot);
   }
   for (const ide of ideList) {
     const target = IDE_TARGETS[ide];
@@ -1431,7 +2293,11 @@ async function main() {
     console.log(c.green("    ✓ ") + "knowledge-base/ " + c.dim("→ " + kbDest));
   }
 
-  // 2. Ensure the installed Python tools can load their isolated YAML runtime.
+  // 2. Install explicit log-analysis commands where the IDE supports them.
+  console.log(`\n  ${c.bold("EXPLICIT COMMANDS")}`);
+  installCommands(ideList, resolvedRoot);
+
+  // 3. Ensure the installed Python tools can load their isolated YAML runtime.
   console.log(`\n  ${c.bold("PYTHON RUNTIME")}`);
   const pythonRuntime = verifyInstalledRuntime(
     ensurePythonDependencies(ideList, resolvedRoot)
@@ -1458,12 +2324,14 @@ async function main() {
 
   // 3. Install hooks (per-IDE: copy hooks dir + merge settings.json hooks).
   console.log(`\n  ${c.bold("HOOKS")}`);
-  installHooks(ideList, resolvedRoot);
+  const hookResults = installHooks(ideList, resolvedRoot);
+  writeInstallStage(resolvedRoot, reportingMode, "hooks", { installerVersion: PKG_VERSION, ownerToken: stage.ownerToken });
 
   // 4. Install AI instruction files (CLAUDE.md / AGENTS.md / CODEBUDDY.md /
   //    .cursor/rules/ui-mode.mdc) so the agent has routing rules.
   console.log(`\n  ${c.bold("AI INSTRUCTIONS")}`);
   installAiInstructions(ideList, resolvedRoot);
+  writeInstallStage(resolvedRoot, reportingMode, "instructions", { installerVersion: PKG_VERSION, ownerToken: stage.ownerToken });
 
   // 5. Install MCP server config + permissions.
   console.log(`\n  ${c.bold("MCP")}`);
@@ -1479,11 +2347,44 @@ async function main() {
     }
   );
 
-  // 6. Anonymous install reporting (fire-and-forget; persistent opt out via --no-report).
-  if (!allReportingDisabled) reportInstall({ ide: ideArg || ideListSource });
+  // 6. Anonymous install reporting. The event is durable before a bounded
+  // network flush; any reporting failure is independent from install success.
+  if (!allReportingDisabled) {
+    reportInstall({
+      projectRoot: resolvedRoot,
+      installedIdes: ideList,
+      installMode,
+      hookResults,
+      installStageToken: stage.ownerToken,
+    });
+  }
+
+  writeInstallStage(resolvedRoot, reportingMode, "complete", { installerVersion: PKG_VERSION, ownerToken: stage.ownerToken });
+  writeInstallMarker(resolvedRoot, reportingMode, { installerVersion: PKG_VERSION });
+  clearInstallStage(resolvedRoot);
 
   // 7. Done.
   console.log(`\n  ${c.bold("Done.")} ${c.dim("Just describe what you want to build in your IDE — the skill activates automatically.")}\n`);
+}
+
+// The project lock spans mode detection, clean gating, all installation
+// writes, and the stable marker commit. Help/list and non-add commands retain
+// their old behavior and do not create project state.
+async function main() {
+  const args = process.argv.slice(2);
+  if (args[0] !== "add" || args.includes("--help") || args.includes("-h") || args.includes("--list")) {
+    return mainUnlocked();
+  }
+  const cwd = process.cwd();
+  let root = findProjectRoot(cwd);
+  if (root === PKG_ROOT) root = cwd;
+  const lock = acquireProjectInstallLock(root);
+  if (!lock.acquired) throw new Error(`project install lock unavailable (${lock.reason || "busy"})`);
+  try {
+    return await mainUnlocked();
+  } finally {
+    releaseProjectInstallLock(lock);
+  }
 }
 
 module.exports = {
@@ -1497,6 +2398,7 @@ module.exports = {
   pythonDependencyCache,
   ensurePythonDependencies,
   verifyInstalledRuntime,
+  buildHostStopCommand,
   installMcpToml,
   removeTomlTableHierarchy,
   reportingStatePath,
@@ -1504,7 +2406,29 @@ module.exports = {
   readPromptReportingPreference,
   readAllReportingDisabled,
   writePromptReportingPreference,
+  _releaseInstallerLock,
   parsePromptReportingValue,
+  copyRecursive,
+  buildPromptHookCommand,
+  stripOwnedHookEntries,
+  stripOwnedMarkerBlocks,
+  injectMarkered,
+  installHooks,
+  reportInstall,
+  // C19 migration (exported for unit testing)
+  classifyLegacyMcpEntry,
+  migrateLegacyMcpJson,
+  migrateLegacyPermEntry,
+  isTomlLegacyMcpOwned,
+  migrateLegacyMcpToml,
+  migrateLegacyForIde,
+  resolveReportingMode,
+  writeInstallMarker,
+  writeInstallStage,
+  clearInstallStage,
+  acquireProjectInstallLock,
+  releaseProjectInstallLock,
+  findProjectRoot,
 };
 
 if (require.main === module) {

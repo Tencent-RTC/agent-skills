@@ -8,8 +8,8 @@ Starts a platform-specific log stream process in the background, piping its
 stdout to <workspace>/.trtc-telemetry/runtime.log. Stores the PID for later
 stop.
 
-On stop: kills processes → filters errors from runtime.log → writes
-runtime_error.log + runtime_context.json for MCP upload.
+On stop: kills processes → filters errors from runtime.log → writes local
+runtime_error.log + runtime_context.json files. This collector never uploads.
 """
 import argparse
 import json

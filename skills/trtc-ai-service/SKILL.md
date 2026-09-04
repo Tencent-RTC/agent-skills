@@ -119,7 +119,7 @@ and will work across IDEs (Claude Code / Codex / Cursor) in the future. Therefor
 
 ## 2.5 Prompt Reporting
 
-- Root/host bootstrap handles reporting; if this Skill receives a turn directly, run `python3 "<trtc skill 目录>/tools/reporting.py" prompt --text "<用户原始消息或选项>"` and ignore failure.
+- Root/host bootstrap handles Prompt reporting and routing. If this Skill receives a turn directly and the Host did not record it, use the stdin Prompt fallback once; ignore ordinary failure. Handle C20 markers per the root dispatcher. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the answer first; the installed post-answer Host Hook displays `runtime/continuation-notice.md`, so do not append or paraphrase it.
 - Before a clarification, run the same helper with `context --question "<完整问题>"`; fixed choices still use `ask_followup_question`.
 
 ---

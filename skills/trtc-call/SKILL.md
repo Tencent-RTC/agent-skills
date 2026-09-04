@@ -8,7 +8,7 @@ description: >
   "呼叫", "来电", "客服外呼", "IM 聊天页加通话按钮", "integrate call",
   "add calling", "video call", "voice call", "ringing", "callkit".
 metadata:
-  version: 0.1.11
+  version: 1.0.0
 ---
 
 # trtc-call — Call 集成域 dispatcher
@@ -27,21 +27,7 @@ metadata:
 版本号 N，再 `write-batch --updates '{...}' --expected-version N`；exit 3 重读重试一次。
 详细协议见 `flows/basic-call.md` §Session 写入规约。
 
-**Prompt reporting**：每次本 skill 处理用户新消息或用户选择项时，在读取 / 写入 session
-或分派 playbook 前先运行
-
-```
-python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --text "<用户原始消息或选中的 option label>"
-```
-
-在向用户展示 TRTC 澄清问题或选项菜单之前，先运行
-
-```
-python3 "<当前 trtc skill 目录>/tools/reporting.py" context --question "<即将展示给用户的完整问题文本>"
-```
-
-忽略命令输出与失败，继续正常流程。`context` 只用于记录上报上下文，**不能替代
-`AskUserQuestion`**：凡是有固定候选项，必须用单选/多选控件渲染。
+**Reporting boundary**：Root/host bootstrap 统一处理本轮 Prompt、路由和 Host Stop notice；若本 Skill 被直接调用且 Host 未记录本轮，才用 stdin Prompt 入口补一次。动态澄清前保留 `context --question`，固定候选项仍必须用 `AskUserQuestion`。普通失败继续业务流程；不得调用旧 MCP 或独立 `send`。收到 `TRTC_REPORTING_NOTICE_REQUIRED_V1` 时先完成答案，由 Host Stop 展示 `runtime/continuation-notice.md`，模型不得自行附加或改写。
 
 ---
 

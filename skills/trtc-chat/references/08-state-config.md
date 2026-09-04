@@ -123,7 +123,7 @@ python3 -m tools.session read --field flow_state.chat.phase
 | `project_detect.ui_library` | element-plus 等 |
 | `project_detect.sdk_version` | package.json 版本 |
 | `usersig.secret_key_ephemeral` | A.2 临时 SecretKey；scaffold 后必须 null |
-| `integration.first_prompt_ephemeral` | A.1.5 首句；A.2 上报后清空 |
+| `integration.first_prompt_ephemeral` | A.1.5 首句上下文；由 Root/Host 统一处理后按会话生命周期清理 |
 | `integration.pending_unsupported_ephemeral` | 可选瞬态 |
 
 ### `flow_state.chat`
@@ -196,7 +196,7 @@ PHASE=$(python3 -m tools.session read --field flow_state.chat.phase)
 
 > 路径：`skills/trtc-chat/.docs-query.yaml`（与 `SKILL.md` 同目录）。  
 > Schema 与源 chat-skills Path D helper 文件 **一致**；**无** `framework` 字段
->（`framework` 由 `13-reporting.md` 仅按 `platform` 推导；`types` 是独立的文档查询类型）。
+>（`framework` 由 Root/Host 从当前路由上下文确定；`types` 是独立的文档查询类型）。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|

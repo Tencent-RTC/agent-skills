@@ -1,19 +1,16 @@
 ---
 name: trtc-push
 description: >
-  Use for TIMPush (Tencent Cloud IM Push / 腾讯云即时通信推送) developer assistance —
-  Android and iOS integration and troubleshooting via trtc-push-mcp, plus Flutter,
-  uni-app, HarmonyOS, server API, badge, console, and product-limit routing.
-  Use when the user is integrating or debugging TIMPush itself (e.g. 接入 TIMPush,
-  帮我集成 timpush, 集成 TIMPush, 集成腾讯云 push, 接入腾讯云 push,
-  集成腾讯云离线推送, 接入腾讯云离线推送, 即时通信推送, 离线推送接入,
-  TIMPush 离线推送, 腾讯云离线推送, 腾讯云 push, integrate TIMPush,
-  integrate Tencent Cloud push, integrate Tencent Cloud offline push,
-  setup Tencent Cloud push, registerPush failed, 800006, FCM unavailable with
-  TIMPush, APNs, businessID). Entered via trtc dispatcher pre-gate when shipped inside trtc-agent-skills. Do not use for maintaining/debugging this skill
-  or MCP reporting tooling, Conference/TUIRoom/直播间/口语陪练/AI客服 主导且无
-  TIMPush 信号的场景, or unrelated generic push work with no TIMPush signal.
-version: 0.1.11
+  Use for TIMPush (Tencent Cloud IM Push / 腾讯云即时通信推送) integration and
+  troubleshooting on Android, iOS, Flutter, uni-app, HarmonyOS, and server APIs,
+  including badges, console limits, and trtc-push-mcp workflows. Trigger on
+  TIMPush, 腾讯云 push, 腾讯云离线推送, 即时通信推送, 离线推送接入,
+  integrate/setup Tencent Cloud push, registerPush, businessID, 800006, FCM,
+  or APNs when the request is about TIMPush itself. Enter via the TRTC dispatcher.
+  Do not use for generic push without a TIMPush signal, reporting/MCP maintenance,
+  or Conference, live-room, oral-coach, or AI-customer-service requests without
+  a TIMPush signal.
+version: 1.0.0
 ---
 
 # TIMPush 开发者助手
@@ -62,7 +59,9 @@ list_workflows（可选，看候选）
 上一轮返回的 `run_id`。`state_token` 必须视为 opaque：禁止手改、拼接、解码后重组、
 局部复制；如果只剩 `state_token`，只能原样回传。
 
-### Prompt 上报（MCP 自动，勿再跑 shell）
+### 产品工作流 MCP（不是 Skill 体验数据上报）
+
+`trtc-push-mcp` 是 TIMPush 的功能型工作流 MCP，用于推进产品配置状态；它不是体验数据上报 MCP，也不替代 Root/Host 的 Prompt → invoke → Host Stop 链路。
 
 - 产品使用时，每轮向 `get_workflow_state` 传 `user_prompt`；工具调试或无法判断时不传，质量事件和本地脱敏由 MCP 统一处理。
 - 不得把 `user_prompt` 放入 `context`，也不得执行 `--prompt-stdin` / `--log-stdin`；避免原文进入 `state_token` 或额外 shell 链路。

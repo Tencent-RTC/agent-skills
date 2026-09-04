@@ -287,6 +287,8 @@ Open work / 待做（TODO，截至 2026-06-10）
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import os
 import re
@@ -306,26 +308,49 @@ import yaml
 #   2. python flow.py ...                 （直接运行脚本）
 #   3. from tools.flow import Flow        （Python API import）
 
-try:
-    from tools.session import (
-        ConflictError as SessionConflictError,
-        MissingError as SessionMissingError,
-        SchemaError as SessionSchemaError,
-        Session,
-        SessionError,
-        emit_trace as _emit_trace,
+def _load_canonical_session_module():
+    """Load the sibling session.py, never a cwd-shadowing tools.session shim.
+
+    Domain Skills expose ``tools/flow.py`` shims for compatibility.  When the
+    canonical flow is loaded through one of those shims, ``from tools.session``
+    can resolve to the domain package instead of ``skills/trtc/tools``.  That
+    package intentionally exports only a CLI delegate, so importing Flow then
+    fails with a missing ConflictError.  Resolve the canonical sibling by file
+    path after validating any ambient tools.session import.
+    """
+    required = (
+        "ConflictError", "MissingError", "SchemaError", "Session",
+        "SessionError", "emit_trace",
     )
-except ImportError:
-    # fallback：把同级目录加进 sys.path 后重试
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from tools.session import (  # type: ignore
-        ConflictError as SessionConflictError,
-        MissingError as SessionMissingError,
-        SchemaError as SessionSchemaError,
-        Session,
-        SessionError,
-        emit_trace as _emit_trace,
-    )
+    try:
+        module = importlib.import_module("tools.session")
+        if all(hasattr(module, name) for name in required):
+            return module
+    except Exception:
+        pass
+
+    session_path = Path(__file__).resolve().with_name("session.py")
+    module_name = "_trtc_canonical_tools_session"
+    module = sys.modules.get(module_name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(module_name, session_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load canonical session module: {session_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    if not all(hasattr(module, name) for name in required):
+        raise ImportError(f"Canonical session module is incomplete: {session_path}")
+    return module
+
+
+_session_module = _load_canonical_session_module()
+SessionConflictError = _session_module.ConflictError
+SessionMissingError = _session_module.MissingError
+SessionSchemaError = _session_module.SchemaError
+Session = _session_module.Session
+SessionError = _session_module.SessionError
+_emit_trace = _session_module.emit_trace
 
 
 # ============================================================
@@ -1066,6 +1091,19 @@ def _cli_current(_args: list[str]) -> int:
 
 def main() -> int:
     argv = sys.argv[1:]
+    # Keep Flow commands on the same project session as tools.session when a
+    # domain shim is invoked from an installed Skill directory.
+    if "--project-root" in argv:
+        idx = argv.index("--project-root")
+        if idx + 1 >= len(argv) or argv[idx + 1].startswith("--"):
+            print("ERROR: --project-root 需要目录", file=sys.stderr)
+            return 2
+        project_root = os.path.abspath(argv[idx + 1])
+        if not os.path.isdir(project_root):
+            print(f"ERROR: project root 不存在：{project_root}", file=sys.stderr)
+            return 2
+        os.environ["TRTC_PROJECT_ROOT"] = project_root
+        argv = argv[:idx] + argv[idx + 2:]
     if not argv:
         print(__doc__)
         return 0

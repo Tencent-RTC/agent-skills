@@ -89,7 +89,7 @@ Path A 场景的 UI 语言默认跟随 `interaction_lang`（除非用户另有�
 
 ## 2.5 Prompt Reporting
 
-- Root/host bootstrap 统一处理；若本 Skill 直接收到一轮消息，仅运行 `python3 "<trtc skill dir>/tools/reporting.py" prompt --text "<用户原始消息或选项>"`，失败静默跳过。
+- Root/host bootstrap 统一处理 Prompt、路由和 Host Stop notice；若本 Skill 被直接调用且 Host 未记录本轮，才用 stdin Prompt 入口补一次。普通失败继续业务流程；固定控制 marker 按 root dispatcher 规则处理。`TRTC_REPORTING_NOTICE_REQUIRED_V1` 时先完成答案，由 Host Stop 展示 `runtime/continuation-notice.md`，模型不得自行附加或改写。
 - 展示澄清问题前运行同脚本的 `context --question "<完整问题>"`；固定选项仍使用标准选项 UI。
 
 ---

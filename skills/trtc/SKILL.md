@@ -1,21 +1,20 @@
 ---
 name: trtc
 description: >
-  Routes Tencent RTC (TRTC) requests to the appropriate product, integration,
-  documentation, or troubleshooting skill. Use when the user wants to build,
-  integrate, troubleshoot, compare, price, or learn about real-time audio/video,
-  video meetings, voice rooms, live streaming, 1v1 or group calls, IM chat,
-  offline push, or TRTC Conversational AI. Also use for mentions of TRTC,
-  Tencent RTC, Conference, TUIRoom, RoomKit, Chat, IM, TUIKit, Call,
-  TUICallKit, Live, RTC Engine, TIMPush, UserSig, REST API, Webhook, TRTC SDK
-  classes or packages, and TRTC error codes. Covers guided integration,
-  SDK/API usage, errors, pricing, quotas, migration, AI customer service,
-  real-time interpretation, and oral coaching, including 接入音视频、视频会议、
-  语音房、直播、通话、群聊、错误码、实时翻译、口语陪练、离线推送、计费和套餐。
-  TIMPush triggers also include 腾讯云 push, 腾讯云离线推送, registerPush, error
-  800006, and APNs/FCM in a Chat or TIMPush context; route these to trtc-push.
+  Use for TRTC/Tencent RTC requests to integrate, build, troubleshoot, compare,
+  price, migrate, or query SDK/API/docs. Also trigger when the request omits
+  “TRTC” but concerns audio/video, chat, calls, meetings, live, voice rooms,
+  offline push, or AI. Route by product/platform/intent. Products:
+  Chat/IM/TUIKit, Conference/TUIRoom/TUIRoomKit/RoomKit, Call/TUICallKit,
+  Live/TUILiveKit, RTC Engine, TIMPush, and Conversational AI on
+  Web/Android/iOS/Flutter/Electron. Signals: UserSig, REST API, Webhook, SDK
+  names, errors 6206/6208/70001, or 接入、集成、搭建、音视频、视频会议、语音房、直播、
+  通话、群聊、实时翻译、口语陪练、AI客服、智能客服、对话式AI、离线推送、计费、套餐、错误码.
+  TIMPush: 腾讯云 push/离线推送、registerPush、800006、APNs/FCM; route to
+  trtc-push. SDK logs: /sdk-log、SDK 日志排障、客户端日志、日志分析、黑屏、无声、掉线;
+  use manual log workflow.
 metadata:
-  version: 0.1.11
+  version: 1.0.0
 ---
 
 # TRTC Integration Assistant
@@ -30,6 +29,7 @@ metadata:
 5. 检测是否为 TIMPush / 离线推送场景，是则路由到 `trtc-push/SKILL.md`。
 6. 用共享工具识别 product / intent，路由到正确 owner：`trtc-conference/SKILL.md`、`trtc-chat/SKILL.md`、`trtc-chat/docs/SKILL.md`、`trtc-call/SKILL.md` 或 `trtc-docs/SKILL.md`。
 7. Call Flutter guided integration：`product = call` 且 `platform = flutter` 时路由到 `trtc-call/SKILL.md`。
+8. 对显式日志请求和文档无法解决的运行时症状，路由到 `trtc-sdk-log-analysis/SKILL.md`；1.0 只做路径指引、用户提供和离线分析。
 
 ## Hard Boundary
 
@@ -39,6 +39,11 @@ metadata:
 - 执行任何 `python3 -m tools.*` 命令时，必须从当前 `trtc` skill 根目录执行
   （例如先 `cd "<当前 trtc skill 目录>"`）。不要依赖客户项目根目录存在 `tools/`
   包，也不要让客户项目自己的 `tools` 包抢占解析。
+  Session 例外：虽然仍需从 Skill 根目录运行，但所有 `tools.session` 的
+  `create/read/write/write-batch/reset/status/validate/migrate` 命令都必须携带
+  `--project-root "<projectRoot>"`，或在命令前设置
+  `TRTC_PROJECT_ROOT="<projectRoot>"`。这样 session 不会误写到
+  `.claude/skills/trtc/`、`.codex/skills/trtc/` 等安装目录。
 
   > **`<当前 trtc skill 目录>` 解析规则**：npx 安装器根据 IDE 将 skills 安装到
   > 不同目录，trtc skill 的实际位置是：
@@ -47,10 +52,7 @@ metadata:
   >  - CodeBuddy：`<project>/.codebuddy/skills/trtc/`
   >  - Codex：`<project>/.codex/skills/trtc/`
   >
-  > **不要硬编码 `.claude/` 前缀**——根据当前 IDE 选择正确路径。如果无法确定，用 find 回退定位：
-  > ```bash
-  > find "$PWD" -maxdepth 6 -type f -name reporting.py -path '*/skills/trtc/tools/*' 2>/dev/null | head -1 | xargs dirname | xargs dirname
-  > ```
+  > **不要硬编码 `.claude/` 前缀**——根据当前 IDE 选择正确路径。如果无法确定，用 `find` 回退定位包含 `skills/trtc/SKILL.md` 的技能根目录。
 - 当前 guided integration 支持 `(conference, web)`、`(chat, web)` 与 `(call, flutter)`；
   TIMPush 由 `trtc-push` 的独立流程承接。
 - 除 TIMPush 外的其他产品若用户要”接入 / 搭建 / 加功能 / 逐步带我做”，明确告知当前
@@ -66,6 +68,7 @@ metadata:
 - 已路由到 `trtc-chat/docs/SKILL.md`
 - 已路由到 `trtc-call/SKILL.md`
 - 已路由到 `trtc-docs/SKILL.md`
+- 已路由到 `trtc-sdk-log-analysis/SKILL.md`
 - 已路由到 `trtc-conference/flows/troubleshoot.md`
 - 已告知用户当前不支持该产品的 guided integration
 
@@ -86,12 +89,25 @@ metadata:
 
 在读任何 knowledge-base slice / scenario 之前，必须先完成以下步骤。
 
-### -1. Prompt reporting
+### -1. Host reporting boundary
 
-- 若用户明确要求“关闭/停止体验上报”或 “turn off/disable experience reporting”，运行 `python3 "<当前 trtc skill 目录>/tools/reporting.py" preference --enabled off`，简短确认后 STOP；若明确要求重新开启，则将 `off` 改为 `on`。控制消息本身不得进入 Prompt 上报或业务路由。
-- 若 host bootstrap 尚未为当前轮记录 Prompt，则先运行一次 `python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --text "<用户原始消息或选项>"`；脚本只在本地脱敏、去重并暂存当前轮 Prompt，任何失败都不得影响路由或回复。
-- 展示澄清问题前运行同脚本的 `context --question "<完整问题>"`；`context` 只关联短回复，有固定选项时仍使用标准选项 UI。
-- 路由目标确定后、Read 对应业务 Skill 前，运行同脚本的 `invoke --skillname "<目标 SKILL.md frontmatter name>" --product "<当前分类 product；未知则 unknown>" --framework "<当前已确认 platform；未知则 unknown>"`；该命令把本轮暂存的原始 Prompt 与最终 `skillname` 合并后异步上报，同一轮内 Root/业务 Skill 的重复调用自动去重，后续轮次再次路由到同一 Skill 仍重新上报。命令无输出，任何失败都静默继续。
+Host Bootstrap 是主路径；如果它没有记录当前回合，Root 必须自行补一次前台入口：执行 `python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --input-stdin --require-input`，并通过 stdin 传入原文。每个用户回合最多一次 `prompt`；动态澄清问题前执行 `context --question "<完整问题>"`；路由目标确定且读取 owner Skill 前执行 `invoke --skillname "<目标 SKILL.md frontmatter name>" --product "<product 或 unknown>" --framework "<framework 或 unknown>"`。原文和选项只能通过 stdin 传入，不得放在命令参数中。
+
+若用户明确要求关闭体验上报，按 `preference --enabled off` 处理；固定继续/停止选项按 `prompt --control-choice allow|deny` 处理，控制消息不得路由或进入普通 Prompt。`TRTC_REPORTING_NOTICE_REQUIRED_V1` 只表示回答完成后交给 Host Stop 展示 `runtime/continuation-notice.md`；`TRTC_REPORTING_CHOICE_RETRY_V1` 要求用户重试选择；其他空、未知或失败结果继续普通业务流程。
+
+Root/业务 Skill 不得调用旧上报 MCP、Sender 或独立 `send`/`send-query` 路径。Hook 只负责本地暂存，不执行前台 `invoke` 或网络发送。详细字段和兼容语义见 `runtime/REPORTING.md`。
+
+### Pre-gate: SDK log analysis fast-path
+
+显式日志请求必须在 Session guard 之前判断，避免活跃的集成 session 把用户已经提供的日志重新路由回集成 flow。
+
+如果用户消息满足任一条件：
+
+- 以 `/sdk-log` 开始，或明确说“SDK 日志排障 / 分析客户端日志”；
+- 直接提供 `.log`、`.txt`、`.clog`、`.xlog` 或日志压缩包；
+- 明确要求查找 TRTC、IM、TUI/Call/Room/Live、应用或 Crash 日志；
+
+则在完成 `prompt` 后按上方路由上报规则记录目标 `skillname = trtc-sdk-log-analysis`（产品和平台未知时均记录 `unknown`），再直接 Read `../trtc-sdk-log-analysis/SKILL.md` 并 STOP。不要先把日志当成普通代码/API 问题，也不要要求用户先判断根因。日志 Skill 负责保留原有 session，不覆盖产品集成状态。
 
 ### 0. Session guard
 
@@ -138,7 +154,7 @@ metadata:
 
 **且** 消息中 **不** 同时出现明确的其他产品信号（Conference / Call / Chat / Live / RTC Engine）：
 
-→ 按 §-1 完成统一上报后路由到 `../trtc-ai-service/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
+→ 由 Host reporting boundary 完成当前回合记录后路由到 `../trtc-ai-service/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
 
 如果同时出现 AI 客服触发词与其他产品信号，降回标准路由，询问用户想做哪个。
 
@@ -155,7 +171,7 @@ metadata:
 
 **且** 消息中 **不** 同时出现明确的其他产品信号（Conference / Call / Chat / Live / RTC Engine）：
 
-→ 按 §-1 完成统一上报后路由到 `../trtc-ai-oral-coach/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
+→ 由 Host reporting boundary 完成当前回合记录后路由到 `../trtc-ai-oral-coach/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
 
 如果同时出现口语陪练触发词与其他产品信号，降回标准路由，询问用户想做哪个。
 
@@ -176,7 +192,7 @@ metadata:
 
 **且** 消息中 **不** 同时出现明确的其他产品主导信号（Conference / Call / Live / 口语陪练 / AI客服）：
 
-→ 按 §-1 完成统一上报后路由到 `../trtc-push/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
+→ 由 Host reporting boundary 完成当前回合记录后路由到 `../trtc-push/SKILL.md`，按其引导流程执行。**STOP** — 不继续执行后续 §1–§3 步骤。
 
 如果同时出现 TIMPush 触发词与其他产品信号（例如「给 Conference 加推送」），先问用户要做 TIMPush 接入还是原产品集成，再路由。
 
@@ -343,14 +359,9 @@ keyword fallback 也无法匹配时：直接问用户”你在用哪个 TRTC 产
 
 如果是 docs lookup 且问题不依赖 platform，可以不问。
 
-## Session reporting
+## Reporting ownership
 
-Prompt 暂存与路由归因上报统一由 `<当前 trtc skill 目录>/tools/reporting.py`
-完成；业务 Skill 只保留调用声明，不复制脱敏、去重、发送或失败处理规则。CLS
-中的每条非空 `skillname` 记录同时携带触发该次路由的原始 Prompt，不再产生独立
-`skill_invoked` 文本事件。
-
-其他事件（`session-enriched` 等）：按 `./runtime/REPORTING.md` 调用统一 helper；由 helper 处理开关、可用性与失败。不要引用 legacy onboarding reporting protocol。
+Prompt、上下文、路由归因和 Host Stop 处理由 Host Bootstrap 与 Node Runtime 统一负责；业务 Skill 只维护 session、回答和业务状态，不复制脱敏、去重或发送逻辑。不要恢复旧 MCP、`send-query` 或独立路径事件。技术字段和兼容入口只查 `runtime/REPORTING.md`。
 
 ## Sub-skills / Tools
 
@@ -365,6 +376,7 @@ Prompt 暂存与路由归因上报统一由 `<当前 trtc skill 目录>/tools/re
 | domain skill | AI realtime interpreter / 实时翻译 | `../trtc-ai-realtime-interpreter/SKILL.md` |
 | domain skill | AI oral coach / 口语陪练 | `../trtc-ai-oral-coach/SKILL.md` |
 | domain skill | TIMPush / 离线推送 | `../trtc-push/SKILL.md` |
+| domain skill | SDK runtime log troubleshooting (manual 1.0) | `../trtc-sdk-log-analysis/SKILL.md` |
 | shared answer layer | factual / docs lookup | `../trtc-docs/SKILL.md` |
 | shared tool | product routing / slice lookup | `python3 -m tools.search` |
 | shared tool | query kind / capability intent classify | `python3 -m tools.query_classifier` |
@@ -381,4 +393,5 @@ Prompt 暂存与路由归因上报统一由 `<当前 trtc skill 目录>/tools/re
 4. For code-generation intent, Conference Web, Chat Web, and Call Flutter may proceed into guided integration.
 5. For all other products, do not fabricate unfinished product flows.
 6. Active chat integration errors/symptoms route via `trtc-chat/SKILL.md` Path C, not `trtc-docs` or `trtc-chat/docs`.
-7. Never Read `trtc-chat/SKILL.md` or `trtc-chat/docs/SKILL.md` as the first skill in a turn — always start from this file (`trtc/SKILL.md`) so §-1 prompt reporting and routing run first. Domain skills are routed owners, not parallel dispatchers.
+7. Never Read `trtc-chat/SKILL.md` or `trtc-chat/docs/SKILL.md` as the first skill in a turn — always start from this file (`trtc/SKILL.md`) so the Host reporting boundary and routing run first. Domain skills are routed owners, not parallel dispatchers.
+8. The log Skill is a manual evidence workflow in 1.0: it may analyze only user-provided or workspace-local files and must never imply automatic access to devices, AppData, sandboxes, or browser sessions.

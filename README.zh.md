@@ -1,22 +1,20 @@
-# TRTC Agent Skills
+# TRTC Agent Skills：实时通信与 AI 应用
 
 **[English](README.md)** | 简体中文
 
-TRTC Agent Skills 是由[腾讯实时音视频（TRTC）](https://trtc.io/?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=HIzH2eVJ)提供的一套 Agent Skill，帮助开发者在应用中接入实时音视频、直播、即时通信和 TIMPush 离线推送等能力，覆盖从初始配置到代码实现的完整流程。
+使用 TRTC Agent Skills，你可以在应用中接入视频会议、音视频通话、即时通信、移动端离线推送和对话式 AI（Conversational AI）能力，例如 AI 客服、AI 口语陪练和实时翻译。支持 Web、iOS、Android 和 Flutter。
 
-你不必再从大量文档中查找接入步骤。只需用自然语言说出想实现的功能，Skill 就会识别你的需求、确认必要信息，并逐步引导你完成接入。
-
-它适用于视频会议、直播间、1v1 视频问诊、在线课堂、客服聊天和移动端离线推送等场景，支持 Web、iOS、Android 和 Flutter 等平台。
+只需用自然语言描述你想实现的功能，Skill 会识别需求、确认必要信息，并逐步引导你完成接入，覆盖从初始配置到代码实现的完整流程。
 
 ---
 
-## 关于 Tencent RTC
+## 关于 TRTC（腾讯实时音视频）
 
 [Tencent RTC](https://trtc.io/?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=HIzH2eVJ)（实时音视频）为全球数千家企业提供实时音频、视频和对话式 AI 体验。依托覆盖200多个国家和地区的全球边缘网络，TRTC 提供低于300ms的超低延迟大规模实时通信能力。
 
 ---
 
-## 安装
+## 快速开始
 
 使用 npx 安装器。在项目根目录执行：
 
@@ -35,22 +33,31 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --ide cursor
 npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 ```
 
+### SDK 日志排障（1.0）
+
+直接描述问题即可，Agent 识别为 SDK 日志排障后会自动调用；如需手动明确触发，可在 Cursor、Claude Code 或 CodeBuddy 输入 `/sdk-log`，在 Codex 输入 `$trtc-sdk-log-analysis`。
+
+1.0 会指引用户导出并提供 TRTC、IM、TUI、应用或 Crash 日志，再从上传文件或项目内的 `.trtc-logs/` 离线分析；支持 `.log`、`.txt`、`.clog`、`.xlog` 和日志压缩包，不会自动读取真机或 App sandbox。二进制日志仅在本地存在可信 decoder 时直接解码。
+
 ---
 
-## 能做什么
+## 构建实时应用
 
-当你提到 TRTC 或描述一个实时通信场景时，Skill 会自动触发，无需任何斜杠命令，直接用自然语言提问即可。
+当你描述实时通信或 AI 场景时——例如视频会议、音视频通话、实时翻译或即时通信——Skill 会自动触发，无需斜杠命令，直接用自然语言提问即可。
 
 - **探索与评估**——在修改项目之前运行 Demo，或了解可用的集成方案。
 - **集成能力**——检查项目、明确需求，并逐步引导完成集成。
 - **扩展现有集成**——在已有项目中添加支持的能力，无需重新开始集成。
 - **排查问题**——诊断集成错误、配置问题和异常运行行为。
+- **SDK 日志排障**——根据平台和产品给出日志导出指引，离线分析用户提供的 TRTC、IM、TUI、应用和 Crash 日志。
 - **查询官方信息**——基于官方文档回答 API、错误码、限制、计费和最佳实践等问题，并提供对应链接。
 - **恢复之前的工作**——在本地保存集成进度，以便在后续会话中继续。
 
 ---
 
-## 支持的产品与平台
+## 支持的 TRTC 产品、能力与 AI 场景
+
+支持的 TRTC 能力和场景包括 **视频会议**、**音视频通话**、**即时通信**、**移动端离线推送** 和 **对话式 AI（Conversational AI）**，例如 **AI 客服**、**AI 口语陪练** 和 **实时翻译**，覆盖 Web、iOS、Android 和 Flutter 平台。
 
 | 产品或场景 | 支持平台 | 引导能力 | 示例 Prompt |
 |---|---|---|---|

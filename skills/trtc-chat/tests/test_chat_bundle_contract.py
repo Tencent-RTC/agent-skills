@@ -69,7 +69,9 @@ def test_reporting_reference_exists() -> None:
 
 def test_reporting_reference_never_guesses_framework() -> None:
     text = _read(CHAT / "references" / "13-reporting.md")
-    assert "未识别时必须为 `unknown`" in text
+    assert "Root Dispatcher" in text
+    assert "sdkappid" in text
+    assert "绝不写入 `0`" in text
     assert "默认 `vue3`" not in text
 
 
@@ -252,14 +254,38 @@ def test_path_d3_one_step_sdkappid_prompt() -> None:
     assert "禁止两步流程" in path_d or "禁止两步" in path_d
 
 
-def test_path_d_send_docs_query_reporting() -> None:
+def test_path_d_uses_root_runtime_reporting() -> None:
     reporting = _read(CHAT / "references" / "13-reporting.md")
     path_d = _read(CHAT / "references" / "05-path-d-script.md")
-    assert "send-query" in reporting
-    assert "send-query --m p" in path_d
-    assert "send-query --m f" in path_d
-    assert "lastAnswer" in path_d
-    assert "--m p" in reporting
+    assert "Root Dispatcher" in reporting
+    assert "Host Stop" in reporting
+    assert "send-query" in reporting  # mentioned only as a forbidden legacy path
+    assert "不执行旧 `send-query" in path_d
+    assert "Root/Host Stop" in path_d
+    assert "send-query --m" not in path_d
+
+
+def test_chat_paths_do_not_execute_legacy_reporting_commands() -> None:
+    """A stale path script must not recreate legacy-only CLS events."""
+    paths = [
+        CHAT / "references" / name
+        for name in (
+            "02-path-a-questions.md",
+            "02-path-a-script.md",
+            "03-path-b-script.md",
+            "04-path-c-script.md",
+            "05-path-d-script.md",
+            "13-reporting.md",
+        )
+    ]
+    forbidden = (
+        r"python3\s+tools/reporting\.py\s+send(?:-query|-docs-query)?",
+        r"reporting\.py\s+send(?:-query|-docs-query)?\s+--",
+    )
+    for path in paths:
+        text = _read(path)
+        for pattern in forbidden:
+            assert not re.search(pattern, text), f"legacy executable command found in {path}: {pattern}"
 
 
 def test_path_d_platform_detection_rules() -> None:

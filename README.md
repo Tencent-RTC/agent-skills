@@ -1,22 +1,20 @@
-# TRTC Agent Skills
+# TRTC Agent Skills for Real-Time Communication and AI Applications
 
 **English** | [简体中文](README.zh.md)
 
-An agent skill provided by [TRTC](https://trtc.io/?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=HIzH2eVJ) (Tencent Real-Time Communication) to help developers integrate real-time audio/video, live streaming, instant messaging, and TIMPush offline push into their apps — from first setup to production-ready code.
+Build applications with TRTC, including video conferencing, audio and video calling, instant messaging, mobile offline push notifications, and Conversational AI experiences such as AI customer service agents, AI speaking coaches, and real-time translation. Works with Web, iOS, Android, and Flutter.
 
-Instead of reading through long documentation, you describe what you want to build in plain language. The skill routes your request to the right knowledge, asks a few clarifying questions, and walks you through the integration step by step.
-
-You can use it to build scenarios like video conferencing, live streaming rooms, 1-on-1 video consultations, online classrooms, customer support chat, or mobile offline push — across Web, iOS, Android, Flutter, and more.
+Describe what you want to build in plain language. The skill routes your request to the right integration path, asks a few clarifying questions, and walks you through implementation step by step — from first setup to production-ready code.
 
 ---
 
-## About Tencent RTC
+## About TRTC (Tencent Real-Time Communication)
 
 [Tencent RTC](https://trtc.io/?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=HIzH2eVJ) (Real-Time Communication) powers real-time audio, video, and conversational AI experiences for thousands of businesses worldwide. With a global edge network spanning 200+ countries and regions, TRTC delivers sub-300ms ultra-low latency at scale.
 
 ---
 
-## Installation
+## Quick Start
 
 Use the npx installer. Run it inside your project directory:
 
@@ -35,22 +33,31 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --ide cursor
 npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 ```
 
+### SDK log troubleshooting (1.0)
+
+Describe the issue normally and the Agent will invoke SDK log analysis when it recognizes that workflow. To trigger it explicitly, enter `/sdk-log` in Cursor, Claude Code, or CodeBuddy, or `$trtc-sdk-log-analysis` in Codex.
+
+Version 1.0 guides users to export and provide TRTC, IM, TUI, application, or crash logs, then analyzes uploaded files or `.trtc-logs/` offline. It supports `.log`, `.txt`, `.clog`, `.xlog`, and log archives, but does not automatically read a real device or app sandbox. Binary logs are decoded only when a trusted local decoder is available.
+
 ---
 
-## What it does
+## Build Real-Time Applications
 
-The skill activates automatically when you mention TRTC or describe a real-time communication use case. No slash commands needed — just ask in plain language.
+The skill activates automatically when you describe a real-time communication or AI use case — video conferencing, audio/video calls, live translation, instant messaging, and more. No slash commands needed, just ask in plain language.
 
 - **Explore and evaluate** — Run a demo or understand the available integration options before changing your project.
 - **Integrate capabilities** — Inspect your project, clarify requirements, and guide implementation step by step.
 - **Extend existing integrations** — Add supported capabilities to an existing project without restarting the integration.
 - **Troubleshoot issues** — Diagnose integration errors, configuration problems, and unexpected runtime behavior.
+- **Analyze SDK logs** — Give platform/product export guidance and analyze user-provided TRTC, IM, TUI, application, and crash logs offline.
 - **Find official information** — Answer questions about APIs, error codes, limits, pricing, and recommended practices with links to official documentation.
 - **Resume previous work** — Save integration progress locally so you can continue in a later session.
 
 ---
 
-## Supported Products & Platforms
+## Supported TRTC Products, Capabilities & AI Scenarios
+
+Supported TRTC capabilities and scenarios include **video conferencing**, **audio and video calling**, **instant messaging**, **mobile offline push notifications**, and **Conversational AI** experiences such as **AI customer service**, **AI speaking coach**, and **real-time translation** — across Web, iOS, Android, and Flutter.
 
 | Product or scenario | Supported platforms | Guided capabilities | Sample prompts |
 |---|---|---|---|
