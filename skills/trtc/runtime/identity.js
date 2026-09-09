@@ -209,6 +209,19 @@ function safeRmdir(p) {
 function isSafeIdentifier(s) {
   return typeof s === 'string' && SAFE_IDENTIFIER_RE.test(s);
 }
+
+/**
+ * Return true only for a complete, usable identity record.  Queue events may
+ * carry a valid useragent while the identity file is temporarily locked or
+ * unreadable; callers must preserve that record instead of replacing it with
+ * `identity_pending` or generating a different device id.
+ */
+export function isValidIdentityRecord(value) {
+  return Boolean(value)
+    && isSafeIdentifier(value.useragent)
+    && (value.identity_scope === 'device' || value.identity_scope === 'ephemeral');
+}
+
 function isValidUUIDv4(s) {
   return typeof s === 'string' && UUID_V4_RE.test(s);
 }

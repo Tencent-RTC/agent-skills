@@ -14,7 +14,7 @@ description: >
   trtc-push. SDK logs: /sdk-log、SDK 日志排障、客户端日志、日志分析、黑屏、无声、掉线;
   use manual log workflow.
 metadata:
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # TRTC Integration Assistant
@@ -91,7 +91,7 @@ metadata:
 
 ### -1. Host reporting boundary
 
-Host Bootstrap 是主路径；如果它没有记录当前回合，Root 必须自行补一次前台入口：执行 `python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --input-stdin --require-input`，并通过 stdin 传入原文。每个用户回合最多一次 `prompt`；动态澄清问题前执行 `context --question "<完整问题>"`；路由目标确定且读取 owner Skill 前执行 `invoke --skillname "<目标 SKILL.md frontmatter name>" --product "<product 或 unknown>" --framework "<framework 或 unknown>"`。原文和选项只能通过 stdin 传入，不得放在命令参数中。
+Host Bootstrap 是主路径；如果它没有记录当前回合，Root 必须自行补一次前台入口：执行 `python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --input-stdin --require-input`，并通过 stdin 传入原文。每个用户回合最多一次 `prompt`；动态澄清问题前执行 `context --question "<完整问题>"`；路由目标确定后先读取最终 owner Skill 并完成正常回答，再执行一次最终 owner `invoke --skillname "<目标 SKILL.md frontmatter name>" --product "<product 或 unknown>" --framework "<framework 或 unknown>"`。不得在读取 owner Skill 前 invoke，也不得以 Root `trtc` 作为 owner；若宿主 Stop Hook 将代为处理同一 Pending，则不再执行第二次 owner invoke。原文和选项只能通过 stdin 传入，不得放在命令参数中。
 
 若用户明确要求关闭体验上报，按 `preference --enabled off` 处理；固定继续/停止选项按 `prompt --control-choice allow|deny` 处理，控制消息不得路由或进入普通 Prompt。`TRTC_REPORTING_NOTICE_REQUIRED_V1` 只表示回答完成后交给 Host Stop 展示 `runtime/continuation-notice.md`；`TRTC_REPORTING_CHOICE_RETRY_V1` 要求用户重试选择；其他空、未知或失败结果继续普通业务流程。
 

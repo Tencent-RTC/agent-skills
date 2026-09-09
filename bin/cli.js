@@ -36,6 +36,8 @@ const {
   markerDir,
   resolveReportingMode,
   findProjectRoot,
+  readInstallMarker,
+  readInstallStage,
   writeInstallMarker,
   writeInstallStage,
   clearInstallStage,
@@ -1306,45 +1308,51 @@ function verifyInstalledRuntime(runtime, options = {}) {
 // nests its hooks one level deeper (under trtc-agent-skills/) for namespace
 // isolation — see HOOKS_TARGETS.cursor.hooksDir.
 function rewriteHooksContent(content, target, ideAbsRoot, hooksDestAbs) {
-  let out = content;
-  if (target.hostIde) {
-    out = out.split("__TRTC_HOST_IDE__").join(target.hostIde);
+  // Rewrite the parsed JSON tree instead of replacing paths in raw JSON text.
+  // A Windows absolute path contains backslashes (for example `C:\\Users\\...`);
+  // inserting that text before JSON.parse turns `\\U`, `\\s`, etc. into invalid
+  // JSON escapes and was the source of the observed `config_merge_failed` events.
+  // JSON.stringify below performs the required escaping for every platform.
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    // Keep the original bytes so mergeHooksConfig can report source_invalid.
+    return content;
   }
-  if (target.rootPlaceholder) {
-    // Replace BOTH ${CLAUDE_PLUGIN_ROOT} and ${CODEBUDDY_PLUGIN_ROOT} — the
-    // bundled hooks.json uses `${CLAUDE_PLUGIN_ROOT:-${CODEBUDDY_PLUGIN_ROOT}}`
-    // shell fallback, but in JSON-merged form (settings.json hooks field) the
-    // shell expansion still applies because hook commands run in a shell. We
-    // pre-resolve both for clarity and so plain-string consumers also work.
-    const placeholders = [target.rootPlaceholder, target.fallbackPlaceholder].filter(Boolean);
-    for (const ph of placeholders) {
-      out = out.split(ph).join(ideAbsRoot);
+
+  const rootFallback = target.rootPlaceholder && target.fallbackPlaceholder
+    ? `${target.rootPlaceholder.slice(0, -1)}:-${target.fallbackPlaceholder}}`
+    : null;
+  const cursorAdapterAbs = target.cursorAdapterPlaceholder && hooksDestAbs
+    ? path.join(hooksDestAbs, "cursor-adapter.py")
+    : null;
+
+  const rewriteString = (value) => {
+    let out = value;
+    if (target.hostIde) out = out.split("__TRTC_HOST_IDE__").join(target.hostIde);
+    if (rootFallback) out = out.split(rootFallback).join(ideAbsRoot);
+    if (target.rootPlaceholder) {
+      for (const ph of [target.rootPlaceholder, target.fallbackPlaceholder].filter(Boolean)) {
+        out = out.split(ph).join(ideAbsRoot);
+      }
     }
-    // The bash `${VAR:-${OTHER}}` form leaves a literal `:-` between two
-    // already-replaced absolute paths, which won't run. Simplify it: collapse
-    // `<abs>:-<abs>` (or any duplicated form) back to a single `<abs>`.
-    out = out.replace(
-      /\$\{(?:CLAUDE_PLUGIN_ROOT|CODEBUDDY_PLUGIN_ROOT):-[^}]+\}/g,
-      ideAbsRoot
-    );
-  }
-  if (target.cursorAdapterPlaceholder) {
-    // hooks-cursor.json hardcodes $HOME/.cursor/plugins/local/trtc-agent-skills/hooks/cursor-adapter.py
-    // — rewrite to the project-local copy we just installed. The placeholder
-    // sits inside a JSON string for a shell command (`python3 <path> arg`).
-    // We need the resulting JSON string to evaluate to a shell-quoted path so
-    // project paths with spaces don't break shell parsing — that means
-    // emitting `\"<abs>\"` (JSON-escaped quotes) into the string.
-    //
-    // Use hooksDestAbs (the actual copy destination) — NOT ideAbsRoot+"hooks"
-    // — because cursor's hooksDir is namespaced as
-    // .cursor/hooks/trtc-agent-skills, so the script lives one level deeper
-    // than the .cursor/hooks/ that ideAbsRoot+"hooks" would point at.
-    const cursorAdapterAbs = path.join(hooksDestAbs, "cursor-adapter.py");
-    const replacement = `\\"${cursorAdapterAbs}\\"`;
-    out = out.split(target.cursorAdapterPlaceholder).join(replacement);
-  }
-  return out;
+    if (target.cursorAdapterPlaceholder && cursorAdapterAbs) {
+      // The source command is unquoted. Add shell quotes after parsing; the
+      // outer JSON serializer will escape those quotes safely.
+      out = out.split(target.cursorAdapterPlaceholder).join(`"${cursorAdapterAbs}"`);
+    }
+    return out;
+  };
+  const rewriteValue = (value) => {
+    if (typeof value === "string") return rewriteString(value);
+    if (Array.isArray(value)) return value.map(rewriteValue);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, rewriteValue(child)]));
+    }
+    return value;
+  };
+  return JSON.stringify(rewriteValue(parsed), null, 2);
 }
 
 // Cursor still needs its namespaced Python adapter directory for non-Prompt
@@ -1363,9 +1371,12 @@ function copyHooksDir(target, resolvedRoot, ide) {
 // ~/.cursor/hooks.json we merge per-event arrays so a previously-installed
 // project's adapter path gets replaced by ours but the user's own hook
 // entries (if any) are preserved.
-function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide) {
+function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide, { preserveLegacy = false } = {}) {
   const srcPath = path.join(HOOKS_SRC, target.sourceConfig);
-  if (!fs.existsSync(srcPath)) return null;
+  const settingsPath = path.isAbsolute(target.settingsFile)
+    ? target.settingsFile
+    : path.join(resolvedRoot, target.settingsFile);
+  if (!fs.existsSync(srcPath)) return { settingsPath, error: "source_missing" };
 
   const rawSrc = fs.readFileSync(srcPath, "utf8");
   const rewritten = rewriteHooksContent(rawSrc, target, ideAbsRoot, hooksDestAbs);
@@ -1373,12 +1384,9 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide) {
   try { parsed = JSON.parse(rewritten); }
   catch (err) {
     console.error(c.red(`    ✗ failed to parse rewritten ${target.sourceConfig}: ${err.message}`));
-    return null;
+    return { settingsPath, error: "source_invalid" };
   }
 
-  const settingsPath = path.isAbsolute(target.settingsFile)
-    ? target.settingsFile
-    : path.join(resolvedRoot, target.settingsFile);
   ensureDir(path.dirname(settingsPath));
 
   let existing = {};
@@ -1483,7 +1491,9 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide) {
 
   for (const [eventName, eventValue] of Object.entries(incomingHooks)) {
     if (Array.isArray(eventValue)) {
-      const stripped = stripOwnedHookEntries(existing.hooks[eventName] || []);
+      const stripped = preserveLegacy
+        ? stripMatchingHookEntries(existing.hooks[eventName] || [], (entry) => isOwnedHookEntry(entry) && !isLegacyReportingHookEntry(entry))
+        : stripOwnedHookEntries(existing.hooks[eventName] || []);
       existing.hooks[eventName] = stripped.concat(eventValue.map(tagged));
     } else if (Array.isArray(existing.hooks[eventName])) {
       // existing is array (cursor-style), incoming is non-array (claude-style):
@@ -1534,7 +1544,7 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide) {
   return { settingsPath, eventCount: Object.keys(incomingHooks).length };
 }
 
-function installHooks(ideList, resolvedRoot) {
+function installHooks(ideList, resolvedRoot, { preserveLegacyIdes = [] } = {}) {
   const results = {};
   for (const ide of ideList) {
     const target = HOOKS_TARGETS[ide];
@@ -1548,7 +1558,9 @@ function installHooks(ideList, resolvedRoot) {
       const hooksDest = copyHooksDir(target, resolvedRoot, ide);
       if (ide === "cursor") console.log(c.green("    ✓ ") + `${ide} hooks → ${hooksDest}/`);
 
-      const merged = mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDest, ide);
+      const merged = mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDest, ide, {
+        preserveLegacy: preserveLegacyIdes.includes(ide),
+      });
       if (!merged || merged.error) {
         results[ide] = { installed: false, activated: false, reason: merged?.error || "config_merge_failed" };
         continue;
@@ -1583,6 +1595,26 @@ function installHooks(ideList, resolvedRoot) {
     }
   }
   return results;
+}
+
+function nodeHookReadyForIde(ide, resolvedRoot, hookResults) {
+  if (hookResults?.[ide]?.installed !== true) return false;
+  const target = IDE_TARGETS[ide];
+  if (!target) return false;
+  const runtimePath = path.join(resolvedRoot, target.skillsRoot, "trtc", "runtime", "telemetry.cjs");
+  if (!fs.existsSync(runtimePath)) return false;
+  const settingsPath = legacyHookConfigPathForIde(ide, resolvedRoot);
+  try {
+    const text = fs.readFileSync(settingsPath, "utf8");
+    // The installer has already performed schema verification in
+    // mergeHooksConfig. This second check binds the migration gate to the
+    // exact target IDE command, so a failed/partial Hook write cannot cause
+    // the old MCP to be disabled.
+    return text.includes("telemetry.cjs")
+      && (text.includes(`--ide '${ide}'`) || text.includes(`--ide "${ide}"`));
+  } catch {
+    return false;
+  }
 }
 
 // ── AI instruction files installation ─────────────────────────────────────────
@@ -1971,34 +2003,493 @@ function migrateLegacyMcpToml(configPath) {
   return "migrated";
 }
 
-function migrateLegacyForIde(ide, resolvedRoot) {
+function mcpConfigPathForIde(ide, resolvedRoot, home = os.homedir()) {
+  const target = MCP_TARGETS[ide];
+  if (!target) return null;
+  return path.isAbsolute(target.configFile)
+    ? path.join(home, path.relative(os.homedir(), target.configFile))
+    : path.join(resolvedRoot, target.configFile);
+}
+
+function legacyHookConfigPathForIde(ide, resolvedRoot) {
+  const target = HOOKS_TARGETS[ide];
+  if (!target) return null;
+  return path.isAbsolute(target.settingsFile)
+    ? target.settingsFile
+    : path.join(resolvedRoot, target.settingsFile);
+}
+
+function isLegacyReportingHookEntry(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  if (typeof entry.command === "string") {
+    // Cursor's legacy adapter hides the Python reporter behind a dispatch key,
+    // so the command does not contain `reporting.py` at all. Normalize shell
+    // quotes before matching it; otherwise an upgrade would append the Node
+    // Hook while leaving the old adapter's reporting binding active.
+    const command = entry.command.replace(/["']/g, "").replace(/\\/g, "/");
+    return command.includes("tools/reporting.py")
+      || command.includes("tencent-rtc-skill-tool")
+      || command.includes("skill_analysis")
+      || /cursor-adapter\.py\s+bind-reporting-session\b/i.test(command);
+  }
+  if (Array.isArray(entry.hooks)) return entry.hooks.some(isLegacyReportingHookEntry);
+  return false;
+}
+
+function stripMatchingHookEntries(value, predicate) {
+  if (!Array.isArray(value)) return value;
+  const out = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") { out.push(entry); continue; }
+    if (Array.isArray(entry.hooks)) {
+      const hooks = entry.hooks.filter((hook) => !predicate(hook));
+      if (hooks.length > 0) out.push({ ...entry, hooks });
+      continue;
+    }
+    if (!predicate(entry)) out.push(entry);
+  }
+  return out;
+}
+
+function removeLegacyHooksForIde(ide, resolvedRoot) {
+  const configPath = legacyHookConfigPathForIde(ide, resolvedRoot);
+  if (!configPath || !fs.existsSync(configPath)) return "not_present";
+  let raw;
+  try { raw = fs.readFileSync(configPath, "utf8"); } catch { return "read_error"; }
+  let config;
+  try { config = JSON.parse(raw); } catch { return "unknown_or_malformed"; }
+  if (!config || typeof config !== "object" || Array.isArray(config)) return "unknown_or_malformed";
+  if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) return "not_present";
+  let changed = false;
+  const hooks = { ...config.hooks };
+  for (const [event, value] of Object.entries(hooks)) {
+    if (!Array.isArray(value)) continue;
+    const stripped = stripMatchingHookEntries(value, isLegacyReportingHookEntry);
+    if (JSON.stringify(stripped) !== JSON.stringify(value)) changed = true;
+    if (stripped.length === 0) delete hooks[event];
+    else hooks[event] = stripped;
+  }
+  if (!changed) return "not_present";
+  const next = { ...config, hooks };
+  if (Object.keys(next.hooks).length === 0) delete next.hooks;
+  writeJsonAtomic(configPath, next);
+  return "migrated";
+}
+
+function migrateLegacyForIde(ide, resolvedRoot, { home = os.homedir() } = {}) {
+  const result = { ide, mcp: "not_present", hooks: "not_present", ok: false };
+  const configPath = mcpConfigPathForIde(ide, resolvedRoot, home);
   switch (ide) {
     case "claude":
-      migrateLegacyMcpJson(
-        path.join(resolvedRoot, ".mcp.json"),
+      result.mcp = migrateLegacyMcpJson(
+        configPath,
         path.join(resolvedRoot, ".claude", "settings.json"),
         LEGACY_REPORTING_CLAUDE_PERM,
         "permissions.allow"
       );
       break;
     case "cursor":
-      migrateLegacyMcpJson(
-        path.join(os.homedir(), ".cursor", "mcp.json"),
+      // Cursor's MCP file is user-level and shared by every project.  A
+      // project-specific upgrade must not delete the legacy server that an
+      // un-upgraded sibling project still uses.  Its project permission file
+      // is safe to clean independently.
+      result.mcp = "preserved";
+      migrateLegacyPermEntry(
         path.join(resolvedRoot, ".cursor", "permissions.json"),
         LEGACY_REPORTING_CURSOR_PERM,
         "mcpAllowlist"
       );
       break;
     case "codebuddy":
-      migrateLegacyMcpJson(
-        path.join(os.homedir(), ".codebuddy", "mcp.json"),
-        null, null, null
-      );
+      // CodeBuddy's MCP registry is user-level and shared across projects.
+      result.mcp = "preserved";
       break;
     case "codex":
-      migrateLegacyMcpToml(path.join(os.homedir(), ".codex", "config.toml"));
+      // Codex's config.toml is user-level and shared across projects.
+      result.mcp = "preserved";
       break;
   }
+  result.hooks = removeLegacyHooksForIde(ide, resolvedRoot);
+  result.ok = ["migrated", "preserved", "not_present", "no_change"].includes(result.mcp)
+    && ["migrated", "not_present"].includes(result.hooks);
+  return result;
+}
+
+function legacySkillPathForIde(ide, resolvedRoot) {
+  const target = IDE_TARGETS[ide];
+  return target ? path.join(resolvedRoot, target.skillsRoot, "trtc") : null;
+}
+
+// A failed explicit upgrade must leave the old Prompt path usable.  Keep a
+// process-local backup while the new files are staged; the runtime marker is
+// not committed until migration succeeds, so a rollback restores the exact
+// legacy skill/config bytes instead of guessing from the resulting tree.
+function snapshotLegacyForIde(ide, resolvedRoot, home, durableRoot = null) {
+  const backupRoot = durableRoot
+    ? path.join(durableRoot, ide)
+    : fs.mkdtempSync(path.join(os.tmpdir(), `trtc-legacy-${ide}-`));
+  ensureDir(backupRoot);
+  const entries = [
+    { target: legacySkillPathForIde(ide, resolvedRoot), kind: "dir" },
+    // Claude's MCP is project-local.  The other IDE registries are shared at
+    // user scope and are deliberately not part of a project transaction.
+    ...(ide === "claude"
+      ? [{ target: mcpConfigPathForIde(ide, resolvedRoot, home), kind: "file" }]
+      : []),
+    { target: legacyHookConfigPathForIde(ide, resolvedRoot), kind: "file" },
+    ...(ide === "cursor" ? [
+      { target: path.join(resolvedRoot, ".cursor", "permissions.json"), kind: "file" },
+      { target: path.join(resolvedRoot, HOOKS_TARGETS.cursor.hooksDir), kind: "dir" },
+    ] : []),
+  ];
+  const instructionTarget = AI_INSTRUCTION_TARGETS[ide];
+  if (instructionTarget) {
+    // The installer writes the dispatcher before it disables the legacy
+    // chain.  Snapshot the corresponding instruction file as part of the
+    // same transaction so a failed migration cannot leave new instructions
+    // next to a restored legacy Skill/MCP.
+    entries.push({ target: path.join(resolvedRoot, instructionTarget.filename), kind: "file" });
+  }
+  const saved = [];
+  for (const entry of entries) {
+    if (!entry.target) continue;
+    if (!fs.existsSync(entry.target) && !isSymlink(entry.target)) {
+      // Record absent targets as part of the transaction.  A newly-created
+      // Node Hook/config must be removed on rollback; otherwise a failed
+      // migration can leave a residual new hook next to the restored legacy
+      // chain and make the next mode check ambiguous.
+      saved.push({ target: entry.target, backup: null, kind: "missing" });
+      continue;
+    }
+    const relative = path.join("saved", String(saved.length));
+    const destination = path.join(backupRoot, relative);
+    const stat = fs.lstatSync(entry.target);
+    if (stat.isDirectory()) copyRecursive(entry.target, destination);
+    else if (stat.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(entry.target), destination);
+    else { ensureDir(path.dirname(destination)); fs.copyFileSync(entry.target, destination); }
+    saved.push({ target: entry.target, backup: destination, kind: stat.isDirectory() ? "dir" : stat.isSymbolicLink() ? "symlink" : "file" });
+  }
+  return { ide, backupRoot, saved };
+}
+
+function restoreLegacySnapshot(snapshot) {
+  if (!snapshot) return;
+  for (const entry of snapshot.saved || []) {
+    rmrf(entry.target);
+    if (entry.kind === "missing") continue;
+    if (entry.kind === "dir") copyRecursive(entry.backup, entry.target);
+    else if (entry.kind === "symlink") {
+      ensureDir(path.dirname(entry.target));
+      fs.symlinkSync(fs.readlinkSync(entry.backup), entry.target);
+    } else {
+      ensureDir(path.dirname(entry.target));
+      fs.copyFileSync(entry.backup, entry.target);
+    }
+  }
+}
+
+function disposeLegacySnapshot(snapshot) {
+  if (snapshot?.backupRoot) rmrf(snapshot.backupRoot);
+}
+
+function rollbackLegacyMigration(snapshots, projectRoot) {
+  let firstError = null;
+  for (const snapshot of snapshots || []) {
+    try { restoreLegacySnapshot(snapshot); }
+    catch (error) { if (!firstError) firstError = error; }
+  }
+  // Keep the durable stage and backups when any restore failed. The next
+  // installer invocation must be able to retry recovery instead of losing the
+  // only copy of the old chain.
+  if (firstError) return firstError;
+  for (const snapshot of snapshots || []) {
+    try { disposeLegacySnapshot(snapshot); }
+    catch (error) { if (!firstError) firstError = error; }
+  }
+  if (firstError) return firstError;
+  try { clearInstallStage(projectRoot); }
+  catch (error) { if (!firstError) firstError = error; }
+  return firstError;
+}
+
+// A migration may be interrupted after the Node files have been staged but
+// before the new marker is committed.  Keep the recovery record inside the
+// project state directory and restore only backups created by this installer.
+// If the record is malformed or points outside the expected state root, fail
+// safe: leave the project untouched and let mode resolution return unknown.
+function migrationStateForSnapshots(snapshots, phase = "migration_pending") {
+  const backupRoot = snapshots?.[0]?.backupRoot ? path.dirname(snapshots[0].backupRoot) : null;
+  if (!backupRoot || !snapshots.every((snapshot) => snapshot && Array.isArray(snapshot.saved))) return null;
+  return {
+    phase,
+    backup_root: backupRoot,
+    snapshots: snapshots.map((snapshot) => ({
+      ide: snapshot.ide,
+      backup_root: snapshot.backupRoot,
+      saved: snapshot.saved.map((entry) => ({
+        target: entry.target,
+        backup: entry.backup,
+        kind: entry.kind,
+      })),
+    })),
+  };
+}
+
+function isInsidePath(parent, candidate) {
+  const rel = path.relative(path.resolve(parent), path.resolve(candidate));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+// Migration records are installer-owned state, but they are still parsed from
+// disk after a crash.  Never trust a path merely because its lexical form is
+// below the project root: a symlink in any component can escape that root.
+function isPathWithinNoSymlink(parent, candidate) {
+  const root = path.resolve(parent);
+  const target = path.resolve(candidate);
+  if (!isInsidePath(root, target)) return false;
+  let current = target;
+  while (true) {
+    if (isSymlink(current)) return false;
+    if (current === root) return true;
+    const next = path.dirname(current);
+    if (next === current) return false;
+    current = next;
+  }
+}
+
+function isSafeMigrationBackupRoot(projectRoot, backupRoot, { requireExisting = false } = {}) {
+  const root = path.resolve(projectRoot);
+  const parent = path.join(root, ".trtc-skill-state", "migrations");
+  const candidate = path.resolve(String(backupRoot || ""));
+  if (path.dirname(candidate) !== parent || !/^[0-9a-f]{32}$/.test(path.basename(candidate))) {
+    return false;
+  }
+  if (!isPathWithinNoSymlink(root, candidate) || isSymlink(candidate)) return false;
+  try { return fs.lstatSync(candidate).isDirectory(); }
+  catch (error) { return error?.code === "ENOENT" && !requireExisting; }
+}
+
+function removeSafeMigrationBackup(projectRoot, backupRoot) {
+  if (!isSafeMigrationBackupRoot(projectRoot, backupRoot)) return false;
+  if (!fs.existsSync(backupRoot) && !isSymlink(backupRoot)) return true;
+  try {
+    rmrf(backupRoot);
+    return !fs.existsSync(backupRoot) && !isSymlink(backupRoot);
+  } catch {
+    return false;
+  }
+}
+
+function migrationAllowedTargets(ide, projectRoot, home) {
+  if (!IDE_TARGETS[ide]) return [];
+  const targets = [
+    legacySkillPathForIde(ide, projectRoot),
+    legacyHookConfigPathForIde(ide, projectRoot),
+    path.join(projectRoot, AI_INSTRUCTION_TARGETS[ide].filename),
+    mcpConfigPathForIde(ide, projectRoot, home),
+  ];
+  if (ide === "cursor") {
+    targets.push(path.join(projectRoot, ".cursor", "permissions.json"));
+    // Keep Cursor's copied adapter directory in the per-IDE migration
+    // transaction so a failed upgrade does not leave new files beside the
+    // restored legacy chain.
+    targets.push(path.join(projectRoot, HOOKS_TARGETS.cursor.hooksDir));
+  }
+  return targets.filter(Boolean).map((target) => path.resolve(target));
+}
+
+function validateMigrationEntry(entry, snapshot, projectRoot, home, backupRoot) {
+  if (!entry || typeof entry.target !== "string" ||
+      !["file", "dir", "symlink", "missing"].includes(entry.kind)) return false;
+  const target = path.resolve(entry.target);
+  const allowedTargets = migrationAllowedTargets(snapshot.ide, projectRoot, home);
+  if (!allowedTargets.includes(target)) return false;
+  if (!isPathWithinNoSymlink(path.resolve(projectRoot), target) &&
+      !isPathWithinNoSymlink(path.resolve(home), target)) return false;
+  const targetPresent = fs.existsSync(target) || isSymlink(target);
+  if (targetPresent) {
+    let targetStat;
+    try { targetStat = fs.lstatSync(target); } catch { return false; }
+    if (entry.kind === "missing") {
+      // The installer may have created a previously absent allowlisted file
+      // during the interrupted transaction. It is safe to remove a regular
+      // file/directory at that exact target, but never follow a new symlink.
+      return !targetStat.isSymbolicLink() && (entry.backup === null || entry.backup === undefined);
+    }
+    const targetMatches = entry.kind === "dir" ? targetStat.isDirectory()
+      : entry.kind === "file" ? targetStat.isFile()
+        : entry.kind === "symlink" ? targetStat.isSymbolicLink()
+          : false;
+    if (!targetMatches) return false;
+  } else if (entry.kind !== "missing") {
+    // The target may be absent after a crash in the restore window between
+    // rmrf(target) and copying the validated backup. That absence is safe
+    // only because the target is an exact allowlisted path and the backup
+    // below is still checked for the recorded type and safe root.
+  }
+  if (entry.kind === "missing") {
+    return entry.backup === null || entry.backup === undefined;
+  }
+  if (typeof entry.backup !== "string" || !isSafeMigrationBackupRoot(projectRoot, backupRoot)) return false;
+  const backup = path.resolve(entry.backup);
+  const savedRoot = path.join(path.resolve(backupRoot), snapshot.ide, "saved");
+  if (!isPathWithinNoSymlink(savedRoot, path.dirname(backup))) return false;
+  if (entry.kind !== "symlink" && isSymlink(backup)) return false;
+  try {
+    const stat = fs.lstatSync(backup);
+    if (entry.kind === "dir") return stat.isDirectory();
+    if (entry.kind === "file") return stat.isFile();
+    return stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function restoreDurableMigration(projectRoot, migration, {
+  home = process.env.HOME || os.homedir(),
+  _testHookAfterRemove,
+} = {}) {
+  if (!migration || typeof migration !== "object" || !Array.isArray(migration.snapshots)) return false;
+  const backupRoot = typeof migration.backup_root === "string" ? migration.backup_root : "";
+  if (!backupRoot || !isSafeMigrationBackupRoot(projectRoot, backupRoot, { requireExisting: true })) return false;
+  const seenIdes = new Set();
+  for (const snapshot of migration.snapshots) {
+    if (!snapshot || !IDE_TARGETS[snapshot.ide] || seenIdes.has(snapshot.ide) ||
+        !Array.isArray(snapshot.saved)) return false;
+    seenIdes.add(snapshot.ide);
+    const snapshotRoot = path.resolve(backupRoot, snapshot.ide);
+    if (!isPathWithinNoSymlink(backupRoot, snapshotRoot) ||
+        !fs.existsSync(snapshotRoot) || isSymlink(snapshotRoot)) return false;
+    try {
+      if (!fs.lstatSync(snapshotRoot).isDirectory()) return false;
+    } catch { return false; }
+    for (const entry of snapshot.saved) {
+      if (!validateMigrationEntry(entry, snapshot, projectRoot, home, backupRoot)) return false;
+    }
+  }
+  try {
+    for (const snapshot of migration.snapshots) {
+      for (const entry of snapshot.saved) {
+        // Re-check immediately before every destructive operation. The first
+        // validation pass protects the transaction as a whole; this second
+        // pass closes the gap where a target/parent could be replaced between
+        // validation and restore (especially after a crash-retry).
+        if (!validateMigrationEntry(entry, snapshot, projectRoot, home, backupRoot)) {
+          throw new Error("migration_entry_changed");
+        }
+        rmrf(entry.target);
+        if (typeof _testHookAfterRemove === "function") _testHookAfterRemove(entry);
+        if (entry.kind === "missing") continue;
+        if (entry.kind === "dir") copyRecursive(entry.backup, entry.target);
+        else if (entry.kind === "symlink") {
+          ensureDir(path.dirname(entry.target));
+          fs.symlinkSync(fs.readlinkSync(entry.backup), entry.target);
+        } else {
+          ensureDir(path.dirname(entry.target));
+          fs.copyFileSync(entry.backup, entry.target);
+        }
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function recoverInterruptedMigration(projectRoot) {
+  const stage = readInstallStage(projectRoot);
+  if (stage.status !== "valid" || !stage.value.migration) return { status: "none" };
+  const marker = readInstallMarker(projectRoot);
+  const migration = stage.value.migration;
+  const backupRoot = migration && typeof migration.backup_root === "string" ? migration.backup_root : null;
+  const stageIdes = Array.isArray(stage.value.install_ides)
+    ? [...new Set(stage.value.install_ides)].sort()
+    : [];
+  const markerIdes = marker.status === "valid" && Array.isArray(marker.value?.install_ides)
+    ? [...new Set(marker.value.install_ides)].sort()
+    : [];
+  const markerMatchesGeneration = marker.status === "valid" && marker.mode === "node_v2" &&
+    marker.value.install_generation === stage.value.owner_token &&
+    stageIdes.length > 0 && JSON.stringify(markerIdes) === JSON.stringify(stageIdes);
+  // When every target IDE failed its explicit legacy migration, the installer
+  // restores the old chain and commits a legacy marker.  That is a terminal
+  // result for the migration transaction: there is no Node chain to roll back
+  // on the next `add`, but the install event may still need a retry.  Do not
+  // feed this state into restoreDurableMigration after the backup has already
+  // been cleaned up; instead remove only the validated backup and preserve the
+  // event identity without the migration payload.
+  const legacyRestoreCommitted = marker.status === "valid"
+    && marker.mode === "legacy_mcp"
+    && marker.value.install_generation === stage.value.owner_token
+    && migration.phase === "legacy_restored";
+  if (legacyRestoreCommitted) {
+    if (!backupRoot || !removeSafeMigrationBackup(projectRoot, backupRoot)) {
+      return { status: "invalid", reason: "migration_backup_cleanup_rejected" };
+    }
+    try {
+      if (stage.value.install_acknowledged === true) {
+        clearInstallStage(projectRoot);
+      } else {
+        // writeInstallStage is a full replacement. Omitting `migration`
+        // intentionally converts this terminal legacy result into an ordinary
+        // install-event retry record, so the next add/runtime cannot attempt a
+        // restore from a backup that no longer exists.
+        writeInstallStage(projectRoot, stage.value.target_mode, "complete", {
+          installerVersion: stage.value.installer_version,
+          ownerToken: stage.value.owner_token,
+          ownerPid: stage.value.pid,
+          installEventId: stage.value.install_event_id,
+          installAcknowledged: stage.value.install_acknowledged,
+          installIdes: stage.value.install_ides,
+          installEventCreatedAt: stage.value.install_event_created_at,
+          installMode: stage.value.install_mode,
+          installStatus: stage.value.install_status,
+          installHookResults: stage.value.install_hook_results,
+          installOs: stage.value.install_os,
+        });
+      }
+    } catch {
+      return { status: "invalid", reason: "migration_stage_cleanup_failed" };
+    }
+    return { status: "legacy_restored_cleanup" };
+  }
+  // A committed Node marker wins over a stale stage left by a crash between
+  // marker commit and stage cleanup.  Never roll a successfully committed
+  // upgrade back to the old chain.
+  if (markerMatchesGeneration) {
+    if (!backupRoot || !removeSafeMigrationBackup(projectRoot, backupRoot)) {
+      return { status: "invalid", reason: "migration_backup_cleanup_rejected" };
+    }
+    // If the crash happened before the install ACK was observed, retain the
+    // completed stage owner token so the next explicit `add` can retry the
+    // same generation/event_id. The marker already commits Node V2, so the
+    // old chain must never be restored here.
+    if (migration.phase === "legacy_disabled" || migration.install_ack_pending === true) {
+      try {
+        writeInstallStage(projectRoot, "node_v2", "complete", {
+          installerVersion: stage.value.installer_version,
+          ownerToken: stage.value.owner_token,
+          ownerPid: stage.value.pid,
+          installEventId: stage.value.install_event_id,
+          installAcknowledged: stage.value.install_acknowledged,
+          installIdes: stage.value.install_ides,
+          installEventCreatedAt: stage.value.install_event_created_at,
+          migration: { ...migration, phase: "committed", install_ack_pending: true, backup_root: backupRoot },
+        });
+      } catch { return { status: "invalid", reason: "migration_pending_stage_write_failed" }; }
+      return { status: "committed_pending" };
+    }
+    try { clearInstallStage(projectRoot); } catch { /* mode resolution will remain fail-safe */ }
+    return { status: "committed_cleanup" };
+  }
+  if (!restoreDurableMigration(projectRoot, migration, { home: process.env.HOME || os.homedir() })) {
+    return { status: "invalid", reason: "migration_recovery_failed" };
+  }
+  if (!removeSafeMigrationBackup(projectRoot, backupRoot)) {
+    return { status: "invalid", reason: "migration_backup_cleanup_rejected" };
+  }
+  try { clearInstallStage(projectRoot); } catch { return { status: "invalid", reason: "migration_stage_cleanup_failed" }; }
+  return { status: "rolled_back" };
 }
 
 // ── Claude Code permissions (pre-approve MCP tool) ──────────────────────────────
@@ -2104,6 +2595,7 @@ function reportInstall({
   installedIdes,
   installMode,
   hookResults,
+  installStatus = "completed",
   eventId = crypto.randomUUID(),
   env = process.env,
   runner = spawnSync,
@@ -2119,13 +2611,19 @@ function reportInstall({
     "--event-id", eventId,
     "--installed-ides", [...new Set(installedIdes || [])].join(","),
     "--install-mode", installMode,
+    "--install-status", ["completed", "partial", "failed"].includes(installStatus)
+      ? installStatus
+      : "failed",
     "--hook-results-json", JSON.stringify(hookResults || {}),
     "--version", PKG_VERSION,
     "--os", os.platform(),
   ];
   if (stateRoot) args.push("--state-root", path.resolve(stateRoot));
   if (legacyIdentityPath) args.push("--legacy-identity-path", path.resolve(legacyIdentityPath));
-  if (installStageToken) args.push("--install-owner-token", String(installStageToken));
+  if (installStageToken) {
+    args.push("--install-owner-token", String(installStageToken));
+    args.push("--install-generation", String(installStageToken));
+  }
 
   try {
     if (!fs.existsSync(runtimePath)) {
@@ -2135,7 +2633,7 @@ function reportInstall({
       cwd: path.resolve(projectRoot),
       env,
       encoding: "utf8",
-      timeout: 2_500,
+      timeout: 8_000,
       maxBuffer: 1024 * 1024,
       windowsHide: true,
     });
@@ -2153,6 +2651,50 @@ function reportInstall({
     const reason = String(err && (err.code || err.message) || "runtime_failed").slice(0, 64);
     return { ok: false, eventId, reason };
   }
+}
+
+// Resume only the exact interrupted install generation. The event ID is the
+// idempotency key, not a 24-hour cache key: a retry after a delayed ACK or an
+// Outbox eviction must keep the same ID so the server can deduplicate it.
+function getResumableInstallState(previousStage, previousMarker, installIdes, { now = Date.now() } = {}) {
+  const currentInstallIdes = [...new Set(Array.isArray(installIdes) ? installIdes : [])]
+    .filter((ide) => IDE_TARGETS[ide])
+    .sort();
+  const value = previousStage?.status === "valid" ? previousStage.value : null;
+  const previousInstallIdes = value && Array.isArray(value.install_ides)
+    ? [...new Set(value.install_ides)].sort()
+    : null;
+  const previousInstallEventCreatedAt = value && Number.isFinite(value.install_event_created_at)
+    ? value.install_event_created_at
+    : null;
+  const sameTargetIdes = previousInstallIdes !== null &&
+    JSON.stringify(previousInstallIdes) === JSON.stringify(currentInstallIdes);
+  // `now` is retained in the helper signature for callers/tests that inject a
+  // clock, but event age is deliberately not an identity cutoff. The 24-hour
+  // value belongs to ACK reporting statistics, not retry identity.
+  void now;
+  const migrationAckPending = value?.migration?.install_ack_pending === true;
+  const canResume = Boolean(value &&
+    value.installer_version === PKG_VERSION &&
+    value.target_mode === "node_v2" &&
+    // A committed marker may coexist with an unACKed install event when the
+    // process reached marker commit before the network retry completed.  Keep
+    // that exact event resumable; an ACKed committed generation is terminal
+    // and must not be reused by a later explicit add.
+    (previousMarker?.status !== "valid" || value.install_acknowledged !== true || migrationAckPending) &&
+    sameTargetIdes &&
+    previousInstallEventCreatedAt !== null &&
+    typeof value.owner_token === "string" &&
+    /^[0-9a-f]{32}$/.test(value.owner_token) &&
+    typeof value.install_event_id === "string" &&
+    value.install_event_id.length > 0);
+  return {
+    canResume,
+    ownerToken: canResume ? value.owner_token : undefined,
+    eventId: canResume ? value.install_event_id : null,
+    eventCreatedAt: canResume ? previousInstallEventCreatedAt : null,
+    acknowledged: canResume && value.install_acknowledged === true,
+  };
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
@@ -2211,10 +2753,39 @@ async function mainUnlocked() {
   // Guard: don't install into the package's own tree during local dev.
   if (resolvedRoot === PKG_ROOT) resolvedRoot = cwd;
 
+  // Recover an interrupted explicit legacy migration before resolving the
+  // current mode.  The project lock is already held by main(), so a stale
+  // stage cannot race a live installer here.
+  const migrationRecovery = recoverInterruptedMigration(resolvedRoot);
+  if (migrationRecovery.status === "invalid") {
+    console.warn(c.yellow(`  ⚠ Previous legacy migration could not be recovered (${migrationRecovery.reason}); preserving configuration and refusing installation.`));
+    return;
+  }
+
+  // A previous install may have completed locally but failed to receive the
+  // install ACK.  Keep its stage owner token so the next explicit `add` can
+  // retry the same generation/event_id instead of creating a duplicate.
+  const previousStage = readInstallStage(resolvedRoot);
+  const previousMarker = readInstallMarker(resolvedRoot);
+  const currentInstallIdes = [...new Set(ideList)].sort();
+  const resumableInstall = getResumableInstallState(previousStage, previousMarker, currentInstallIdes);
+  const recoveryOwnerToken = resumableInstall.ownerToken;
+  const previousInstallEventId = resumableInstall.eventId;
+  const recoveredInstallEventId = resumableInstall.eventId;
+  const previousInstallEventCreatedAt = resumableInstall.eventCreatedAt;
+  const previousInstallCanResume = resumableInstall.canResume;
+  const previousInstallAcknowledged = resumableInstall.acknowledged;
+
   // C19 mode is resolved while the project lock is held by main().  It is
   // intentionally before any clean/install/write operation.
   const reportingModeResult = resolveReportingMode(resolvedRoot, {
     home: process.env.HOME || os.homedir(),
+    ides: ideList,
+    // Reaching the installer through `add` is the user's explicit install or
+    // upgrade intent.  Runtime/Hook checks never pass this flag, so an old
+    // project is grandfathered until the user deliberately reruns `add`.
+    upgradeIntent: true,
+    includeDetails: true,
   });
   const reportingMode = reportingModeResult.mode;
   if (isClean && reportingMode !== "node_v2") {
@@ -2229,10 +2800,42 @@ async function mainUnlocked() {
     // Recording the stable grandfathered mode is the only write in this
     // branch. It contains no prompt, identity, or SDKAppID data and prevents
     // a later install from reclassifying the untouched project.
-    writeInstallMarker(resolvedRoot, reportingMode, { installerVersion: PKG_VERSION });
+    writeInstallMarker(resolvedRoot, reportingMode, { installerVersion: PKG_VERSION, ides: ideList });
     return;
   }
-  const stage = writeInstallStage(resolvedRoot, reportingMode, "started", { installerVersion: PKG_VERSION });
+  const home = process.env.HOME || os.homedir();
+  const legacyUpgradeIdes = reportingModeResult.reason === "explicit_upgrade"
+    ? (reportingModeResult.ide_results || [])
+      .filter((result) => result.complete || result.partial)
+      .map((result) => result.ide)
+    : [];
+  const migrationToken = legacyUpgradeIdes.length > 0 ? crypto.randomBytes(16).toString("hex") : null;
+  const migrationBackupRoot = migrationToken
+    ? path.join(resolvedRoot, ".trtc-skill-state", "migrations", migrationToken)
+    : null;
+  const legacySnapshots = legacyUpgradeIdes.map((ide) =>
+    snapshotLegacyForIde(ide, resolvedRoot, home, migrationBackupRoot)
+  );
+  let migrationState = migrationStateForSnapshots(legacySnapshots);
+  // Allocate the logical install identity before any Hook/Skill/MCP writes.
+  // If the process dies later, the stage itself is enough to reconstruct the
+  // same install event instead of leaving a successful marker with no event
+  // identity. Explicit --no-report still clears the identity at the final
+  // preference gate and never sends it.
+  const installAttemptEventId = previousInstallEventId || recoveredInstallEventId || crypto.randomUUID();
+  const installAttemptCreatedAt = previousInstallCanResume && previousInstallEventCreatedAt !== null
+    ? previousInstallEventCreatedAt
+    : Date.now();
+  const stage = writeInstallStage(resolvedRoot, reportingMode, "started", {
+    installerVersion: PKG_VERSION,
+    ownerToken: recoveryOwnerToken,
+    installEventId: installAttemptEventId,
+    installAcknowledged: previousInstallAcknowledged === true,
+    installIdes: currentInstallIdes,
+    installEventCreatedAt: installAttemptCreatedAt,
+    installMode,
+    migration: migrationState || undefined,
+  });
 
   let promptReportingEnabled;
   let allReportingDisabled;
@@ -2324,14 +2927,40 @@ async function mainUnlocked() {
 
   // 3. Install hooks (per-IDE: copy hooks dir + merge settings.json hooks).
   console.log(`\n  ${c.bold("HOOKS")}`);
-  const hookResults = installHooks(ideList, resolvedRoot);
-  writeInstallStage(resolvedRoot, reportingMode, "hooks", { installerVersion: PKG_VERSION, ownerToken: stage.ownerToken });
+  const hookResults = installHooks(ideList, resolvedRoot, { preserveLegacyIdes: legacyUpgradeIdes });
+  let installHealthStatus = Object.values(hookResults || {}).some((result) => result?.installed !== true)
+    ? "partial" : "completed";
+  writeInstallStage(resolvedRoot, reportingMode, "hooks", {
+    installerVersion: PKG_VERSION,
+    ownerToken: stage.ownerToken,
+    installEventId: installAttemptEventId,
+    installAcknowledged: previousInstallAcknowledged === true,
+    installIdes: currentInstallIdes,
+    installEventCreatedAt: installAttemptCreatedAt,
+    installMode,
+    installStatus: installHealthStatus,
+    installHookResults: hookResults,
+    installOs: os.platform(),
+    migration: migrationState || undefined,
+  });
 
   // 4. Install AI instruction files (CLAUDE.md / AGENTS.md / CODEBUDDY.md /
   //    .cursor/rules/ui-mode.mdc) so the agent has routing rules.
   console.log(`\n  ${c.bold("AI INSTRUCTIONS")}`);
   installAiInstructions(ideList, resolvedRoot);
-  writeInstallStage(resolvedRoot, reportingMode, "instructions", { installerVersion: PKG_VERSION, ownerToken: stage.ownerToken });
+  writeInstallStage(resolvedRoot, reportingMode, "instructions", {
+    installerVersion: PKG_VERSION,
+    ownerToken: stage.ownerToken,
+    installEventId: installAttemptEventId,
+    installAcknowledged: previousInstallAcknowledged === true,
+    installIdes: currentInstallIdes,
+    installEventCreatedAt: installAttemptCreatedAt,
+    installMode,
+    installStatus: installHealthStatus,
+    installHookResults: hookResults,
+    installOs: os.platform(),
+    migration: migrationState || undefined,
+  });
 
   // 5. Install MCP server config + permissions.
   console.log(`\n  ${c.bold("MCP")}`);
@@ -2347,21 +2976,258 @@ async function mainUnlocked() {
     }
   );
 
-  // 6. Anonymous install reporting. The event is durable before a bounded
-  // network flush; any reporting failure is independent from install success.
-  if (!allReportingDisabled) {
-    reportInstall({
+  // Explicit `add` is the only migration trigger. Node files are staged
+  // first while each old chain remains available. Legacy migration is
+  // committed per IDE: a failed target is restored to its own snapshot and
+  // remains on the old path, while successful targets may continue to Node V2.
+  // This avoids making one broken desktop Hook block the other IDEs.
+  let committedNodeIdes = ideList.filter((ide) => !legacyUpgradeIdes.includes(ide));
+  if (legacyUpgradeIdes.length > 0) {
+    try {
+      migrationState.phase = "node_verified";
+      writeInstallStage(resolvedRoot, reportingMode, "mcp", {
+        installerVersion: PKG_VERSION,
+        ownerToken: stage.ownerToken,
+        installEventId: installAttemptEventId,
+        installAcknowledged: previousInstallAcknowledged === true,
+        installIdes: currentInstallIdes,
+        installEventCreatedAt: installAttemptCreatedAt,
+        installMode,
+        installStatus: installHealthStatus,
+        installHookResults: hookResults,
+        installOs: os.platform(),
+        migration: migrationState,
+      });
+      const migratedIdes = [];
+      const failedIdes = [];
+      for (const ide of legacyUpgradeIdes) {
+        const snapshot = legacySnapshots.find((item) => item.ide === ide);
+        let result;
+        if (!nodeHookReadyForIde(ide, resolvedRoot, hookResults)) {
+          result = { ide, ok: false, reason: "node_hook_not_ready" };
+        } else {
+          result = migrateLegacyForIde(ide, resolvedRoot, { home });
+        }
+        if (result.ok) {
+          migratedIdes.push(ide);
+          committedNodeIdes.push(ide);
+          continue;
+        }
+
+        // A failed IDE must retain a usable legacy chain. Restore only its
+        // own snapshot; do not undo another IDE that already migrated.
+        try {
+          restoreLegacySnapshot(snapshot);
+          // The shared push MCP/permission installation happens before this
+          // migration block. Reapply those non-reporting additions after a
+          // per-IDE restore so the failed IDE keeps trtc-push-mcp as well.
+          if (ide === "claude") {
+            installMcp([ide], resolvedRoot);
+            installClaudePermissions([ide], resolvedRoot);
+          } else if (ide === "cursor") {
+            installCursorPermissions([ide], resolvedRoot);
+          }
+        } catch (restoreError) {
+          throw new Error(`legacy_migration_restore_failed:${ide}:${restoreError.message || restoreError}`);
+        }
+        failedIdes.push(ide);
+        console.warn(c.yellow(`  ⚠ ${ide} legacy migration skipped (${result.reason || "migration_failed"}); preserving its legacy reporting chain.`));
+      }
+      const allLegacyMigrationsFailed = legacyUpgradeIdes.length > 0
+        && migratedIdes.length === 0;
+      // All old chains have been restored at this point. Mark the migration
+      // transaction as terminally restored rather than as a still-active
+      // Node migration; the backup can be discarded, while the install event
+      // itself remains resumable if transport did not ACK it.
+      migrationState.phase = allLegacyMigrationsFailed ? "legacy_restored" : "legacy_disabled";
+      migrationState.migrated_ides = migratedIdes;
+      migrationState.failed_ides = failedIdes;
+      migrationState.install_ack_pending = allLegacyMigrationsFailed ? false : undefined;
+      if (failedIdes.length > 0) installHealthStatus = "partial";
+      writeInstallStage(resolvedRoot, reportingMode, "mcp", {
+        installerVersion: PKG_VERSION,
+        ownerToken: stage.ownerToken,
+        installEventId: installAttemptEventId,
+        installAcknowledged: previousInstallAcknowledged === true,
+        installIdes: currentInstallIdes,
+        installEventCreatedAt: installAttemptCreatedAt,
+        installMode,
+        installStatus: installHealthStatus,
+        installHookResults: hookResults,
+        installOs: os.platform(),
+        migration: migrationState,
+      });
+    } catch (error) {
+      const rollbackError = rollbackLegacyMigration(legacySnapshots, resolvedRoot);
+      if (rollbackError) console.warn(c.yellow(`  ⚠ Legacy migration rollback was incomplete: ${rollbackError.message || rollbackError}`));
+      throw error;
+    }
+  }
+
+  // Persist the install event identity before the marker and first network
+  // attempt. If the process exits at either boundary, the next explicit add
+  // can reuse this exact event_id and rely on server-side idempotency instead
+  // of creating a duplicate.
+  // A global opt-out suppresses transport for this invocation, but must not
+  // discard an already staged unACKed install identity.  Explicit re-enable
+  // should retry that same event rather than create a second logical install.
+  let installEventId = previousInstallEventId || recoveredInstallEventId ||
+    (allReportingDisabled ? null : installAttemptEventId);
+  // `--no-report` is a transport gate, not an ACK.  Keep an existing event
+  // marked unacknowledged so a later explicit re-enable can retry it; only a
+  // no-report install with no event at all is terminal for this generation.
+  let installAcknowledged = previousInstallAcknowledged ||
+    (allReportingDisabled && installEventId === null);
+  const installEventCreatedAt = installEventId === null
+    ? undefined
+    : (previousInstallCanResume && previousInstallEventCreatedAt !== null
+      ? previousInstallEventCreatedAt
+      : installAttemptCreatedAt);
+  const preReportStage = migrationState ? "mcp" : "instructions";
+  writeInstallStage(resolvedRoot, reportingMode, preReportStage, {
+    installerVersion: PKG_VERSION,
+    ownerToken: stage.ownerToken,
+    installEventId,
+    installAcknowledged,
+    installIdes: currentInstallIdes,
+    installEventCreatedAt,
+    installMode,
+    installStatus: installHealthStatus,
+    installHookResults: hookResults,
+    installOs: os.platform(),
+    migration: migrationState || undefined,
+  });
+
+  // Commit the completed core installation before emitting install_completed.
+  // The stage already contains the logical event identity, so a crash after
+  // this marker commit but before the bounded network attempt can retry the
+  // same event_id without reporting an installation that never committed.
+  const legacyRestoreCommitted = migrationState?.phase === "legacy_restored";
+  const committedMigration = migrationState ? {
+    ...migrationState,
+    phase: legacyRestoreCommitted ? "legacy_restored" : "committed",
+    install_ack_pending: legacyRestoreCommitted ? false : !installAcknowledged,
+  } : undefined;
+  writeInstallStage(resolvedRoot, reportingMode, "complete", {
+    installerVersion: PKG_VERSION,
+    ownerToken: stage.ownerToken,
+    installEventId,
+    installAcknowledged,
+    installIdes: currentInstallIdes,
+    installEventCreatedAt,
+    installMode,
+    installStatus: installHealthStatus,
+    installHookResults: hookResults,
+    installOs: os.platform(),
+    migration: committedMigration,
+  });
+  const committedMarkerMode = committedNodeIdes.length > 0
+    ? reportingMode
+    : (legacyUpgradeIdes.length > 0 ? "legacy_mcp" : reportingMode);
+  writeInstallMarker(resolvedRoot, committedMarkerMode, {
+    installerVersion: PKG_VERSION,
+    // In a mixed legacy upgrade, only IDEs whose old chain was actually
+    // migrated are committed as Node V2. Failed targets remain legacy and
+    // are retried by a later explicit add.
+    ides: committedNodeIdes,
+    installGeneration: stage.ownerToken,
+    installIdes: currentInstallIdes,
+  });
+
+  // Anonymous install reporting happens only after the local Node marker is
+  // committed. A fully failed explicit legacy migration has no committed
+  // Node IDE, so it must not emit a v2 install_completed event: doing so would
+  // count a legacy-restored install as a successful Node installation. The
+  // stage and any pre-existing outbox events remain untouched for a later
+  // retry; only this migration attempt is suppressed. Fresh, partial, and
+  // fully successful Node installs still report normally.
+  const nodeInstallCommitted = legacyUpgradeIdes.length === 0 || committedNodeIdes.length > 0;
+  if (!allReportingDisabled && !installAcknowledged && nodeInstallCommitted) {
+    const installReport = reportInstall({
       projectRoot: resolvedRoot,
       installedIdes: ideList,
       installMode,
       hookResults,
+      installStatus: installHealthStatus,
+      eventId: installEventId,
       installStageToken: stage.ownerToken,
     });
+    const telemetry = installReport.telemetry;
+    if (!installReport.ok || telemetry?.acknowledged !== true) {
+      const status = telemetry?.status || installReport.reason || "queued";
+      console.warn(c.yellow(`  ⚠ install_completed was staged locally but not ACKed (${status}); it will retry on the next runtime invocation.`));
+    } else {
+      installAcknowledged = true;
+    }
+  } else if (!nodeInstallCommitted && !allReportingDisabled && !installAcknowledged) {
+    console.warn(c.yellow("  ⚠ install_completed suppressed: no target IDE committed to Node V2; legacy chain was restored."));
   }
 
-  writeInstallStage(resolvedRoot, reportingMode, "complete", { installerVersion: PKG_VERSION, ownerToken: stage.ownerToken });
-  writeInstallMarker(resolvedRoot, reportingMode, { installerVersion: PKG_VERSION });
-  clearInstallStage(resolvedRoot);
+  // Keep the ACK bit durable after marker commit. If this write fails, the
+  // completed stage still contains the same event_id and the next invocation
+  // can retry idempotently.
+  try {
+    writeInstallStage(resolvedRoot, reportingMode, "complete", {
+      installerVersion: PKG_VERSION,
+      ownerToken: stage.ownerToken,
+      installEventId,
+      installAcknowledged,
+      installIdes: currentInstallIdes,
+      installEventCreatedAt,
+      installMode,
+      installStatus: installHealthStatus,
+      installHookResults: hookResults,
+      installOs: os.platform(),
+      migration: committedMigration
+        ? {
+          ...committedMigration,
+          install_ack_pending: legacyRestoreCommitted ? false : !installAcknowledged,
+        }
+        : undefined,
+    });
+  } catch (error) {
+    console.warn(c.yellow(`  ⚠ Could not persist install ACK state (${error.message || error}); the same event_id will be retried.`));
+  }
+  // Keep a completed stage after an unacknowledged install so a subsequent
+  // `add` can reuse its owner token and the same durable event. An explicit
+  // global opt-out also keeps this recovery token: it suppresses transport
+  // now, but must not force a later explicit re-enable to create a duplicate
+  // install event for the same installation generation. A later ACK clears
+  // it; a committed Node marker keeps runtime operation safe while it remains
+  // as recovery metadata.
+  const stageCanBeCleared = installAcknowledged && !allReportingDisabled;
+  let migrationBackupClean = true;
+  if (migrationState) {
+    migrationBackupClean = removeSafeMigrationBackup(resolvedRoot, migrationState.backup_root);
+    if (!migrationBackupClean) {
+      console.warn(c.yellow("  ⚠ Migration backup cleanup was rejected; preserving the backup for safe recovery."));
+    }
+  }
+  if (migrationBackupClean) {
+    if (stageCanBeCleared) {
+      clearInstallStage(resolvedRoot);
+    } else if (legacyRestoreCommitted) {
+      // The old chain is already restored, so no migration record should
+      // survive after its backup is gone. Keep only the ordinary install
+      // retry identity when the event is still unacknowledged.
+      try {
+        writeInstallStage(resolvedRoot, reportingMode, "complete", {
+          installerVersion: PKG_VERSION,
+          ownerToken: stage.ownerToken,
+          installEventId,
+          installAcknowledged,
+          installIdes: currentInstallIdes,
+          installEventCreatedAt,
+          installMode,
+          installStatus: installHealthStatus,
+          installHookResults: hookResults,
+          installOs: os.platform(),
+        });
+      } catch (error) {
+        console.warn(c.yellow(`  ⚠ Could not clear terminal migration state (${error.message || error}); the next add will retry recovery.`));
+      }
+    }
+  }
 
   // 7. Done.
   console.log(`\n  ${c.bold("Done.")} ${c.dim("Just describe what you want to build in your IDE — the skill activates automatically.")}\n`);
@@ -2413,6 +3279,8 @@ module.exports = {
   stripOwnedHookEntries,
   stripOwnedMarkerBlocks,
   injectMarkered,
+  rewriteHooksContent,
+  mergeHooksConfig,
   installHooks,
   reportInstall,
   // C19 migration (exported for unit testing)
@@ -2422,6 +3290,12 @@ module.exports = {
   isTomlLegacyMcpOwned,
   migrateLegacyMcpToml,
   migrateLegacyForIde,
+  snapshotLegacyForIde,
+  restoreLegacySnapshot,
+  restoreDurableMigration,
+  recoverInterruptedMigration,
+  migrationStateForSnapshots,
+  getResumableInstallState,
   resolveReportingMode,
   writeInstallMarker,
   writeInstallStage,

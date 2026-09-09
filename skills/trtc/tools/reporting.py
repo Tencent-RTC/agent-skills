@@ -53,6 +53,20 @@ _CONTINUATION_LABELS = {
 _CONTINUATION_MARKERS = _CONTINUATION_NOTICE.get("markers", {})
 
 
+def _installed_skill_version() -> str:
+    """Read the suite version shipped beside the installed TRTC skill.
+
+    The helper is copied into each host's project-local skill directory, so
+    the package root is not a reliable lookup location.  ``.package-version``
+    is the installer-owned version source and is included in the skill bundle.
+    """
+    try:
+        value = (Path(__file__).resolve().parents[1] / ".package-version").read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return "unknown"
+    return value or "unknown"
+
+
 def _bundle_path() -> Path:
     return Path(__file__).resolve().parents[1] / "runtime" / "telemetry.cjs"
 
@@ -185,6 +199,12 @@ _HOST_STATE_ROOT_MARKERS = (
     ".trtc-skill-state/host-state-root.json",
     ".trtc-reporting/host-state-root.json",  # pre-rename compatibility
 )
+_HOST_IDE_BY_DIR = {
+    ".claude": "claude",
+    ".cursor": "cursor",
+    ".codebuddy": "codebuddy",
+    ".codex": "codex",
+}
 
 
 def _ambient_project_cwd() -> str:
@@ -251,14 +271,36 @@ def _project_bound_state_root(project_root: str | Path) -> str | None:
     return None
 
 
+def _ambient_ide() -> str | None:
+    """Infer the host IDE from the installed Skill path when available.
+
+    Foreground prompt/invoke calls are launched from the Skill's own Python
+    file and historically did not receive an explicit ``--ide`` flag.  The
+    project can legitimately contain different reporting modes per IDE, so a
+    missing host identity would make the Node runtime scan all IDEs and fail
+    safe as ``unknown``.  Source-checkout paths intentionally return None and
+    keep their existing fallback behavior.
+    """
+    try:
+        source = Path(__file__).resolve()
+        for parent in source.parents:
+            ide = _HOST_IDE_BY_DIR.get(parent.name)
+            if ide:
+                return ide
+    except OSError:
+        pass
+    return None
+
+
 def _ambient_payload(extra: dict[str, Any] | None = None, ide: str | None = None) -> dict[str, Any]:
     payload = dict(extra or {})
+    ambient_ide = ide or _ambient_ide()
     thread_id = os.environ.get("CODEX_THREAD_ID")
-    if thread_id:
+    if thread_id and ambient_ide in (None, "codex"):
         payload.setdefault("thread_id", thread_id)
-        payload.setdefault("ide", ide or "codex")
-    elif ide:
-        payload.setdefault("ide", ide)
+        payload.setdefault("ide", ambient_ide or "codex")
+    elif ambient_ide:
+        payload.setdefault("ide", ambient_ide)
     payload.setdefault("cwd", _ambient_project_cwd())
     return payload
 
@@ -373,7 +415,7 @@ def payload_from_docs_query(
     payload: dict[str, Any] = {
         "product": "chat",
         "framework": derive_framework_from_docs_query(query.get("platform"), query.get("types")),
-        "version": "1.0.0",
+        "version": _installed_skill_version(),
         "sdkappid": query.get("sdkappid", 0),
         "sessionid": sessionid_override or query.get("sessionId"),
         "method": method,
@@ -440,6 +482,7 @@ def _parser() -> argparse.ArgumentParser:
     bind = sub.add_parser("bind-session"); bind.add_argument("--ide"); bind.add_argument("--debug", action="store_true")
     context = sub.add_parser("context"); context.add_argument("--question", required=True); context.add_argument("--options"); context.add_argument("--debug", action="store_true")
     prompt = sub.add_parser("prompt")
+    prompt.add_argument("--ide", choices=("claude", "cursor", "codebuddy", "codex"))
     _pg = prompt.add_mutually_exclusive_group(required=True)
     _pg.add_argument("--text")
     _pg.add_argument("--input-stdin", action="store_true", dest="input_stdin")
@@ -450,7 +493,7 @@ def _parser() -> argparse.ArgumentParser:
         help="fail when --input-stdin is empty or invalid (foreground callers)",
     )
     prompt.add_argument("--debug", action="store_true")
-    invoke = sub.add_parser("invoke"); invoke.add_argument("--skillname", required=True); invoke.add_argument("--product"); invoke.add_argument("--framework"); invoke.add_argument("--debug", action="store_true")
+    invoke = sub.add_parser("invoke"); invoke.add_argument("--skillname", required=True); invoke.add_argument("--product"); invoke.add_argument("--framework"); invoke.add_argument("--ide", choices=("claude", "cursor", "codebuddy", "codex")); invoke.add_argument("--debug", action="store_true")
     pref = sub.add_parser("preference"); pref.add_argument("--enabled", required=True, choices=("on", "off")); pref.add_argument("--debug", action="store_true")
     send = sub.add_parser("send")
     for name in ("json", "product", "framework", "version", "sdkappid", "sessionid", "method", "text", "answer", "feedback"):
@@ -494,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
                         "text": label,
                         "source": "python",
                         "control_choice": choice,
-                    }),
+                    }, args.ide),
                     debug=debug,
                 )
                 marker = result.get("marker") if isinstance(result, dict) else None
@@ -529,7 +572,7 @@ def main(argv: list[str] | None = None) -> int:
                 # Second NUL check: catches JSON-escaped NUL that survives raw-string scan
                 if chr(0) in _obj["text"]:
                     return _invalid_prompt_input("nul_byte_in_text", require_input=require_input, debug=debug)
-                ok, result = _run_node("stage-prompt", payload=_ambient_payload({"text": _obj["text"], "source": "python"}), debug=debug)
+                ok, result = _run_node("stage-prompt", payload=_ambient_payload({"text": _obj["text"], "source": "python"}, args.ide), debug=debug)
                 marker = result.get("marker") if isinstance(result, dict) else None
                 if isinstance(marker, str) and marker.startswith("TRTC_REPORTING_"):
                     print(marker)
@@ -552,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
             # protocol as --input-stdin so the old production entry cannot
             # silently swallow a choice result.  Debug mode keeps its legacy
             # single JSON stdout record; callers can inspect result.marker.
-            ok, result = _run_node("stage-prompt", payload=_ambient_payload({"text": args.text}), debug=debug)
+            ok, result = _run_node("stage-prompt", payload=_ambient_payload({"text": args.text}, args.ide), debug=debug)
             if not debug:
                 marker = result.get("marker") if isinstance(result, dict) else None
                 if isinstance(marker, str) and marker.startswith("TRTC_REPORTING_"):
@@ -564,7 +607,7 @@ def main(argv: list[str] | None = None) -> int:
                 value = getattr(args, flag)
                 if value:
                     node_args += ["--" + flag, value]
-            invoke_payload = _ambient_payload({"notice_attempt_id": attempt_id})
+            invoke_payload = _ambient_payload({"notice_attempt_id": attempt_id}, args.ide)
             ok, result = _run_node("invoke", node_args, invoke_payload, debug=debug)
             # Do not call notice-status here.  That command transitions the
             # receipt from pending_output to awaiting_choice, which would
@@ -582,6 +625,8 @@ def main(argv: list[str] | None = None) -> int:
                 # callers (without --debug) receive the exact marker stdout.
                 if invoke_marker:
                     result["reporting_marker"] = invoke_marker
+            elif isinstance(result, dict) and result.get("marker") == "TRTC_REPORTING_ROOT_INVOKE_REJECTED_V1":
+                print("TRTC_REPORTING_ROOT_INVOKE_REJECTED_V1")
             elif invoke_marker:
                 print(invoke_marker)
         elif args.cmd == "preference":

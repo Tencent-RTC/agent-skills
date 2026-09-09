@@ -216,6 +216,33 @@ test("python dependency bootstrap installs PyYAML into project-local skill roots
   }
 });
 
+test("missing PyYAML distribution is diagnosed without a global pip install", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-python-unavailable-"));
+  let pipCalled = false;
+  const runner = (_command, args, options = {}) => {
+    if (args[0] === "--version") return { status: 0, stdout: "Python 3.14\n" };
+    if (args[0] === "-c" && args[1].includes("version_info")) return { status: 0, stdout: "3.14\n" };
+    if (args.includes("pip")) {
+      pipCalled = true;
+      assert.ok(args.includes("--target"));
+      assert.ok(args[args.indexOf("--target") + 1].startsWith(tmp + path.sep));
+      assert.ok(options.timeout > 0 && options.timeout <= 120000);
+      return { status: 1, stderr: "No matching distribution found for PyYAML<7,>=6" };
+    }
+    return { status: 1, stderr: "No module named yaml" };
+  };
+  try {
+    const result = ensurePythonDependencies(["codex"], tmp, {
+      env: { XDG_CACHE_HOME: path.join(tmp, "cache") }, home: tmp, runner,
+    });
+    assert.equal(pipCalled, true);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "pyyaml-install-failed");
+    assert.match(result.message, /No matching distribution/);
+    assert.equal(fs.existsSync(path.join(tmp, ".codex", "skills", "trtc", "yaml")), false);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test("Codex MCP TOML install is idempotent across main and nested env tables", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-codex-mcp-"));
   const configPath = path.join(tmp, "config.toml");

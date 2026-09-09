@@ -213,6 +213,9 @@ function fsyncDirBestEffort(dir) {
 function isSafeIdentifier(s) {
   return typeof s === "string" && SAFE_IDENTIFIER_RE.test(s);
 }
+function isValidIdentityRecord(value) {
+  return Boolean(value) && isSafeIdentifier(value.useragent) && (value.identity_scope === "device" || value.identity_scope === "ephemeral");
+}
 function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0)
     return null;
@@ -3065,21 +3068,23 @@ function nextRetryMs(retryCount, random) {
 }
 async function flushOutbox(root, opts = {}) {
   var _a;
+  const env = opts.env || process.env;
   const maxCount = opts.maxCount ?? DEFAULT_MAX_COUNT;
   const maxDurationMs = opts.maxDurationMs ?? DEFAULT_MAX_DURATION_MS;
   const requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const reservationTimeoutMs = opts.reservationTimeoutMs ?? DEFAULT_RESERVATION_TIMEOUT_MS2;
   const transport = opts._transport || _httpsPost;
   const removeEvent = opts._remove || remove;
-  const dryRun = opts._dryRun || process.env.TRTC_TELEMETRY_DRY_RUN === "1";
+  const dryRun = opts._dryRun || env.TRTC_TELEMETRY_DRY_RUN === "1";
   const nowFn = opts.now || Date.now;
   const randomFn = opts.random || Math.random;
   const requireAuthoritativeGate = opts.authoritativeGate !== false;
   const isEventEnabled = typeof opts.isEventEnabled === "function" ? opts.isEventEnabled : () => !requireAuthoritativeGate;
   const eventIds = Array.isArray(opts.eventIds) ? new Set(opts.eventIds) : null;
   const priorityEventIds = new Set(Array.isArray(opts.priorityEventIds) ? opts.priorityEventIds : []);
-  const endpoint = process.env.TRTC_TELEMETRY_ENDPOINT || DEFAULT_ENDPOINT;
-  const topicId = process.env.TRTC_TELEMETRY_TOPIC_ID || DEFAULT_TOPIC_ID;
+  const forceRetryEventIds = new Set(Array.isArray(opts.forceRetryEventIds) ? opts.forceRetryEventIds : []);
+  const endpoint = env.TRTC_TELEMETRY_ENDPOINT || DEFAULT_ENDPOINT;
+  const topicId = env.TRTC_TELEMETRY_TOPIC_ID || DEFAULT_TOPIC_ID;
   const url = `${endpoint}/tracklog?topic_id=${topicId}`;
   const deadlineMono = import_node_perf_hooks8.performance.now() + maxDurationMs;
   let paths2 = listOutbox(root);
@@ -3174,7 +3179,7 @@ async function flushOutbox(root, opts = {}) {
       }
       (_a = opts.finalGateReached) == null ? void 0 : _a.call(opts, { event_id: eid, project_key: projectKey2, event });
       const retryAfter = event.__sender_retry_after;
-      if (typeof retryAfter === "number" && nowFn() < retryAfter) {
+      if (typeof retryAfter === "number" && nowFn() < retryAfter && !forceRetryEventIds.has(eid)) {
         result.skipped++;
         processed++;
         continue;
@@ -3185,7 +3190,7 @@ async function flushOutbox(root, opts = {}) {
         continue;
       }
       let sendEvent = event;
-      if (event.identity_pending === true || typeof event.useragent !== "string") {
+      if (!isValidIdentityRecord(event)) {
         remaining2 = deadlineMono - import_node_perf_hooks8.performance.now();
         if (remaining2 <= 0)
           break;
@@ -4399,7 +4404,7 @@ function coordinationRoot(projectRoot) {
   return (0, import_node_path7.join)(resolveProjectStateDir(projectRoot), COORD_DIR);
 }
 function safeSessionId(value) {
-  return typeof value === "string" && /^sess_[a-f0-9_]{8,64}$/.test(value);
+  return typeof value === "string" && /^(?:sess_[a-f0-9_]{8,64}|sess_project_[a-f0-9]{24})$/.test(value);
 }
 function ensurePrivateDir(path2) {
   (0, import_node_fs7.mkdirSync)(path2, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
@@ -6397,11 +6402,14 @@ function invalidateEntry(cache, key) {
 init_control();
 var import_meta = {};
 var INVOKE_FRESHNESS_MS = 30 * 60 * 1e3;
+var OUTBOX_RECOVERY_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
+var HISTORICAL_OUTBOX_MAX_COUNT = 10;
 var PENDING_OUTPUT_CROSS_SESSION_TTL_MS = 60 * 1e3;
 var PYTHON_HOOK_DEDUPE_MS = 6e4;
 var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
-var RUNTIME_VERSION = "1.0.0";
+var FOREGROUND_TOTAL_BUDGET_MS = 2200;
+var RUNTIME_VERSION = "1.1.0";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
   "trtc-conference": "conference",
@@ -6437,7 +6445,7 @@ function inferHostAttribution(text) {
     if (pattern.test(value))
       return { skillname, product };
   }
-  return { skillname: "trtc", product: "unknown" };
+  return { skillname: "unknown", product: "unknown" };
 }
 function inferHostFramework(text) {
   const value = typeof text === "string" ? text.toLowerCase() : "";
@@ -6545,7 +6553,8 @@ function findProjectRoot(start) {
     return startRoot;
   return startRoot;
 }
-var C19_MODE_SCHEMA_VERSION = 1;
+var C19_MODE_SCHEMA_VERSION = 2;
+var C19_MODE_SCHEMA_VERSIONS = /* @__PURE__ */ new Set([1, C19_MODE_SCHEMA_VERSION]);
 var C19_IDE_ROOTS = Object.freeze({
   claude: ".claude",
   cursor: ".cursor",
@@ -6558,6 +6567,19 @@ var C19_LEGACY_INSTRUCTION_FILES = Object.freeze([
   "CODEBUDDY.md",
   ".cursor/rules/ui-mode.mdc"
 ]);
+var C19_LEGACY_INSTRUCTIONS_BY_IDE = Object.freeze({
+  claude: ["CLAUDE.md"],
+  cursor: [".cursor/rules/ui-mode.mdc"],
+  codebuddy: ["CODEBUDDY.md"],
+  codex: ["AGENTS.md"]
+});
+var C19_LEGACY_HOOKS_BY_IDE = Object.freeze({
+  claude: [".claude/settings.json"],
+  cursor: [".cursor/hooks.json"],
+  codebuddy: [".codebuddy/settings.json"],
+  codex: [".codex/hooks.json"]
+});
+var C19_LEGACY_IDES = Object.freeze(["claude", "cursor", "codebuddy", "codex"]);
 var C19_LEGACY_MCP_NAME = "tencent-rtc-skill-tool";
 function c19SafeReadJson(file) {
   try {
@@ -6567,18 +6589,20 @@ function c19SafeReadJson(file) {
   }
 }
 function c19ValidMarker(value) {
-  return !!value && typeof value === "object" && !Array.isArray(value) && value.schema_version === C19_MODE_SCHEMA_VERSION && ["node_v2", "legacy_mcp"].includes(value.mode) && typeof value.installer_version === "string" && value.installer_version.length <= 128 && typeof value.updated_at === "string" && value.updated_at.length > 0;
+  return !!value && typeof value === "object" && !Array.isArray(value) && C19_MODE_SCHEMA_VERSIONS.has(value.schema_version) && ["node_v2", "legacy_mcp"].includes(value.mode) && typeof value.installer_version === "string" && value.installer_version.length <= 128 && typeof value.updated_at === "string" && value.updated_at.length > 0 && (!Object.prototype.hasOwnProperty.call(value, "install_generation") || typeof value.install_generation === "string" && /^[0-9a-f]{32}$/.test(value.install_generation)) && (!Object.prototype.hasOwnProperty.call(value, "install_ides") || Array.isArray(value.install_ides) && value.install_ides.length > 0 && value.install_ides.every((ide) => C19_LEGACY_IDES.includes(ide)) && new Set(value.install_ides).size === value.install_ides.length) && (!Object.prototype.hasOwnProperty.call(value, "ide_modes") || value.ide_modes && typeof value.ide_modes === "object" && !Array.isArray(value.ide_modes) && Object.entries(value.ide_modes).every(([ide, mode]) => C19_LEGACY_IDES.includes(ide) && ["node_v2", "legacy_mcp"].includes(mode)));
 }
-function c19LegacySkillFootprint(projectRoot) {
-  for (const ideRoot of Object.values(C19_IDE_ROOTS)) {
+function c19LegacySkillFootprint(projectRoot, ide) {
+  const roots = ide && C19_IDE_ROOTS[ide] ? [C19_IDE_ROOTS[ide]] : Object.values(C19_IDE_ROOTS);
+  for (const ideRoot of roots) {
     const skill = (0, import_node_path12.join)(projectRoot, ideRoot, "skills", "trtc");
     if ((0, import_node_fs11.existsSync)((0, import_node_path12.join)(skill, "SKILL.md")) && (0, import_node_fs11.existsSync)((0, import_node_path12.join)(skill, "tools", "reporting.py")) && !(0, import_node_fs11.existsSync)((0, import_node_path12.join)(skill, "runtime", "telemetry.cjs")))
       return true;
   }
   return false;
 }
-function c19LegacyInstructionFootprint(projectRoot) {
-  for (const relative2 of C19_LEGACY_INSTRUCTION_FILES) {
+function c19LegacyInstructionFootprint(projectRoot, ide) {
+  const files = ide && C19_LEGACY_INSTRUCTIONS_BY_IDE[ide] ? C19_LEGACY_INSTRUCTIONS_BY_IDE[ide] : C19_LEGACY_INSTRUCTION_FILES;
+  for (const relative2 of files) {
     try {
       const text = (0, import_node_fs11.readFileSync)((0, import_node_path12.join)(projectRoot, relative2), "utf8");
       if (/reporting\.py\s+(?:bind-session)|tencent-rtc-skill-tool|skill_analysis/.test(text))
@@ -6588,8 +6612,9 @@ function c19LegacyInstructionFootprint(projectRoot) {
   }
   return false;
 }
-function c19LegacyHookFootprint(projectRoot) {
-  for (const relative2 of [".claude/settings.json", ".cursor/hooks.json", ".codebuddy/settings.json", ".codex/hooks.json"]) {
+function c19LegacyHookFootprint(projectRoot, ide) {
+  const files = ide && C19_LEGACY_HOOKS_BY_IDE[ide] ? C19_LEGACY_HOOKS_BY_IDE[ide] : Object.values(C19_LEGACY_HOOKS_BY_IDE).flat();
+  for (const relative2 of files) {
     try {
       if (/reporting\.py|tencent-rtc-skill-tool|skill_analysis/.test((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(projectRoot, relative2), "utf8")))
         return true;
@@ -6598,8 +6623,10 @@ function c19LegacyHookFootprint(projectRoot) {
   }
   return false;
 }
-function c19LegacyProjectMcpFootprint(projectRoot) {
+function c19LegacyProjectMcpFootprint(projectRoot, ide) {
   var _a;
+  if (ide && ide !== "claude")
+    return false;
   try {
     const value = JSON.parse((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(projectRoot, ".mcp.json"), "utf8"));
     const entry = (_a = value == null ? void 0 : value.mcpServers) == null ? void 0 : _a[C19_LEGACY_MCP_NAME];
@@ -6644,7 +6671,7 @@ function c19InstallerOwnsActiveStage(projectRoot, ownerToken2) {
       const parsed = JSON.parse((0, import_node_fs11.readFileSync)(stage, "utf8"));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
         return false;
-      if (parsed.schema_version !== C19_MODE_SCHEMA_VERSION || parsed.target_mode !== "node_v2" || !["started", "hooks", "instructions", "mcp", "complete"].includes(parsed.stage) || parsed.owner_token !== ownerToken2 || !Number.isInteger(parsed.pid) || parsed.pid <= 0)
+      if (!C19_MODE_SCHEMA_VERSIONS.has(parsed.schema_version) || parsed.target_mode !== "node_v2" || !["started", "hooks", "instructions", "mcp", "complete"].includes(parsed.stage) || parsed.owner_token !== ownerToken2 || !Number.isInteger(parsed.pid) || parsed.pid <= 0)
         return false;
       try {
         process.kill(parsed.pid, 0);
@@ -6658,8 +6685,93 @@ function c19InstallerOwnsActiveStage(projectRoot, ownerToken2) {
   }
   return false;
 }
-function readNodeReportingMode(projectRoot, env = process.env) {
+function c19RecoverableInstallStage(projectRoot, ide) {
   const root = (0, import_node_path12.resolve)(projectRoot);
+  for (const dir of projectStateDirs(root)) {
+    const stagePath2 = (0, import_node_path12.join)(dir, "install-stage.json");
+    const markerPath = (0, import_node_path12.join)(dir, "install-mode.json");
+    try {
+      if ((0, import_node_fs11.lstatSync)(dir).isSymbolicLink() || (0, import_node_fs11.lstatSync)(stagePath2).isSymbolicLink() || (0, import_node_fs11.lstatSync)(markerPath).isSymbolicLink())
+        continue;
+    } catch (err) {
+      if ((err == null ? void 0 : err.code) !== "ENOENT")
+        continue;
+    }
+    const stageResult = c19SafeReadJson(stagePath2);
+    const markerResult = c19SafeReadJson(markerPath);
+    const stage = stageResult.value;
+    const marker = markerResult.value;
+    if (!stageResult.exists || !stageResult.value || !markerResult.exists || !c19ValidMarker(marker))
+      continue;
+    if (stage.target_mode !== "node_v2" || stage.stage !== "complete" || typeof stage.owner_token !== "string" || !/^[0-9a-f]{32}$/.test(stage.owner_token) || typeof stage.install_event_id !== "string" || stage.install_event_id.length === 0 || stage.install_acknowledged === true || marker.mode !== "node_v2" || marker.install_generation !== stage.owner_token)
+      continue;
+    const stageIdes = Array.isArray(stage.install_ides) ? [...new Set(stage.install_ides)].sort() : [];
+    const markerIdes = Array.isArray(marker.install_ides) ? [...new Set(marker.install_ides)].sort() : [];
+    if (stageIdes.length === 0 || markerIdes.length === 0 || stageIdes.join(",") !== markerIdes.join(",") || ide && !stageIdes.includes(ide))
+      continue;
+    return {
+      stagePath: stagePath2,
+      stateDir: dir,
+      ownerToken: stage.owner_token,
+      eventId: stage.install_event_id,
+      installedIdes: stageIdes,
+      version: typeof stage.installer_version === "string" ? stage.installer_version : "unknown",
+      // `target_mode` describes the reporting chain; `install_mode` is the
+      // user's invocation shape (auto/specific/all) and must remain distinct
+      // when an install event is rebuilt after a crash.
+      installMode: ["auto", "specific", "all"].includes(stage.install_mode) ? stage.install_mode : "unknown",
+      installStatus: ["completed", "partial", "failed"].includes(stage.install_status) ? stage.install_status : "completed",
+      hookResults: stage.install_hook_results && typeof stage.install_hook_results === "object" && !Array.isArray(stage.install_hook_results) ? stage.install_hook_results : {},
+      os: typeof stage.install_os === "string" ? stage.install_os : process.platform,
+      migration: stage.migration
+    };
+  }
+  return null;
+}
+function c19WriteInstallRecoveryAck(record, acknowledged) {
+  if (!(record == null ? void 0 : record.stagePath) || typeof record.ownerToken !== "string")
+    return false;
+  let current;
+  try {
+    if ((0, import_node_fs11.lstatSync)(record.stagePath).isSymbolicLink())
+      return false;
+    current = JSON.parse((0, import_node_fs11.readFileSync)(record.stagePath, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!current || current.owner_token !== record.ownerToken || current.stage !== "complete")
+    return false;
+  if (!acknowledged)
+    return true;
+  current.install_acknowledged = true;
+  if (current.migration && typeof current.migration === "object" && !Array.isArray(current.migration)) {
+    current.migration = { ...current.migration, install_ack_pending: false };
+  }
+  if (!current.migration) {
+    try {
+      (0, import_node_fs11.unlinkSync)(record.stagePath);
+      return true;
+    } catch (err) {
+      return (err == null ? void 0 : err.code) === "ENOENT";
+    }
+  }
+  const tmp = `${record.stagePath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  try {
+    (0, import_node_fs11.writeFileSync)(tmp, `${JSON.stringify({ ...current, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+    (0, import_node_fs11.renameSync)(tmp, record.stagePath);
+    return true;
+  } catch {
+    try {
+      (0, import_node_fs11.unlinkSync)(tmp);
+    } catch {
+    }
+    return false;
+  }
+}
+function readNodeReportingMode(projectRoot, env = process.env, ide) {
+  const root = (0, import_node_path12.resolve)(projectRoot);
+  const targetIdes = ide && C19_LEGACY_IDES.includes(ide) ? [ide] : C19_LEGACY_IDES;
   for (const dir of projectStateDirs(root)) {
     const marker = (0, import_node_path12.join)(dir, "install-mode.json");
     try {
@@ -6674,20 +6786,43 @@ function readNodeReportingMode(projectRoot, env = process.env) {
       continue;
     if (!c19ValidMarker(markerResult.value))
       return "unknown";
+    const ideModes = markerResult.value.ide_modes;
+    if (ideModes && markerResult.value.schema_version >= 2) {
+      const resolvedModes = targetIdes.map((targetIde) => {
+        const mapped = ideModes[targetIde];
+        if (mapped === "node_v2") {
+          if (c19LegacyProjectMcpFootprint(root, targetIde) || c19LegacySkillFootprint(root, targetIde) || c19LegacyInstructionFootprint(root, targetIde) || c19LegacyHookFootprint(root, targetIde))
+            return "unknown";
+          return "node_v2";
+        }
+        if (mapped === "legacy_mcp")
+          return "legacy_mcp";
+        if (c19LegacyProjectMcpFootprint(root, targetIde) || c19LegacySkillFootprint(root, targetIde) || c19LegacyInstructionFootprint(root, targetIde) || c19LegacyHookFootprint(root, targetIde))
+          return "legacy_mcp";
+        return "node_v2";
+      });
+      if (resolvedModes.includes("legacy_mcp") && resolvedModes.includes("node_v2"))
+        return "unknown";
+      if (resolvedModes.every((value) => value === "legacy_mcp"))
+        return "legacy_mcp";
+      if (resolvedModes.every((value) => value === "node_v2"))
+        return "node_v2";
+      return "unknown";
+    }
     if (markerResult.value.mode === "legacy_mcp")
       return "legacy_mcp";
-    if (c19LegacyProjectMcpFootprint(root) || c19LegacySkillFootprint(root) || c19LegacyInstructionFootprint(root) || c19LegacyHookFootprint(root))
+    if (targetIdes.some((targetIde) => c19LegacyProjectMcpFootprint(root, targetIde) || c19LegacySkillFootprint(root, targetIde) || c19LegacyInstructionFootprint(root, targetIde) || c19LegacyHookFootprint(root, targetIde)))
       return "unknown";
     return "node_v2";
   }
   if (c19InstallStageState(root) !== null)
     return "unknown";
-  if (c19LegacyProjectMcpFootprint(root) || c19LegacySkillFootprint(root) || c19LegacyInstructionFootprint(root) || c19LegacyHookFootprint(root))
+  if (targetIdes.some((targetIde) => c19LegacyProjectMcpFootprint(root, targetIde) || c19LegacySkillFootprint(root, targetIde) || c19LegacyInstructionFootprint(root, targetIde) || c19LegacyHookFootprint(root, targetIde)))
     return "unknown";
   return "node_v2";
 }
-function nodeReportingAllowed(projectRoot, env = process.env) {
-  return readNodeReportingMode(projectRoot, env) === "node_v2";
+function nodeReportingAllowed(projectRoot, env = process.env, ide) {
+  return readNodeReportingMode(projectRoot, env, ide) === "node_v2";
 }
 function resolveProjectRoot({ explicitCwd, normalized, processCwd = process.cwd() } = {}) {
   var _a;
@@ -6722,11 +6857,28 @@ function stopProducerLease(result) {
     endProducerLease(result.lease);
 }
 function writeOutboxWithProducerLease(ctx, key, event, opts = {}) {
-  const producer = startProducerLease(ctx, key, opts);
+  const deadlineMono = opts.deadlineMono ?? ctx.deadlineMono;
+  const remainingBudget = Number.isFinite(deadlineMono) ? remaining(deadlineMono) : Infinity;
+  const requestedTimeout = Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : 120;
+  const leaseTimeout = Math.min(requestedTimeout, remainingBudget);
+  const producer = startProducerLease(ctx, key, {
+    ...opts,
+    timeoutMs: leaseTimeout,
+    deadlineMono
+  });
   if (producer.blocked)
     return { status: producer.retryable ? "retryable" : "disabled", reason: producer.reason };
   try {
-    const written = writeOutbox(ctx.stateRoot, event, { projectKey: key, enforceProjectGate: true });
+    const reservationBudget = Number.isFinite(deadlineMono) ? Math.min(
+      Number.isFinite(opts.reservationTimeoutMs) ? Math.max(0, opts.reservationTimeoutMs) : requestedTimeout,
+      remaining(deadlineMono)
+    ) : Number.isFinite(opts.reservationTimeoutMs) ? Math.max(0, opts.reservationTimeoutMs) : requestedTimeout;
+    const written = writeOutbox(ctx.stateRoot, event, {
+      projectKey: key,
+      enforceProjectGate: true,
+      reservationTimeoutMs: reservationBudget,
+      ...opts._hookMode === true ? { _hookMode: true } : {}
+    });
     return (written == null ? void 0 : written.status) === "blocked" ? { status: "disabled", reason: written.reason } : written;
   } finally {
     stopProducerLease(producer);
@@ -6754,11 +6906,13 @@ function pendingOnlyEventForProject(stateRoot, eventId, key) {
   }
   return null;
 }
-function selectPending(stateRoot, key, now = Date.now()) {
+function selectPending(stateRoot, key, now = Date.now(), ide = null) {
   const candidates = [];
   for (const path2 of listPending(stateRoot)) {
     const event = readEvent(path2);
     if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key)
+      continue;
+    if (ide && ide !== "unknown" && event.ide !== ide)
       continue;
     if (typeof event.time !== "number" || now - event.time > INVOKE_FRESHNESS_MS)
       continue;
@@ -6770,6 +6924,89 @@ function selectPending(stateRoot, key, now = Date.now()) {
   if (candidates.length > 1)
     return { status: "ambiguous" };
   return { status: "selected", event: candidates[0] };
+}
+function selectOutboxPrompt(stateRoot, key, now = Date.now(), ide = null, sessionid = null) {
+  const candidates = [];
+  for (const path2 of listOutbox(stateRoot)) {
+    const event = readEvent(path2);
+    if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key)
+      continue;
+    if (ide && ide !== "unknown" && event.ide !== ide)
+      continue;
+    if (sessionid && event.sessionid !== sessionid)
+      continue;
+    if (typeof event.time !== "number" || event.time > now || now - event.time > INVOKE_FRESHNESS_MS)
+      continue;
+    candidates.push(event);
+  }
+  candidates.sort((a, b) => b.time - a.time || a.event_id.localeCompare(b.event_id));
+  if (candidates.length === 0)
+    return { status: "not_found" };
+  if (candidates.length > 1)
+    return { status: "ambiguous" };
+  return { status: "selected", event: candidates[0], source: "outbox" };
+}
+function selectForegroundPrompt(stateRoot, key, now = Date.now(), ide = null, sessionid = null) {
+  const pending = sessionid ? selectPendingForSession(stateRoot, key, sessionid, now) : selectPending(stateRoot, key, now, ide);
+  if (pending.status !== "not_found")
+    return pending;
+  return selectOutboxPrompt(stateRoot, key, now, ide, sessionid);
+}
+function historicalOutboxPromptIds(stateRoot, key, now = Date.now(), ide = null) {
+  if (!ide || ide === "unknown")
+    return [];
+  const cutoff = now - OUTBOX_RECOVERY_TTL_MS;
+  const candidates = [];
+  for (const path2 of listOutbox(stateRoot)) {
+    const event = readEvent(path2);
+    if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key)
+      continue;
+    if (event.ide !== ide)
+      continue;
+    if (typeof event.time !== "number" || event.time > now || event.time < cutoff)
+      continue;
+    candidates.push(event);
+  }
+  candidates.sort((a, b) => a.time - b.time || a.event_id.localeCompare(b.event_id));
+  return candidates.slice(0, HISTORICAL_OUTBOX_MAX_COUNT).map((event) => event.event_id);
+}
+async function flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, now) {
+  const eventIds = historicalOutboxPromptIds(ctx.stateRoot, key, now, ide);
+  if (eventIds.length === 0)
+    return null;
+  const maxDurationMs = Math.min(1800, Math.max(0, remaining(deadlineMono) - 100));
+  if (maxDurationMs <= 0)
+    return { sent: 0, sent_event_ids: [], retried: 0, rejected: 0, skipped: 0, errors: [{ code: "deadline_exhausted" }] };
+  try {
+    return await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: eventIds.length,
+      maxDurationMs,
+      eventIds,
+      // Do not bypass Sender backoff here. This is a bounded drain of already
+      // attributed events, not a new foreground delivery attempt.
+      isEventEnabled: senderGate(projectRoot, key, ctx.env)
+    });
+  } catch (err) {
+    return {
+      sent: 0,
+      sent_event_ids: [],
+      retried: 0,
+      rejected: 0,
+      skipped: 0,
+      errors: [{ code: typeof (err == null ? void 0 : err.code) === "string" ? err.code : "sender_error" }]
+    };
+  }
+}
+function identityEnrichmentForEvent(event, stateRoot, maxWaitMs) {
+  if (isValidIdentityRecord(event)) {
+    return {
+      useragent: event.useragent,
+      identity_scope: event.identity_scope,
+      identity_pending: false
+    };
+  }
+  return identityFields({ stateRoot, maxWaitMs });
 }
 function latestPendingPrompt(stateRoot, key, now = Date.now(), ide = null) {
   let latest = null;
@@ -6805,20 +7042,23 @@ function pendingForStage(stateRoot, key, sessionid, turnId, fingerprint, now = D
   candidates.sort((a, b) => b.time - a.time || a.event_id.localeCompare(b.event_id));
   return candidates[0] || null;
 }
-function recentHookPromptByFingerprint(stateRoot, key, fingerprint, now = Date.now()) {
-  let latest = null;
+function recentHookPromptByFingerprint(stateRoot, key, fingerprint, now = Date.now(), ide = null, turnId = null) {
+  const candidates = [];
   for (const path2 of listPending(stateRoot)) {
     const event = readEvent(path2);
     if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key)
       continue;
     if (event.__stage_source !== "hook" || event.__prompt_fingerprint !== fingerprint)
       continue;
+    if (ide && ide !== "unknown" && event.ide !== ide)
+      continue;
+    if (turnId && event.turn_id !== turnId)
+      continue;
     if (typeof event.time !== "number" || event.time > now || now - event.time > PYTHON_HOOK_DEDUPE_MS)
       continue;
-    if (!latest || event.time > latest.time)
-      latest = event;
+    candidates.push(event);
   }
-  return latest;
+  return candidates.length > 1 ? { ambiguous: true } : candidates[0] || null;
 }
 function rawSessionFromInput(input) {
   for (const key of ["raw_session_id", "session_id", "conversation_id", "thread_id"]) {
@@ -6847,7 +7087,7 @@ function applyControlPrompt(projectRoot, text) {
   return { status: requested ? "enabled" : "disabled", control: true };
 }
 async function stagePromptCore(input, flags, ctx, opts = {}) {
-  var _a;
+  var _a, _b;
   const prompt = typeof (input == null ? void 0 : input.prompt) === "string" ? input.prompt : input == null ? void 0 : input.text;
   if (typeof prompt !== "string" || prompt.length === 0)
     return { status: "invalid", error: "prompt_required" };
@@ -6856,7 +7096,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     normalized: input,
     processCwd: ctx.cwd
   });
-  if (!nodeReportingAllowed(projectRoot, ctx.env))
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")))
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
   const deadlineMono = opts.deadlineMono ?? import_node_perf_hooks9.performance.now() + (opts.timeoutMs ?? 2e3);
   const continuationConsumed = await consumeContinuationChoice(projectRoot, prompt, {
@@ -6880,12 +7120,37 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   if (!isReportingEnabled(projectRoot, ctx.env))
     return { status: "disabled" };
   const sanitizedPrompt = sanitizeReportText(prompt);
-  const fingerprint = promptFingerprint(sanitizedPrompt);
+  const fingerprint = promptFingerprint(sanitizedPrompt.trim());
   const key = projectKey(projectRoot);
   if (opts.source === "python" && !rawSessionFromInput(input)) {
-    const hookMatch = recentHookPromptByFingerprint(ctx.stateRoot, key, fingerprint, ctx.now());
-    if (hookMatch)
-      return { status: "deduped", event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
+    const hookMatch = recentHookPromptByFingerprint(ctx.stateRoot, key, fingerprint, ctx.now(), flags.ide || (input == null ? void 0 : input.ide), input == null ? void 0 : input.turn_id);
+    if (hookMatch == null ? void 0 : hookMatch.ambiguous)
+      return { status: "ambiguous" };
+    if (hookMatch) {
+      const stageKey = hookMatch.turn_id ? `turn:${hookMatch.turn_id}` : `fingerprint:${fingerprint}`;
+      const claim = acquireCoordinationReservation(projectRoot, "stage", `${hookMatch.sessionid}:${stageKey}`, { deadlineMono });
+      if (!claim)
+        return { status: "skip", error: "stage_busy" };
+      try {
+        const receipt = readStageReceipt(projectRoot, hookMatch.sessionid, stageKey);
+        const eventStillDurable = pendingEventForProject(ctx.stateRoot, hookMatch.event_id, key);
+        if ((_a = receipt == null ? void 0 : receipt.claimed_sources) == null ? void 0 : _a.includes(opts.source)) {
+          if (eventStillDurable) {
+            return { status: "deduped", event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
+          }
+        } else {
+          writeStageReceipt(projectRoot, hookMatch.sessionid, stageKey, {
+            event_id: hookMatch.event_id,
+            source: "hook",
+            claimed_sources: [...(receipt == null ? void 0 : receipt.claimed_sources) || [], opts.source],
+            time: hookMatch.time
+          }, { durable: true });
+          return { status: "deduped", event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
+        }
+      } finally {
+        releaseCoordinationReservation(claim);
+      }
+    }
   }
   let resolved = deriveAndRefreshSession(projectRoot, input, {
     deadlineMono,
@@ -6920,7 +7185,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     try {
       const receipt = readStageReceipt(projectRoot, sessionid, stageKey);
       let existing = null;
-      const receiptEligible = receipt && ctx.now() - receipt.time <= 1e4 && ((input == null ? void 0 : input.turn_id) || receipt.source !== opts.source && !((_a = receipt.claimed_sources) == null ? void 0 : _a.includes(opts.source)));
+      const receiptEligible = receipt && ctx.now() - receipt.time <= 1e4 && ((input == null ? void 0 : input.turn_id) || receipt.source !== opts.source && !((_b = receipt.claimed_sources) == null ? void 0 : _b.includes(opts.source)));
       if (receiptEligible) {
         existing = (input == null ? void 0 : input.turn_id) ? pendingEventForProject(ctx.stateRoot, receipt.event_id, key) : pendingOnlyEventForProject(ctx.stateRoot, receipt.event_id, key);
       }
@@ -6951,7 +7216,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
         ...identity,
         sessionid,
         turn_id: typeof (input == null ? void 0 : input.turn_id) === "string" ? input.turn_id : null,
-        ide: safeName(input == null ? void 0 : input.ide, "unknown"),
+        ide: safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown"),
         skillname: "unknown",
         product: "unknown",
         framework: "unknown",
@@ -7008,7 +7273,8 @@ async function handleHook(flags, ctx) {
     staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: "hook", deadlineMono });
   } catch {
   }
-  if (staged) {
+  const activationEligible = (staged == null ? void 0 : staged.status) === "staged" || (staged == null ? void 0 : staged.status) === "deduped";
+  if (activationEligible) {
     try {
       const projectRoot = resolveProjectRoot({
         explicitCwd: typeof flags.cwd === "string" ? flags.cwd : normalized == null ? void 0 : normalized.cwd,
@@ -7111,9 +7377,11 @@ async function handleContext(flags, ctx) {
   return putContext(projectRoot, resolved.sessionid, sanitizeReportText(question), { deadlineMono, now: ctx.now });
 }
 async function handleInvoke(flags, ctx) {
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
+  ctx = { ...ctx, deadlineMono };
   let invokeInput = ctx.inputOverride || null;
   if (!invokeInput && (flags["input-stdin"] === true || flags["input-stdin"] === "true")) {
-    invokeInput = await readLocalInput(ctx, import_node_perf_hooks9.performance.now() + 1e3);
+    invokeInput = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks9.performance.now() + 1e3));
   }
   const projectRoot = resolveProjectRoot({
     explicitCwd: flags.cwd,
@@ -7121,8 +7389,20 @@ async function handleInvoke(flags, ctx) {
     processCwd: ctx.cwd
   });
   const key = projectKey(projectRoot);
-  if (!nodeReportingAllowed(projectRoot, ctx.env))
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), "unknown")))
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
+  const recoveredInstall = ctx.skipInstallRecovery === true || remaining(deadlineMono) <= 150 ? null : await recoverInstallEventOnRuntimeEntry(
+    projectRoot,
+    safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), ""),
+    ctx
+  );
+  if (flags.skillname === "trtc") {
+    return {
+      status: "skipped",
+      error: "root_dispatcher_not_owner",
+      marker: "TRTC_REPORTING_ROOT_INVOKE_REJECTED_V1"
+    };
+  }
   if (!isReportingEnabled(projectRoot, ctx.env)) {
     const runtimeEnabled = isReportingEnabledForScope(projectRoot, "runtime", ctx.env);
     const purge = runtimeEnabled ? purgeProjectPromptEvents(ctx.stateRoot, key) : purgeProjectEvents(ctx.stateRoot, key);
@@ -7130,10 +7410,11 @@ async function handleInvoke(flags, ctx) {
     if (runtimeEnabled) {
       runtime_flush = await ctx.flushOutbox(ctx.stateRoot, {
         maxCount: 10,
-        maxDurationMs: 3e3,
+        maxDurationMs: Math.min(3e3, remaining(deadlineMono)),
         isEventEnabled: (event2) => (event2 == null ? void 0 : event2.__project_key) === key && (event2 == null ? void 0 : event2.__scope) === "runtime" && isReportingEnabledForScope(projectRoot, "runtime", ctx.env),
         ...ctx.flushOptions
       });
+      acknowledgeRecoveredInstall(recoveredInstall, runtime_flush);
     }
     return { status: "disabled", purge, runtime_flush };
   }
@@ -7142,43 +7423,77 @@ async function handleInvoke(flags, ctx) {
   if (rawSession) {
     const ide = safeName(invokeInput.ide, "unknown");
     requestedSession = deriveSessionId(projectRoot, ide, rawSession);
-    refreshBinding(projectRoot, requestedSession, ide, { now: ctx.now });
+    refreshBinding(projectRoot, requestedSession, ide, { now: ctx.now, deadlineMono });
   }
   let event;
+  const foregroundIde = safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), "unknown");
   if (typeof flags["event-id"] === "string") {
     event = pendingEventForProject(ctx.stateRoot, flags["event-id"], key);
-    if (!event)
-      return { status: "not_found", event_id: flags["event-id"] };
+    if (!event) {
+      const historicalFlush = await flushHistoricalOutbox(
+        ctx,
+        projectRoot,
+        key,
+        foregroundIde,
+        deadlineMono,
+        ctx.now()
+      );
+      return {
+        status: "not_found",
+        event_id: flags["event-id"],
+        ...historicalFlush ? { flush: historicalFlush } : {}
+      };
+    }
     if (requestedSession && event.sessionid !== requestedSession) {
       return { status: "not_found", event_id: flags["event-id"] };
     }
   } else {
-    const selected = requestedSession ? selectPendingForSession(ctx.stateRoot, key, requestedSession, ctx.now()) : selectPending(ctx.stateRoot, key, ctx.now());
-    if (selected.status !== "selected")
-      return { status: selected.status };
+    const selected = selectForegroundPrompt(
+      ctx.stateRoot,
+      key,
+      ctx.now(),
+      foregroundIde,
+      requestedSession
+    );
+    if (selected.status !== "selected") {
+      const historicalFlush = await flushHistoricalOutbox(
+        ctx,
+        projectRoot,
+        key,
+        foregroundIde,
+        deadlineMono,
+        ctx.now()
+      );
+      return {
+        status: selected.status,
+        ...historicalFlush ? { flush: historicalFlush } : {}
+      };
+    }
     event = selected.event;
   }
-  const identity = identityFields({ stateRoot: ctx.stateRoot });
-  if (identity.identity_pending) {
-    return { status: "identity_unavailable", event_id: event.event_id };
-  }
+  const identityWaitMs = Math.min(100, Math.max(0, remaining(deadlineMono) - 200));
+  const identity = identityEnrichmentForEvent(event, ctx.stateRoot, identityWaitMs);
   const skillname = safeName(flags.skillname);
   const product = safeName(flags.product, PRODUCT_BY_SKILL[skillname] || "unknown");
   let sdkappid;
   try {
-    const resolution = ctx.resolveSdkAppId(projectRoot, {
-      sdkappid: flags.sdkappid,
-      stateRoot: ctx.stateRoot,
-      _cache: sdkappid_cache_exports,
-      _loadWebAdapter: getWebAdapter,
-      _onAdapterFailure: (reason) => writeAdapterDiagnostic(ctx.stateRoot, reason)
-    });
-    if ((resolution == null ? void 0 : resolution.status) === "resolved")
-      sdkappid = resolution.sdkappid;
+    const sdkBudgetMs = Math.min(500, Math.max(0, remaining(deadlineMono) - 250));
+    if (sdkBudgetMs > 0) {
+      const resolution = ctx.resolveSdkAppId(projectRoot, {
+        sdkappid: flags.sdkappid,
+        stateRoot: ctx.stateRoot,
+        deadline_ms: sdkBudgetMs,
+        _cache: sdkappid_cache_exports,
+        _loadWebAdapter: getWebAdapter,
+        _onAdapterFailure: (reason) => writeAdapterDiagnostic(ctx.stateRoot, reason)
+      });
+      if ((resolution == null ? void 0 : resolution.status) === "resolved")
+        sdkappid = resolution.sdkappid;
+    }
   } catch {
   }
   const promoteFn = ctx.promote || (await Promise.resolve().then(() => (init_state(), state_exports))).promote;
-  const producer = startProducerLease(ctx, key, { timeoutMs: 120 });
+  const producer = startProducerLease(ctx, key, { timeoutMs: Math.min(120, remaining(deadlineMono)) });
   if (producer.blocked)
     return { status: producer.retryable ? "retryable" : "disabled", event_id: event.event_id, error: producer.reason };
   let outcome;
@@ -7191,20 +7506,41 @@ async function handleInvoke(flags, ctx) {
       flow_id: safeName(flags["flow-id"], void 0),
       turn_id: event.turn_id,
       sdkappid
-    }, { projectKey: key, enforceProjectGate: true });
+    }, {
+      projectKey: key,
+      enforceProjectGate: true,
+      reservationTimeoutMs: Math.min(120, Math.max(0, remaining(deadlineMono)))
+    });
   } finally {
     stopProducerLease(producer);
   }
   let flush = null;
   let notice = null;
   if (outcome.status === "promoted" || outcome.status === "deduped") {
-    flush = await ctx.flushOutbox(ctx.stateRoot, {
-      maxCount: 10,
-      maxDurationMs: 3e3,
+    const recoveredInstallPending = Boolean(recoveredInstall == null ? void 0 : recoveredInstall.eventId) && recoveredInstall.eventId !== event.event_id;
+    const promptFlushOptions = {
+      ...ctx.flushOptions,
+      maxCount: recoveredInstallPending ? 1 : 10,
+      maxDurationMs: Math.min(recoveredInstallPending ? 1800 : 2e3, remaining(deadlineMono)),
       priorityEventIds: [event.event_id],
       isEventEnabled: senderGate(projectRoot, key, ctx.env),
-      ...ctx.flushOptions
-    });
+      ...recoveredInstallPending ? { eventIds: [event.event_id] } : {}
+    };
+    flush = await ctx.flushOutbox(ctx.stateRoot, promptFlushOptions);
+    if (recoveredInstallPending) {
+      const installFlush = await ctx.flushOutbox(ctx.stateRoot, {
+        ...ctx.flushOptions,
+        maxCount: 1,
+        maxDurationMs: Math.min(200, remaining(deadlineMono)),
+        eventIds: [recoveredInstall.eventId],
+        forceRetryEventIds: [recoveredInstall.eventId],
+        isEventEnabled: senderGate(projectRoot, key, ctx.env)
+      });
+      mergeInstallFlush(flush, installFlush);
+      acknowledgeRecoveredInstall(recoveredInstall, installFlush);
+    } else {
+      acknowledgeRecoveredInstall(recoveredInstall, flush);
+    }
     const attemptId = typeof (invokeInput == null ? void 0 : invokeInput.notice_attempt_id) === "string" && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id) ? invokeInput.notice_attempt_id : null;
     const delivered = Array.isArray(flush == null ? void 0 : flush.sent_event_ids) && flush.sent_event_ids.includes(event.event_id);
     if (attemptId && delivered) {
@@ -7221,7 +7557,9 @@ async function handleInvoke(flags, ctx) {
 }
 async function handleHostStop(flags, ctx) {
   var _a, _b, _c, _d, _e, _f;
-  const input = await readLocalInput(ctx, import_node_perf_hooks9.performance.now() + 1e3);
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
+  ctx = { ...ctx, deadlineMono };
+  const input = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks9.performance.now() + 1e3));
   if (!input)
     return { status: "invalid", error: "stdin_json_required" };
   if (input.stop_hook_active === true)
@@ -7235,14 +7573,20 @@ async function handleHostStop(flags, ctx) {
   const hostCwd = flags.cwd || input.cwd || ((_a = input.workspace_roots) == null ? void 0 : _a[0]) || ctx.env.CURSOR_PROJECT_DIR || ctx.env.CODEBUDDY_PROJECT_DIR || ctx.cwd;
   const projectRoot = resolveProjectRoot({ explicitCwd: hostCwd, normalized: input, processCwd: hostCwd });
   const key = projectKey(projectRoot);
-  if (!nodeReportingAllowed(projectRoot, ctx.env))
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide))
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
+  if (remaining(deadlineMono) > 150) {
+    await recoverInstallEventOnRuntimeEntry(projectRoot, ide, { ...ctx, cwd: hostCwd });
+  }
   const existingNotice = readNoticeReceipt(ctx.stateRoot, key);
   const staged = latestPendingPrompt(ctx.stateRoot, key, ctx.now(), ide);
   const pendingOutputNotice = existingNotice.status === "valid" && existingNotice.value.status === "pending_output" ? existingNotice.value : null;
   const pendingOutputAgeMs = pendingOutputNotice ? Math.max(0, Date.now() - pendingOutputNotice.created_at) : 0;
   const pendingOutputRecoveryAllowed = Boolean(pendingOutputNotice) && (pendingOutputNotice.sessionid === null || Boolean(staged == null ? void 0 : staged.sessionid) && pendingOutputNotice.sessionid === staged.sessionid || pendingOutputAgeMs >= PENDING_OUTPUT_CROSS_SESSION_TTL_MS);
   if (existingNotice.status === "valid" && ["pending_output", "awaiting_choice", "allow_pending", "deny_pending"].includes(existingNotice.value.status) && !staged) {
+    if (["pending_output", "awaiting_choice"].includes(existingNotice.value.status) && isReportingEnabled(projectRoot, ctx.env) && remaining(deadlineMono) > 150) {
+      await flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, ctx.now());
+    }
     const rawSession = typeof input.session_id === "string" ? input.session_id : typeof input.conversation_id === "string" ? input.conversation_id : null;
     const sessionid = rawSession ? deriveSessionId(projectRoot, ide, rawSession) : null;
     const receiptSession = existingNotice.value.sessionid;
@@ -7290,7 +7634,14 @@ async function handleHostStop(flags, ctx) {
   }
   let result = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    result = await handleInvoke(invokeFlags, { ...ctx, cwd: hostCwd, inputOverride: invokeInput });
+    if (remaining(deadlineMono) <= 150)
+      break;
+    result = await handleInvoke(invokeFlags, {
+      ...ctx,
+      cwd: hostCwd,
+      inputOverride: invokeInput,
+      skipInstallRecovery: true
+    });
     if (((_b = result == null ? void 0 : result.notice) == null ? void 0 : _b.status) === "created")
       break;
     if (pendingOutputRecoveryAllowed && pendingOutputNotice && ((_c = result == null ? void 0 : result.notice) == null ? void 0 : _c.status) === "already_present") {
@@ -7316,7 +7667,10 @@ async function handleHostStop(flags, ctx) {
     }
     if (attempt === 2 || (result == null ? void 0 : result.status) === "disabled")
       break;
-    await new Promise((resolve5) => setTimeout(resolve5, 100 * (attempt + 1)));
+    const sleepMs = Math.min(100 * (attempt + 1), Math.max(0, remaining(deadlineMono) - 150));
+    if (sleepMs <= 0)
+      break;
+    await new Promise((resolve5) => setTimeout(resolve5, sleepMs));
   }
   if (!["created", "already_present"].includes((_d = result == null ? void 0 : result.notice) == null ? void 0 : _d.status)) {
     return {
@@ -7424,17 +7778,60 @@ function migrateLegacyIdentity(raw) {
   }
   return trimmed;
 }
+function findReusableInstallEvent(stateRoot, projectKeyValue, installedIdes, version, generation) {
+  if (!generation)
+    return null;
+  const wantedIdes = [...new Set(installedIdes)].sort().join(",");
+  for (const file of [...listOutbox(stateRoot), ...listPending(stateRoot)]) {
+    let event;
+    try {
+      event = readEvent(file);
+    } catch {
+      event = null;
+    }
+    if (!event || event.text !== EVENT_TYPES.INSTALL_COMPLETED)
+      continue;
+    if (event.__project_key !== projectKeyValue || event.__scope !== "runtime")
+      continue;
+    if (event.version !== version)
+      continue;
+    if ([...new Set(Array.isArray(event.installed_ides) ? event.installed_ides : [])].sort().join(",") !== wantedIdes)
+      continue;
+    if (event.__install_generation !== generation)
+      continue;
+    return event;
+  }
+  return null;
+}
+function mergeInstallFlush(total, current) {
+  if (!current)
+    return total;
+  total.sent += Number(current.sent) || 0;
+  total.retried += Number(current.retried) || 0;
+  total.rejected += Number(current.rejected) || 0;
+  total.skipped += Number(current.skipped) || 0;
+  total.sent_event_ids.push(...Array.isArray(current.sent_event_ids) ? current.sent_event_ids : []);
+  if (Array.isArray(current.errors))
+    total.errors.push(...current.errors);
+  return total;
+}
 async function handleInstall(flags, ctx) {
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, processCwd: ctx.cwd });
-  if (!nodeReportingAllowed(projectRoot, ctx.env) && !c19InstallerOwnsActiveStage(projectRoot, flags["install-owner-token"])) {
+  const installedIdes = String(flags["installed-ides"] || "").split(",").map((v) => v.trim()).filter((v) => SAFE_NAME_RE.test(v));
+  const targetModeAllowed = installedIdes.length > 0 ? installedIdes.every((ide) => nodeReportingAllowed(projectRoot, ctx.env, ide)) : nodeReportingAllowed(projectRoot, ctx.env);
+  if (!targetModeAllowed && !c19InstallerOwnsActiveStage(projectRoot, flags["install-owner-token"])) {
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
   }
   if (!isReportingEnabledForScope(projectRoot, "runtime", ctx.env))
     return { status: "disabled" };
   const key = projectKey(projectRoot);
   ensureActivationDeviceSeed(ctx.stateRoot);
-  const eventId = typeof flags["event-id"] === "string" ? flags["event-id"] : (0, import_node_crypto11.randomUUID)();
-  const installedIdes = String(flags["installed-ides"] || "").split(",").map((v) => v.trim()).filter((v) => SAFE_NAME_RE.test(v));
+  const version = safeName(flags.version);
+  let generation = safeName(flags["install-generation"], "");
+  const reusable = findReusableInstallEvent(ctx.stateRoot, key, installedIdes, version, generation);
+  if (reusable == null ? void 0 : reusable.__install_generation)
+    generation = reusable.__install_generation;
+  const eventId = (reusable == null ? void 0 : reusable.event_id) || (typeof flags["event-id"] === "string" ? flags["event-id"] : (0, import_node_crypto11.randomUUID)());
   const legacyIdentityPaths = [
     typeof flags["legacy-identity-path"] === "string" ? flags["legacy-identity-path"] : (0, import_node_path12.join)((0, import_node_os3.homedir)(), ".mcp", "identifier")
   ];
@@ -7445,7 +7842,7 @@ async function handleInstall(flags, ctx) {
     migrate: migrateLegacyIdentity,
     // Installation must reach writeOutbox well before the parent process's
     // 2.5s hard deadline. Identity contention is retryable at Sender time.
-    maxWaitMs: 50
+    maxWaitMs: Number.isFinite(ctx.deadlineMono) ? Math.min(50, Math.max(0, remaining(ctx.deadlineMono) - 150)) : 50
   });
   if (!identity.identity_pending)
     maintainIdentityState(ctx.stateRoot);
@@ -7455,32 +7852,105 @@ async function handleInstall(flags, ctx) {
     text: EVENT_TYPES.INSTALL_COMPLETED,
     ...identity,
     install_mode: safeName(flags["install-mode"]),
+    install_status: ["completed", "partial", "failed"].includes(flags["install-status"]) ? flags["install-status"] : "completed",
     installed_ides: [...new Set(installedIdes)],
     hook_results: parseHookResults(flags["hook-results-json"]),
     skillname: "trtc",
     product: "unknown",
     framework: "unknown",
-    version: safeName(flags.version),
+    version,
     os: safeName(flags.os),
     __project_key: key,
-    __scope: "runtime"
+    __scope: "runtime",
+    __install_generation: generation || void 0
   });
   validateEvent(event);
-  const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 120 });
+  const written = writeOutboxWithProducerLease(ctx, key, event, {
+    timeoutMs: Number.isFinite(ctx.deadlineMono) ? Math.min(120, Math.max(0, remaining(ctx.deadlineMono) - 50)) : 120
+  });
   if (written.status === "disabled" || written.status === "retryable")
     return { ...written, event_id: eventId };
-  const flush = await ctx.flushOutbox(ctx.stateRoot, {
-    maxCount: 1,
-    maxDurationMs: 1500,
-    eventIds: [eventId],
-    isEventEnabled: senderGate(projectRoot, key, ctx.env),
-    ...ctx.flushOptions
-  });
-  return { status: written.deduped ? "deduped" : "queued", event_id: eventId, flush };
+  const flush = { sent: 0, sent_event_ids: [], retried: 0, rejected: 0, skipped: 0, errors: [] };
+  const deferFlush = flags["defer-flush"] === true || flags["defer-flush"] === "true";
+  if (deferFlush) {
+    return {
+      status: written.deduped ? "deduped" : "queued",
+      event_id: eventId,
+      acknowledged: false,
+      attempts: 0,
+      flush,
+      deferred: true
+    };
+  }
+  let attempts = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    attempts += 1;
+    const current = await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: 1,
+      maxDurationMs: 1800,
+      eventIds: [eventId],
+      forceRetryEventIds: [eventId],
+      isEventEnabled: senderGate(projectRoot, key, ctx.env)
+    });
+    mergeInstallFlush(flush, current);
+    if (flush.sent_event_ids.includes(eventId))
+      break;
+  }
+  const acknowledged = flush.sent_event_ids.includes(eventId);
+  const failed = flush.retried > 0 || flush.rejected > 0 || flush.errors.length > 0;
+  if (acknowledged) {
+    const recovery = c19RecoverableInstallStage(projectRoot);
+    if (recovery && recovery.eventId === eventId)
+      c19WriteInstallRecoveryAck(recovery, true);
+  }
+  return {
+    status: acknowledged ? "sent" : failed ? "failed" : written.deduped ? "deduped" : "queued",
+    event_id: eventId,
+    acknowledged,
+    attempts,
+    last_error: flush.errors.length ? flush.errors[flush.errors.length - 1] : null,
+    flush
+  };
+}
+async function recoverInstallEventOnRuntimeEntry(projectRoot, ide, ctx) {
+  const recovery = c19RecoverableInstallStage(projectRoot, ide);
+  if (!recovery)
+    return null;
+  try {
+    const result = await handleInstall({
+      cwd: projectRoot,
+      "installed-ides": recovery.installedIdes.join(","),
+      "install-mode": recovery.installMode,
+      "install-status": recovery.installStatus,
+      "event-id": recovery.eventId,
+      "install-generation": recovery.ownerToken,
+      "install-owner-token": recovery.ownerToken,
+      "hook-results-json": JSON.stringify(recovery.hookResults),
+      version: recovery.version,
+      os: recovery.os,
+      "defer-flush": true
+    }, ctx);
+    return {
+      ...recovery,
+      status: (result == null ? void 0 : result.status) || "queued",
+      event_id: recovery.eventId,
+      acknowledged: (result == null ? void 0 : result.acknowledged) === true
+    };
+  } catch {
+    return { ...recovery, status: "retryable", event_id: recovery.eventId, acknowledged: false };
+  }
+}
+function acknowledgeRecoveredInstall(recovery, flush) {
+  if (!(recovery == null ? void 0 : recovery.stagePath) || !recovery.ownerToken || !recovery.eventId)
+    return false;
+  if (!Array.isArray(flush == null ? void 0 : flush.sent_event_ids) || !flush.sent_event_ids.includes(recovery.eventId))
+    return false;
+  return c19WriteInstallRecoveryAck(recovery, true);
 }
 async function handleEvent(flags, ctx) {
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, processCwd: ctx.cwd });
-  if (!nodeReportingAllowed(projectRoot, ctx.env))
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide, "unknown")))
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
   const scope = normalizeScope(flags.scope);
   if (!scope)
@@ -7610,6 +8080,9 @@ async function handleSend(flags, ctx) {
   if (!raw)
     return { status: "invalid", error: "invalid_json" };
   const event = normalizeLegacy(raw, projectRoot);
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(event.ide || flags.ide, "unknown"))) {
+    return { status: "disabled", error: "reporting_mode_not_node_v2" };
+  }
   validateLegacyEvent(event);
   if (!event.__scope)
     return { status: "invalid", error: "invalid_scope" };
@@ -7669,20 +8142,23 @@ async function handleSend(flags, ctx) {
 }
 async function runCli(argv = process.argv.slice(2), opts = {}) {
   const { command, flags } = parseArgs(argv);
+  const foregroundBudget = command === "invoke" || command === "host-stop" ? FOREGROUND_TOTAL_BUDGET_MS : null;
+  const deadlineMono = opts.deadlineMono ?? (foregroundBudget === null ? void 0 : import_node_perf_hooks9.performance.now() + foregroundBudget);
   const ctx = {
     stdin: opts.stdin ?? process.stdin,
     cwd: opts.cwd ?? process.cwd(),
     env: opts.env ?? process.env,
     now: opts.now ?? Date.now,
     stateRoot: opts.stateRoot || flags["state-root"] || resolveStateRoot(opts.env ?? process.env),
-    flushOutbox: opts.flushOutbox || (async (...args) => {
+    flushOutbox: opts.flushOutbox || (async (root, flushOpts = {}) => {
       const sender = await Promise.resolve().then(() => (init_sender(), sender_exports));
-      return sender.flushOutbox(...args);
+      return sender.flushOutbox(root, { env: opts.env ?? process.env, ...flushOpts });
     }),
     promote: opts.promote,
     resolveSdkAppId: opts.resolveSdkAppId || resolveSdkAppId,
     flushOptions: opts.flushOptions || {},
-    deadlineMono: opts.deadlineMono,
+    deadlineMono,
+    skipInstallRecovery: opts.skipInstallRecovery === true,
     runtimeVersion: opts.runtimeVersion || RUNTIME_VERSION,
     writeControlTurn: opts.writeControlTurn
   };
