@@ -21,6 +21,8 @@ let buildHostStopCommand;
 let stripOwnedHookEntries;
 let stripOwnedMarkerBlocks;
 let injectMarkered;
+let rewriteHooksContent;
+let mergeHooksConfig;
 let installHooks;
 try {
   ({
@@ -33,6 +35,8 @@ try {
     stripOwnedHookEntries,
     stripOwnedMarkerBlocks,
     injectMarkered,
+    rewriteHooksContent,
+    mergeHooksConfig,
     installHooks,
   } = require("../bin/cli.js"));
 } finally {
@@ -170,6 +174,35 @@ test("C13 malformed hook config is preserved byte-for-byte", () => {
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+test("C20 Windows absolute paths remain valid JSON during hook rewrite", () => {
+  const source = fs.readFileSync(path.join(ROOT, "hooks", "hooks.json"), "utf8");
+  const rewritten = rewriteHooksContent(source, {
+    rootPlaceholder: "${CLAUDE_PLUGIN_ROOT}",
+    fallbackPlaceholder: "${CODEBUDDY_PLUGIN_ROOT}",
+    hostIde: "codex",
+  }, "C:\\Users\\Alice\\trtc project\\.codex", "C:\\Users\\Alice\\trtc project\\.codex\\hooks");
+
+  const parsed = JSON.parse(rewritten);
+  const commands = JSON.stringify(parsed);
+  assert.match(commands, /C:\\\\Users|C:\\/);
+  assert.match(commands, /trtc project/);
+  assert.match(commands, /TRTC_HOST_IDE=\\?"?codex/);
+  // JSON.parse above is the regression assertion: the serialized output may
+  // legitimately contain doubled backslashes, but it must never be rejected
+  // as a malformed rewritten hook file.
+});
+
+test("C20 missing hook source reports a specific reason", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-c20-source-missing-"));
+  try {
+    const result = mergeHooksConfig({
+      sourceConfig: "does-not-exist.json",
+      settingsFile: ".codex/hooks.json",
+    }, tmp, path.join(tmp, ".codex"), path.join(tmp, ".codex", "hooks"), "codex");
+    assert.equal(result.error, "source_missing");
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test("C13 structurally invalid JSON config is preserved", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-c13-invalid-shape-"));
   const config = path.join(tmp, ".codex", "hooks.json");
@@ -257,14 +290,38 @@ test("install telemetry uses bundled Node runtime without detached npx", () => {
     assert.deepEqual(call.args.slice(1, 3), ["install", "--cwd"]);
     assert.equal(call.args[call.args.indexOf("--installed-ides") + 1], "cursor,codex");
     assert.equal(call.args[call.args.indexOf("--install-mode") + 1], "specific");
+    assert.equal(call.args[call.args.indexOf("--install-status") + 1], "completed");
     assert.equal(call.args[call.args.indexOf("--event-id") + 1], "c12-install-event");
     assert.equal(call.args[call.args.indexOf("--os") + 1], os.platform());
     assert.equal(call.options.detached, undefined);
     assert.notEqual(call.command, "npx");
-    assert.equal(call.options.timeout, 2_500);
+    assert.equal(call.options.timeout, 8_000);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("C20 partial Hook result is carried as install_status", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-install-report-partial-"));
+  const project = path.join(tmp, "project");
+  fs.mkdirSync(project, { recursive: true });
+  let call;
+  try {
+    const result = reportInstall({
+      projectRoot: project,
+      installedIdes: ["codex"],
+      installMode: "specific",
+      installStatus: "partial",
+      hookResults: { codex: { installed: false, activated: false, reason: "source_invalid" } },
+      eventId: "c20-install-partial",
+      runner(command, args) {
+        call = { command, args };
+        return { status: 0, stdout: '{"status":"queued"}\n', stderr: "" };
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(call.args[call.args.indexOf("--install-status") + 1], "partial");
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
 test("offline install succeeds locally and keeps install_completed in Outbox", () => {
@@ -295,13 +352,15 @@ test("offline install succeeds locally and keeps install_completed in Outbox", (
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.telemetry.status, "queued");
+    assert.equal(result.telemetry.status, "failed");
+    assert.equal(result.telemetry.acknowledged, false);
     const eventPath = path.join(stateRoot, "telemetry", "outbox", "c12-offline-event.json");
     assert.equal(fs.existsSync(eventPath), true);
     const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
     assert.equal(event.text, "install_completed");
     assert.equal(event.event_id, "c12-offline-event");
     assert.equal(event.install_mode, "all");
+    assert.equal(event.install_status, "completed");
     assert.equal(event.os, os.platform());
     assert.deepEqual(event.installed_ides, ["claude", "codex"]);
     assert.equal(event.hook_results.codex.installed, true);
@@ -665,28 +724,28 @@ test("all IDE installs share persistent experience and global reporting preferen
     state = JSON.parse(fs.readFileSync(statePath, "utf8"));
     assert.equal(state.prompt_reporting_enabled, false);
     assert.equal(state.all_reporting_disabled, false);
-    assert.equal(readInstallEvents().length, 2, "prompt opt-out must not disable install telemetry");
+    assert.equal(readInstallEvents().length, 1, "prompt opt-out must not disable install telemetry or duplicate an unacked install");
 
     const globalOff = runInstaller(project, home, cache, ["--no-report"]);
     assert.equal(globalOff.status, 0, globalOff.stderr || globalOff.stdout);
     state = JSON.parse(fs.readFileSync(statePath, "utf8"));
     assert.equal(state.prompt_reporting_enabled, false);
     assert.equal(state.all_reporting_disabled, true);
-    assert.equal(readInstallEvents().length, 2, "--no-report must suppress install telemetry");
+    assert.equal(readInstallEvents().length, 1, "--no-report must suppress new install telemetry");
 
     const third = runInstaller(project, home, cache);
     assert.equal(third.status, 0, third.stderr || third.stdout);
     state = JSON.parse(fs.readFileSync(statePath, "utf8"));
     assert.equal(state.prompt_reporting_enabled, false);
     assert.equal(state.all_reporting_disabled, true);
-    assert.equal(readInstallEvents().length, 2, "persistent global opt-out must remain effective");
+    assert.equal(readInstallEvents().length, 1, "persistent global opt-out must remain effective");
 
     const reenabled = runInstaller(project, home, cache, ["--prompt-reporting", "on"]);
     assert.equal(reenabled.status, 0, reenabled.stderr || reenabled.stdout);
     state = JSON.parse(fs.readFileSync(statePath, "utf8"));
     assert.equal(state.prompt_reporting_enabled, true);
     assert.equal(state.all_reporting_disabled, false);
-    assert.equal(readInstallEvents().length, 3, "explicit re-enable restores install telemetry");
+    assert.equal(readInstallEvents().length, 1, "explicit re-enable retries the existing unacked install without duplication");
 
     const codexConfig = fs.readFileSync(
       path.join(home, ".codex", "config.toml"),

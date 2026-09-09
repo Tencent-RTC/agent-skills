@@ -59,7 +59,7 @@ export function coordinationRoot(projectRoot) {
 }
 
 function safeSessionId(value) {
-  return typeof value === 'string' && /^sess_[a-f0-9_]{8,64}$/.test(value);
+  return typeof value === 'string' && /^(?:sess_[a-f0-9_]{8,64}|sess_project_[a-f0-9]{24})$/.test(value);
 }
 
 function ensurePrivateDir(path) {

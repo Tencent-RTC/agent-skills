@@ -45,7 +45,7 @@ Bash 仍必须执行；只是**描述**时用「记录」而非「上报/发送�
 |------|-----|
 | `--product` | `chat` |
 | `--framework` | session 或 `.docs-query.yaml`（见 §字段来源） |
-| `--version` | `1.0.0`（`trtc-chat/SKILL.md` frontmatter） |
+| `--version` | `1.1.0`（`trtc-chat/SKILL.md` frontmatter） |
 | `sdkappid` | 已解析时填写数值；未知时省略，不写 `0` |
 | `--sessionid` | session 或 Path D yaml |
 

@@ -9,7 +9,7 @@ const fs      = require("node:fs");
 const https   = require("node:https");
 const os      = require("node:os");
 const path    = require("node:path");
-const { spawnSync, spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const { test, before, after } = require("node:test");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -25,6 +25,8 @@ let classifyLegacyMcpEntry,
     isTomlLegacyMcpOwned,
     migrateLegacyMcpToml,
     migrateLegacyForIde,
+    snapshotLegacyForIde,
+    restoreLegacySnapshot,
     getMcpServersToInstall;
 try {
   ({
@@ -34,6 +36,8 @@ try {
     isTomlLegacyMcpOwned,
     migrateLegacyMcpToml,
     migrateLegacyForIde,
+    snapshotLegacyForIde,
+    restoreLegacySnapshot,
     getMcpServersToInstall,
   } = require("../bin/cli.js"));
 } finally {
@@ -634,33 +638,48 @@ const KEY_PATH  = path.join(TLS_DIR, "localhost-key.pem");
 
 const TARBALL_SHARED_TMP = fs.mkdtempSync(path.join(os.tmpdir(), "trtc-c19-tarball-"));
 let sharedCli = null;
+let suiteClsMock = null;
 
-before(() => {
+before(async () => {
   const npmCache  = path.join(TARBALL_SHARED_TMP, "npm-cache");
   const packDir   = path.join(TARBALL_SHARED_TMP, "pack");
   const unpackDir = path.join(TARBALL_SHARED_TMP, "unpack");
   fs.mkdirSync(packDir,   { recursive: true });
   fs.mkdirSync(unpackDir, { recursive: true });
 
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  const packed = spawnSync(npmCmd, [
-    "pack", "--ignore-scripts", "--json",
-    "--cache", npmCache,
-    "--pack-destination", packDir,
-  ], { cwd: ROOT, encoding: "utf8", timeout: 90_000 });
-  if (packed.status !== 0) throw new Error("npm pack failed:\n" + packed.stderr);
+  let tarball;
+  const candidateArtifact = process.env.TRTC_CANDIDATE_ARTIFACT;
+  if (candidateArtifact) {
+    tarball = path.resolve(candidateArtifact);
+    if (!fs.existsSync(tarball) || !tarball.endsWith(".tgz")) {
+      throw new Error(`TRTC_CANDIDATE_ARTIFACT is not a readable .tgz: ${tarball}`);
+    }
+  } else {
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    const packed = spawnSync(npmCmd, [
+      "pack", "--ignore-scripts", "--json",
+      "--cache", npmCache,
+      "--pack-destination", packDir,
+    ], { cwd: ROOT, encoding: "utf8", timeout: 90_000 });
+    if (packed.status !== 0) throw new Error("npm pack failed:\n" + packed.stderr);
 
-  const manifest = JSON.parse(packed.stdout);
-  const tarball  = path.join(packDir, manifest[0].filename);
+    const manifest = JSON.parse(packed.stdout);
+    tarball = path.join(packDir, manifest[0].filename);
+  }
 
   const untar = spawnSync("tar", ["-xzf", tarball, "-C", unpackDir],
     { encoding: "utf8", timeout: 30_000 });
   if (untar.status !== 0) throw new Error("tar failed: " + untar.stderr);
 
   sharedCli = path.join(unpackDir, "package", "bin", "cli.js");
+  // Bind the local HTTPS mock before the top-level test runner starts
+  // scheduling the many tarball subprocess tests.  The installer itself is
+  // still spawned asynchronously, so the mock can process real requests.
+  suiteClsMock = await startClsMock();
 });
 
-after(() => {
+after(async () => {
+  if (suiteClsMock) await suiteClsMock.close();
   fs.rmSync(TARBALL_SHARED_TMP, { recursive: true, force: true });
 });
 
@@ -676,6 +695,46 @@ function runPackagedInstaller(project, home, extraArgs = []) {
     },
     encoding: "utf8",
     timeout: 60_000,
+  });
+}
+
+function runPackagedInstallerForIde(project, home, ide, extraArgs = []) {
+  return spawnSync(process.execPath, [sharedCli, "add", "--ide", ide, ...extraArgs], {
+    cwd: project,
+    env: {
+      ...process.env,
+      HOME: home,
+      NO_COLOR: "1",
+      TRTC_SKILLS_COPY: "1",
+      TRTC_TELEMETRY_ENDPOINT: "https://127.0.0.1:1",
+    },
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+}
+
+function runPackagedInstallerAsync(project, home, extraArgs = [], envOverrides = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [sharedCli, "add", "--ide", "all", ...extraArgs], {
+      cwd: project,
+      env: {
+        ...process.env,
+        HOME: home,
+        NO_COLOR: "1",
+        TRTC_SKILLS_COPY: "1",
+        TRTC_TELEMETRY_ENDPOINT: "https://127.0.0.1:1",
+        ...envOverrides,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.once("error", reject);
+    child.once("close", (status, signal) => resolve({ status, signal, stdout, stderr }));
   });
 }
 
@@ -722,7 +781,7 @@ function stateRootFor(home) {
   return path.join(home, ".local", "state", "tencent-rtc-skill");
 }
 
-test("C19-D1 seeded legacy (real tarball): legacy MCP and project files are grandfathered unchanged", async () => {
+test("C19-D1 explicit add (real tarball): seeded legacy Claude chain migrates to Node V2", async () => {
   const tmp = makeTmp();
   const project = path.join(tmp, "project");
   fs.mkdirSync(path.join(project, ".git"), { recursive: true });
@@ -752,20 +811,516 @@ test("C19-D1 seeded legacy (real tarball): legacy MCP and project files are gran
     assert.equal(result.status, 0, result.stderr || result.stdout);
 
     const claude = readJson(claudeMcp);
-    assert.deepEqual(claude, seededMcp, "claude: legacy project config must remain unchanged");
+    assert.equal(claude.mcpServers?.["tencent-rtc-skill-tool"], undefined,
+      "explicit add must remove the owned legacy Claude MCP");
+    assert.ok(claude.mcpServers?.["trtc-push-mcp"], "functional push MCP must be preserved");
 
     const cursor = readJson(cursorMcp);
-    assert.deepEqual(cursor, seededMcp, "cursor: legacy user config must remain unchanged");
+    assert.deepEqual(cursor.mcpServers?.["tencent-rtc-skill-tool"], seededMcp.mcpServers["tencent-rtc-skill-tool"],
+      "cursor: unrelated legacy MCP must remain unchanged");
+    assert.ok(cursor.mcpServers?.["trtc-push-mcp"], "cursor: functional push MCP must remain installed");
 
     const buddy = readJson(buddyMcp);
-    assert.deepEqual(buddy, seededMcp, "codebuddy: legacy user config must remain unchanged");
+    assert.deepEqual(buddy.mcpServers?.["tencent-rtc-skill-tool"], seededMcp.mcpServers["tencent-rtc-skill-tool"],
+      "codebuddy: unrelated legacy MCP must remain unchanged");
+    assert.ok(buddy.mcpServers?.["trtc-push-mcp"], "codebuddy: functional push MCP must remain installed");
 
     const toml = fs.readFileSync(codexToml, "utf8");
-    assert.equal(toml, OWNED_TOML, "codex: legacy user config must remain byte-identical");
-    assert.equal(fs.existsSync(path.join(project, ".trtc-reporting", "install-mode.json")), true);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(project, ".trtc-reporting", "install-mode.json"), "utf8")).mode, "legacy_mcp");
-    assert.equal(fs.existsSync(path.join(project, ".claude", "skills", "trtc", "runtime", "telemetry.cjs")), false,
-      "legacy project must not receive the Node Prompt runtime");
+    assert.match(toml, /\[mcp_servers\.tencent-rtc-skill-tool\]/,
+      "codex: unrelated legacy MCP must remain present");
+    assert.match(toml, /args\s*=\s*\[\"-y\",\s*\"@tencent-rtc\/skill-tool@latest\"\]/,
+      "codex: legacy MCP entry must remain unchanged");
+    assert.equal(fs.existsSync(path.join(project, ".trtc-skill-state", "install-mode.json")), true);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(project, ".trtc-skill-state", "install-mode.json"), "utf8")).mode, "node_v2");
+    assert.equal(fs.existsSync(path.join(project, ".claude", "skills", "trtc", "runtime", "telemetry.cjs")), true,
+      "explicit upgrade must install the Node Prompt runtime");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D1b explicit add (real tarball): complete Codex legacy pair migrates to Node V2", async () => {
+  const tmp = makeTmp();
+  try {
+    const project = path.join(tmp, "project");
+    const home = path.join(tmp, "home");
+    fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+    fs.mkdirSync(path.join(project, ".codex", "skills", "trtc", "tools"), { recursive: true });
+    fs.mkdirSync(path.join(home, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".codex", "skills", "trtc", "SKILL.md"),
+      "python3 .codex/skills/trtc/tools/reporting.py prompt --text ...\n", "utf8");
+    fs.writeFileSync(path.join(project, ".codex", "skills", "trtc", "tools", "reporting.py"),
+      "# frozen legacy Codex helper\n", "utf8");
+    fs.writeFileSync(path.join(home, ".codex", "config.toml"), OWNED_TOML, "utf8");
+
+    const result = runPackagedInstallerForIde(project, home, "codex");
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const config = fs.readFileSync(path.join(home, ".codex", "config.toml"), "utf8");
+    assert.match(config, /\[mcp_servers\.tencent-rtc-skill-tool\]/,
+      "explicit Codex upgrade must preserve the shared legacy MCP for other projects");
+    const marker = path.join(project, ".trtc-skill-state", "install-mode.json");
+    assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).mode, "node_v2");
+    assert.equal(fs.existsSync(path.join(project, ".codex", "skills", "trtc", "runtime", "telemetry.cjs")), true,
+      "explicit Codex upgrade must install the Node runtime");
+    const hooks = readJson(path.join(project, ".codex", "hooks.json"));
+    assert.equal(Array.isArray(hooks.hooks?.UserPromptSubmit), true,
+      "explicit Codex upgrade must install a UserPromptSubmit Hook");
+    assert.match(JSON.stringify(hooks.hooks.UserPromptSubmit), /telemetry\.cjs/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D1c upgrading project A preserves shared Cursor MCP for project B", () => {
+  const tmp = makeTmp();
+  try {
+    const home = path.join(tmp, "home");
+    const projectA = path.join(tmp, "project-a");
+    const projectB = path.join(tmp, "project-b");
+    const sharedMcp = path.join(home, ".cursor", "mcp.json");
+    for (const project of [projectA, projectB]) {
+      fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(project, ".cursor", "skills", "trtc", "tools"), { recursive: true });
+      fs.writeFileSync(path.join(project, ".cursor", "skills", "trtc", "SKILL.md"),
+        "python3 tools/reporting.py prompt --input-stdin\n", "utf8");
+      fs.writeFileSync(path.join(project, ".cursor", "skills", "trtc", "tools", "reporting.py"),
+        "# legacy\n", "utf8");
+    }
+    writeJson(sharedMcp, { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
+
+    const result = runPackagedInstallerForIde(projectA, home, "cursor");
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.deepEqual(readJson(sharedMcp).mcpServers?.["tencent-rtc-skill-tool"], OWNED_ENTRY,
+      "project A upgrade must not remove the user-level MCP used by project B");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(projectA, ".trtc-skill-state", "install-mode.json"), "utf8")).mode, "node_v2");
+    assert.equal(fs.existsSync(path.join(projectB, ".cursor", "skills", "trtc", "tools", "reporting.py")), true,
+      "project B legacy Skill must remain untouched");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D1d Cursor migration removes the legacy adapter reporting binding", () => {
+  const tmp = makeTmp();
+  try {
+    const home = path.join(tmp, "home");
+    const project = path.join(tmp, "project");
+    const sharedMcp = path.join(home, ".cursor", "mcp.json");
+    fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+    fs.mkdirSync(path.join(project, ".cursor", "skills", "trtc", "tools"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".cursor", "skills", "trtc", "SKILL.md"),
+      "python3 tools/reporting.py prompt --input-stdin\\n", "utf8");
+    fs.writeFileSync(path.join(project, ".cursor", "skills", "trtc", "tools", "reporting.py"),
+      "# legacy\\n", "utf8");
+    writeJson(sharedMcp, { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
+    writeJson(path.join(project, ".cursor", "hooks.json"), {
+      version: 1,
+      hooks: {
+        beforeSubmitPrompt: [{ command: 'python3 "$HOME/.cursor/plugins/local/trtc-agent-skills/hooks/cursor-adapter.py" bind-reporting-session' }],
+        stop: [{ command: 'python3 "$HOME/.cursor/plugins/local/trtc-agent-skills/hooks/cursor-adapter.py" stop-apply-evidence' }],
+      },
+    });
+
+    const result = runPackagedInstallerForIde(project, home, "cursor");
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const hooks = readJson(path.join(project, ".cursor", "hooks.json"));
+    assert.doesNotMatch(JSON.stringify(hooks), /bind-reporting-session/,
+      `legacy Cursor adapter must not keep a second Prompt reporting path\n${result.stdout}\n${result.stderr}`);
+    assert.match(JSON.stringify(hooks), /telemetry\.cjs/,
+      "Node Prompt Hook must remain installed");
+    assert.deepEqual(readJson(sharedMcp).mcpServers?.["tencent-rtc-skill-tool"], OWNED_ENTRY,
+      "shared MCP remains available to un-upgraded sibling projects");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D1d2 failed Cursor migration restores the replaced adapter directory", () => {
+  const tmp = makeTmp();
+  try {
+    const home = path.join(tmp, "home");
+    const project = path.join(tmp, "project");
+    const adapterDir = path.join(project, ".cursor", "hooks", "trtc-agent-skills");
+    fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+    fs.mkdirSync(adapterDir, { recursive: true });
+    fs.writeFileSync(path.join(adapterDir, "cursor-adapter.py"), "legacy adapter\n", "utf8");
+
+    const snapshot = snapshotLegacyForIde("cursor", project, home);
+    fs.rmSync(adapterDir, { recursive: true, force: true });
+    fs.mkdirSync(adapterDir, { recursive: true });
+    fs.writeFileSync(path.join(adapterDir, "cursor-adapter.py"), "new adapter\n", "utf8");
+
+    restoreLegacySnapshot(snapshot);
+    assert.equal(fs.readFileSync(path.join(adapterDir, "cursor-adapter.py"), "utf8"), "legacy adapter\n");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D1e --ide all commits healthy IDEs and preserves a failed legacy IDE", () => {
+  const tmp = makeTmp();
+  try {
+    const home = path.join(tmp, "home");
+    const project = path.join(tmp, "project");
+    fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+
+    // Claude is a complete legacy pair and should migrate. Codex is also a
+    // complete legacy pair, but its existing Hook config is malformed. The
+    // installer must report a partial install, leave Codex on the old chain,
+    // and still commit Claude's independent Node V2 migration.
+    fs.mkdirSync(path.join(project, ".claude", "skills", "trtc", "tools"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".claude", "skills", "trtc", "SKILL.md"),
+      "legacy claude skill\n", "utf8");
+    fs.writeFileSync(path.join(project, ".claude", "skills", "trtc", "tools", "reporting.py"),
+      "# legacy claude helper\n", "utf8");
+    writeJson(path.join(project, ".mcp.json"), {
+      mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY },
+    });
+
+    fs.mkdirSync(path.join(project, ".codex", "skills", "trtc", "tools"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".codex", "skills", "trtc", "SKILL.md"),
+      "legacy codex skill\n", "utf8");
+    fs.writeFileSync(path.join(project, ".codex", "skills", "trtc", "tools", "reporting.py"),
+      "# legacy codex helper\n", "utf8");
+    fs.mkdirSync(path.join(home, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".codex", "config.toml"), OWNED_TOML, "utf8");
+    fs.writeFileSync(path.join(project, ".codex", "hooks.json"), "{ invalid json\n", "utf8");
+
+    const result = runPackagedInstaller(project, home);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /codex legacy migration skipped|partial/i,
+      "a failed IDE must be visible as a warning, not a silent success");
+
+    const claudeMcp = readJson(path.join(project, ".mcp.json"));
+    assert.equal(claudeMcp.mcpServers?.["tencent-rtc-skill-tool"], undefined,
+      "healthy Claude migration should disable its project-local legacy MCP");
+    assert.equal(fs.existsSync(path.join(project, ".claude", "skills", "trtc", "runtime", "telemetry.cjs")), true,
+      "healthy Claude migration should retain the Node runtime");
+
+    assert.equal(fs.readFileSync(path.join(project, ".codex", "hooks.json"), "utf8"), "{ invalid json\n",
+      "failed Codex Hook config must be restored byte-for-byte");
+    assert.equal(fs.readFileSync(path.join(project, ".codex", "skills", "trtc", "tools", "reporting.py"), "utf8"),
+      "# legacy codex helper\n", "failed Codex legacy Skill must remain available");
+    assert.equal(fs.existsSync(path.join(project, ".codex", "skills", "trtc", "runtime", "telemetry.cjs")), false,
+      "failed Codex target must not leave a Node runtime beside the legacy chain");
+    assert.match(fs.readFileSync(path.join(home, ".codex", "config.toml"), "utf8"),
+      /\[mcp_servers\.tencent-rtc-skill-tool\]/,
+      "the shared Codex MCP must remain available to the failed/un-upgraded chain");
+
+    const marker = readJson(path.join(project, ".trtc-skill-state", "install-mode.json"));
+    assert.equal(marker.mode, "node_v2");
+    assert.equal(marker.ide_modes?.claude, "node_v2");
+    assert.equal(marker.ide_modes?.codex, undefined,
+      "a failed target must not be marked as Node V2");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D1f all legacy migrations failed: network retry does not lock the next add", () => {
+  const tmp = makeTmp();
+  try {
+    const home = path.join(tmp, "home");
+    const project = path.join(tmp, "project");
+    fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+
+    const roots = { claude: ".claude", cursor: ".cursor", codebuddy: ".codebuddy", codex: ".codex" };
+    const hookFiles = {
+      claude: "settings.json",
+      cursor: "hooks.json",
+      codebuddy: "settings.json",
+      codex: "hooks.json",
+    };
+    const sharedMcp = {
+      cursor: path.join(home, ".cursor", "mcp.json"),
+      codebuddy: path.join(home, ".codebuddy", "mcp.json"),
+      codex: path.join(home, ".codex", "config.toml"),
+    };
+
+    for (const ide of Object.keys(roots)) {
+      const skill = path.join(project, roots[ide], "skills", "trtc");
+      fs.mkdirSync(path.join(skill, "tools"), { recursive: true });
+      fs.writeFileSync(path.join(skill, "SKILL.md"), `legacy ${ide} skill\n`, "utf8");
+      fs.writeFileSync(path.join(skill, "tools", "reporting.py"), "# legacy\n", "utf8");
+      // Every target has complete legacy evidence but an invalid Hook config,
+      // so all four migrations must restore independently.
+      fs.mkdirSync(path.join(project, roots[ide]), { recursive: true });
+      fs.writeFileSync(path.join(project, roots[ide], hookFiles[ide]),
+        `{ legacy reporting.py ${ide}\n`, "utf8");
+    }
+    writeJson(path.join(project, ".mcp.json"), {
+      mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY },
+    });
+    writeJson(sharedMcp.cursor, { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
+    writeJson(sharedMcp.codebuddy, { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
+    fs.mkdirSync(path.dirname(sharedMcp.codex), { recursive: true });
+    fs.writeFileSync(sharedMcp.codex, [
+      "[mcp_servers.tencent-rtc-skill-tool]",
+      'command = "npx"',
+      'args = ["-y", "@tencent-rtc/skill-tool@latest"]',
+      "",
+    ].join("\n"), "utf8");
+
+    const first = runPackagedInstaller(project, home);
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    assert.match(`${first.stdout}\n${first.stderr}`, /legacy migration skipped|partial/i);
+
+    const markerPath = path.join(project, ".trtc-skill-state", "install-mode.json");
+    const stagePath = path.join(project, ".trtc-skill-state", "install-stage.json");
+    const marker = readJson(markerPath);
+    const stage = readJson(stagePath);
+    assert.equal(marker.mode, "legacy_mcp", "all failed targets must remain legacy");
+    assert.equal(stage.migration, undefined,
+      "a fully restored legacy transaction must not retain a deleted backup reference");
+    assert.match(stage.install_event_id, /^[0-9a-f-]{16,}$/);
+    const migrationRoot = path.join(project, ".trtc-skill-state", "migrations");
+    assert.equal(fs.existsSync(migrationRoot) ? fs.readdirSync(migrationRoot).length : 0, 0,
+      "the restored legacy transaction backup must be cleaned");
+
+    for (const ide of Object.keys(roots)) {
+      assert.equal(fs.readFileSync(path.join(project, roots[ide], "skills", "trtc", "SKILL.md"), "utf8"),
+        `legacy ${ide} skill\n`);
+      assert.equal(fs.readFileSync(path.join(project, roots[ide], hookFiles[ide]), "utf8"),
+        `{ legacy reporting.py ${ide}\n`);
+    }
+    assert.deepEqual(readJson(path.join(project, ".mcp.json")).mcpServers?.["tencent-rtc-skill-tool"], OWNED_ENTRY);
+
+    // The endpoint is intentionally unreachable. The second explicit add must
+    // retry the same install identity without reporting migration_recovery_failed
+    // or blocking the still-usable legacy chain.
+    const second = runPackagedInstaller(project, home);
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    assert.doesNotMatch(`${second.stdout}\n${second.stderr}`, /migration_recovery_failed/);
+    const stageAfterRetry = readJson(stagePath);
+    assert.equal(stageAfterRetry.install_event_id, stage.install_event_id,
+      "the failed network send must reuse the same durable install event");
+    assert.equal(readJson(markerPath).mode, "legacy_mcp");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D1g all legacy migrations failed: no v2 install_completed is sent", async () => {
+  const tmp = makeTmp();
+  const mock = suiteClsMock;
+  try {
+    assert.ok(mock, "the suite HTTPS mock must be available");
+    const home = path.join(tmp, "home");
+    const project = path.join(tmp, "project");
+    fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+
+    const roots = { claude: ".claude", cursor: ".cursor", codebuddy: ".codebuddy", codex: ".codex" };
+    const hookFiles = {
+      claude: "settings.json",
+      cursor: "hooks.json",
+      codebuddy: "settings.json",
+      codex: "hooks.json",
+    };
+    const sharedMcp = {
+      cursor: path.join(home, ".cursor", "mcp.json"),
+      codebuddy: path.join(home, ".codebuddy", "mcp.json"),
+      codex: path.join(home, ".codex", "config.toml"),
+    };
+
+    for (const ide of Object.keys(roots)) {
+      const skill = path.join(project, roots[ide], "skills", "trtc");
+      fs.mkdirSync(path.join(skill, "tools"), { recursive: true });
+      fs.writeFileSync(path.join(skill, "SKILL.md"), `legacy ${ide} skill\n`, "utf8");
+      fs.writeFileSync(path.join(skill, "tools", "reporting.py"), "# legacy\n", "utf8");
+      // Complete legacy evidence plus malformed Hook JSON forces every target
+      // through the restore path while the HTTPS mock remains reachable.
+      fs.mkdirSync(path.join(project, roots[ide]), { recursive: true });
+      fs.writeFileSync(path.join(project, roots[ide], hookFiles[ide]),
+        `{ legacy reporting.py ${ide}\n`, "utf8");
+    }
+    writeJson(path.join(project, ".mcp.json"), {
+      mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY },
+    });
+    writeJson(sharedMcp.cursor, { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
+    writeJson(sharedMcp.codebuddy, { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
+    fs.mkdirSync(path.dirname(sharedMcp.codex), { recursive: true });
+    fs.writeFileSync(sharedMcp.codex, [
+      "[mcp_servers.tencent-rtc-skill-tool]",
+      'command = "npx"',
+      'args = ["-y", "@tencent-rtc/skill-tool@latest"]',
+      "",
+    ].join("\n"), "utf8");
+
+    // Simulate a different, previously successful installation event that is
+    // still awaiting ACK. The failed migration must not remove or reuse it.
+    const stateRoot = stateRootFor(home);
+    const priorEventPath = path.join(stateRoot, "telemetry", "outbox", "prior-success-install.json");
+    writeJson(priorEventPath, {
+      event_id: "prior-success-install",
+      method: "event",
+      text: "install_completed",
+      time: Date.now() - 1000,
+      __project_key: "a".repeat(32),
+      __scope: "runtime",
+    });
+
+    const result = await runPackagedInstallerAsync(project, home, [], {
+      TRTC_TELEMETRY_ENDPOINT: mock.url,
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
+      TRTC_TELEMETRY_STATE_ROOT: stateRoot,
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(`${result.stdout}\n${result.stderr}`, /install_completed suppressed|legacy migration skipped/i);
+
+    const markerPath = path.join(project, ".trtc-skill-state", "install-mode.json");
+    const stagePath = path.join(project, ".trtc-skill-state", "install-stage.json");
+    const marker = readJson(markerPath);
+    const stage = readJson(stagePath);
+    assert.equal(marker.mode, "legacy_mcp");
+    assert.equal(stage.migration, undefined);
+    assert.notEqual(stage.install_event_id, "prior-success-install",
+      "the failed migration must not reuse another installation's event id");
+    assert.equal(fs.existsSync(priorEventPath), true,
+      "an unrelated unACKed install event must remain durable");
+
+    const reportedTexts = mock.requests.flatMap((request) => {
+      const logs = Array.isArray(request.parsed?.logs) ? request.parsed.logs : [];
+      return logs.map((log) => log?.contents?.text || log?.text || null);
+    });
+    assert.equal(reportedTexts.includes("install_completed"), false,
+      "all-failed legacy migration must not send a v2 install_completed event");
+
+    for (const ide of Object.keys(roots)) {
+      assert.equal(fs.readFileSync(path.join(project, roots[ide], "skills", "trtc", "SKILL.md"), "utf8"),
+        `legacy ${ide} skill\n`);
+      assert.equal(fs.readFileSync(path.join(project, roots[ide], hookFiles[ide]), "utf8"),
+        `{ legacy reporting.py ${ide}\n`);
+    }
+    assert.deepEqual(readJson(path.join(project, ".mcp.json")).mcpServers?.["tencent-rtc-skill-tool"], OWNED_ENTRY);
+
+    const requestsBeforeRetry = mock.requests.length;
+    const retry = await runPackagedInstallerAsync(project, home, [], {
+      TRTC_TELEMETRY_ENDPOINT: mock.url,
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
+      TRTC_TELEMETRY_STATE_ROOT: stateRoot,
+    });
+    assert.equal(retry.status, 0, retry.stderr || retry.stdout);
+    assert.doesNotMatch(`${retry.stdout}\n${retry.stderr}`, /migration_recovery_failed/);
+    assert.equal(mock.requests.length, requestsBeforeRetry,
+      "retrying an all-failed migration must not emit a v2 install event");
+    assert.equal(readJson(stagePath).install_event_id, stage.install_event_id,
+      "the retry must retain the same local install identity");
+    assert.equal(readJson(markerPath).mode, "legacy_mcp");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("C19-D0 legacy fixtures (all IDEs) send a real Prompt and never start Node V2", async () => {
+  const tmp = makeTmp();
+  const project = path.join(tmp, "project");
+  const state = path.join(tmp, "state");
+  const home = path.join(tmp, "home");
+  const fakeBin = path.join(tmp, "bin");
+  const captured = path.join(tmp, "captured-payload.json");
+  fs.mkdirSync(path.join(project, ".git"), { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(fakeBin, { recursive: true });
+
+  // The old helper launches the legacy MCP through `npx` and speaks JSON-RPC
+  // over stdio.  Use a deterministic local npx shim instead of a TCP listener
+  // or the public registry: this exercises the real legacy protocol while the
+  // test remains runnable in restricted CI sandboxes and offline environments.
+  const fakeNpx = path.join(fakeBin, "npx");
+  fs.writeFileSync(fakeNpx, [
+    "#!/usr/bin/env node",
+    "const fs = require('node:fs');",
+    "let buf = '';",
+    "process.stdin.setEncoding('utf8');",
+    "process.stdin.on('data', chunk => {",
+    "  buf += chunk;",
+    "  for (;;) {",
+    "    const nl = buf.indexOf('\\n'); if (nl < 0) break;",
+    "    const line = buf.slice(0, nl); buf = buf.slice(nl + 1);",
+    "    let msg; try { msg = JSON.parse(line); } catch { continue; }",
+    "    if (msg.id === 1) {",
+    "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'legacy-test', version: '1' } } }) + '\\n');",
+    "    } else if (msg.id === 2) {",
+    "      const payload = msg.params?.arguments?.payload || '';",
+    "      fs.writeFileSync(process.env.LEGACY_PAYLOAD_FILE, payload, 'utf8');",
+    "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: 'ok' }] } }) + '\\n');",
+    "    }",
+    "  }",
+    "});",
+  ].join("\n") + "\n", { encoding: "utf8", mode: 0o755 });
+
+  const ideRoots = { claude: ".claude", cursor: ".cursor", codebuddy: ".codebuddy", codex: ".codex" };
+  const ideMcpFiles = {
+    claude: path.join(project, ".mcp.json"),
+    cursor: path.join(home, ".cursor", "mcp.json"),
+    codebuddy: path.join(home, ".codebuddy", "mcp.json"),
+    codex: path.join(home, ".codex", "config.toml"),
+  };
+  try {
+    for (const [index, ide] of Object.keys(ideRoots).entries()) {
+      const skill = path.join(project, ideRoots[ide], "skills", "trtc");
+      const script = path.join(skill, "tools", "reporting.py");
+      fs.mkdirSync(path.dirname(script), { recursive: true });
+      fs.writeFileSync(path.join(skill, "SKILL.md"), "legacy fixture\n", "utf8");
+      fs.writeFileSync(script, [
+        "import json, os, subprocess, sys",
+        "if len(sys.argv) < 2 or sys.argv[1] != 'prompt': raise SystemExit(2)",
+        "payload = json.dumps({'method':'prompt','text':'legacy fixture prompt ' + os.environ['LEGACY_IDE']})",
+        "proc = subprocess.Popen(['npx', '--yes', '@tencent-rtc/skill-tool@latest'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=os.environ)",
+        "def send(value): proc.stdin.write(json.dumps(value) + '\\n'); proc.stdin.flush()",
+        "def recv(): return json.loads(proc.stdout.readline())",
+        "send({'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'legacy-test','version':'1'}}})",
+        "recv()",
+        "send({'jsonrpc':'2.0','method':'notifications/initialized','params':{}})",
+        "send({'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'skill_analysis','arguments':{'payload':payload}}})",
+        "response = recv()",
+        "if response.get('id') != 2: raise SystemExit(3)",
+        "proc.stdin.close(); proc.wait(timeout=3)",
+      ].join("\n") + "\n", "utf8");
+
+      if (ide === "claude" || ide === "cursor" || ide === "codebuddy") {
+        writeJson(ideMcpFiles[ide], { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
+      } else {
+        fs.mkdirSync(path.dirname(ideMcpFiles[ide]), { recursive: true });
+        fs.writeFileSync(ideMcpFiles[ide], [
+          "[mcp_servers.tencent-rtc-skill-tool]",
+          'command = "npx"',
+          'args = ["-y", "@tencent-rtc/skill-tool@latest"]',
+          "",
+        ].join("\n"), "utf8");
+      }
+
+      const legacyRun = spawnSync("python3", [script, "prompt", "--text", "ignored"], {
+        cwd: project,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+          LEGACY_IDE: ide,
+          LEGACY_PAYLOAD_FILE: captured,
+        },
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      assert.equal(legacyRun.status, 0, `${ide}: ${legacyRun.stderr}`);
+      const payload = JSON.parse(fs.readFileSync(captured, "utf8"));
+      assert.equal(payload.method, "prompt");
+      assert.equal(payload.text, `legacy fixture prompt ${ide}`);
+      fs.unlinkSync(captured);
+
+      const runtime = await import("../skills/trtc/runtime/telemetry.js");
+      const result = await runtime.runCli(["hook", "--ide", ide], {
+        cwd: project,
+        stateRoot: path.join(state, ide),
+        env: { ...process.env, HOME: home, TRTC_REPORTING: "on", TRTC_PROMPT_REPORTING: "on" },
+        stdin: require("node:stream").Readable.from([Buffer.from(JSON.stringify({
+          prompt: `must not enter Node V2 ${ide}`, session_id: `legacy-s${index}`, cwd: project,
+        }))]),
+      });
+      assert.deepEqual(result, {}, `${ide}: legacy project must not enter Node V2`);
+      assert.equal(fs.existsSync(path.join(state, ide, "outbox")), false,
+        `${ide}: legacy project must not create a Node outbox`);
+    }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -845,7 +1400,7 @@ test("C19-D4 fresh install (real tarball): no legacy MCP, all 4 IDEs clean", asy
   }
 });
 
-test("C19-D5 legacy grandfathering (real tarball): upgrade preserves old chain and installs no Node Prompt Hook", async () => {
+test("C19-D5 explicit legacy upgrade (real tarball): old chain is disabled before Node commit", async () => {
   const tmp = makeTmp();
   try {
     const project = path.join(tmp, "project");
@@ -853,7 +1408,6 @@ test("C19-D5 legacy grandfathering (real tarball): upgrade preserves old chain a
     const home = path.join(tmp, "home");
     fs.mkdirSync(home, { recursive: true });
     const claudeMcp = path.join(project, ".mcp.json");
-    const before = JSON.stringify({ mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } }, null, 2) + "\n";
     writeJson(claudeMcp, { mcpServers: { "tencent-rtc-skill-tool": OWNED_ENTRY } });
     fs.mkdirSync(path.join(project, ".claude", "skills", "trtc", "tools"), { recursive: true });
     fs.writeFileSync(path.join(project, ".claude", "skills", "trtc", "SKILL.md"),
@@ -862,12 +1416,13 @@ test("C19-D5 legacy grandfathering (real tarball): upgrade preserves old chain a
 
     const installResult = runPackagedInstaller(project, home, ["--ide", "claude"]);
     assert.equal(installResult.status, 0, installResult.stderr || installResult.stdout);
-    assert.equal(fs.readFileSync(claudeMcp, "utf8"), before, "legacy MCP must remain byte-identical");
-    assert.equal(fs.existsSync(path.join(project, ".claude", "hooks")), false, "legacy upgrade must not create Node hooks");
-    assert.equal(fs.existsSync(path.join(project, ".claude", "skills", "trtc", "runtime", "telemetry.cjs")), false,
-      "legacy upgrade must not copy Node runtime");
-    const marker = path.join(project, ".trtc-reporting", "install-mode.json");
-    assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).mode, "legacy_mcp");
+    const after = readJson(claudeMcp);
+    assert.equal(after.mcpServers?.["tencent-rtc-skill-tool"], undefined,
+      "owned legacy MCP must be disabled during explicit upgrade");
+    assert.equal(fs.existsSync(path.join(project, ".claude", "skills", "trtc", "runtime", "telemetry.cjs")), true,
+      "Node runtime must be installed after migration");
+    const marker = path.join(project, ".trtc-skill-state", "install-mode.json");
+    assert.equal(JSON.parse(fs.readFileSync(marker, "utf8")).mode, "node_v2");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

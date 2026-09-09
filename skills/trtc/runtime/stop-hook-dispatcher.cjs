@@ -10,17 +10,71 @@
 
 const { spawnSync } = require('node:child_process');
 
+// Claude Code keeps the Stop-hook stdin pipe open after writing its JSON
+// payload.  Waiting for EOF with readFileSync(0) therefore leaves the Stop
+// hook blocked forever.  The payload is small and is available immediately;
+// collect it for a short, bounded window and proceed even when the host does
+// not close stdin.  A closed pipe still completes immediately.
+const STDIN_READ_DEADLINE_MS = 250;
+const STDIN_SETTLE_MS = 25;
+const MAX_STDIN_BYTES = 1024 * 1024;
+
 function argValue(argv, name, fallback = null) {
   const index = argv.indexOf(name);
   return index >= 0 && index + 1 < argv.length ? argv[index + 1] : fallback;
 }
 
-function readStdin() {
-  try {
-    return require('node:fs').readFileSync(0, 'utf8');
-  } catch {
-    return '';
-  }
+function readStdin({ deadlineMs = STDIN_READ_DEADLINE_MS, settleMs = STDIN_SETTLE_MS } = {}) {
+  return new Promise((resolve) => {
+    const stream = process.stdin;
+    let value = '';
+    let settled = false;
+    let deadlineTimer = null;
+    let settleTimer = null;
+
+    const cleanup = () => {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      if (settleTimer) clearTimeout(settleTimer);
+      stream.removeListener('data', onData);
+      stream.removeListener('end', finish);
+      stream.removeListener('error', finish);
+      stream.pause();
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const onData = (chunk) => {
+      if (settled) return;
+      const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      const remaining = MAX_STDIN_BYTES - Buffer.byteLength(value, 'utf8');
+      value += text.slice(0, Math.max(0, remaining));
+      if (Buffer.byteLength(value, 'utf8') >= MAX_STDIN_BYTES) {
+        finish();
+        return;
+      }
+      // Give a split JSON payload a small opportunity to deliver its next
+      // chunk, but never wait for the host to send EOF.  Only settle early
+      // once the accumulated hook payload is complete JSON; a partial chunk
+      // must remain pending until the overall deadline.
+      try {
+        JSON.parse(value);
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = setTimeout(finish, settleMs);
+      } catch {
+        // The next data chunk or the bounded deadline will finish the read.
+      }
+    };
+
+    stream.setEncoding('utf8');
+    stream.on('data', onData);
+    stream.once('end', finish);
+    stream.once('error', finish);
+    deadlineTimer = setTimeout(finish, deadlineMs);
+    stream.resume();
+  });
 }
 
 function runGuard(guardPath, input, env) {
@@ -117,17 +171,27 @@ function dispatch({ ide, runtimePath, guardPath, cwd = null, input, env = proces
   return { output: null, exitCode: 0 };
 }
 
-function main(argv = process.argv.slice(2), env = process.env) {
+async function main(argv = process.argv.slice(2), env = process.env) {
   const ide = argValue(argv, '--ide');
   const runtimePath = argValue(argv, '--runtime-path');
   const guardPath = argValue(argv, '--guard-path');
   const cwd = argValue(argv, '--cwd');
-  const input = readStdin();
+  const input = await readStdin();
   const result = dispatch({ ide, runtimePath, guardPath, cwd, input, env });
   if (result.output) process.stdout.write(`${JSON.stringify(result.output)}\n`);
   return result.exitCode;
 }
 
-if (require.main === module) process.exitCode = main();
+if (require.main === module) {
+  main().then((code) => { process.exitCode = code; }).catch(() => { process.exitCode = 0; });
+}
 
-module.exports = { argValue, dispatch, guardReason, main, runGuard, runTelemetry };
+module.exports = {
+  argValue,
+  dispatch,
+  guardReason,
+  main,
+  readStdin,
+  runGuard,
+  runTelemetry,
+};

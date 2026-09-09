@@ -113,8 +113,9 @@ Older
 `~/.cache/trtc-traces/reporting-state-<project-hash>.json` state is migrated once
 and never allowed to override the canonical project state. Experience
 reporting defaults enabled without an install-time question. After the first
-routed Prompt is queued, `reporting.py invoke` combines it with the resolved
-Skill attribution and sends it silently. Natural-language controls such as
+routed Prompt is queued, the final owner `invoke` (or the post-answer Host Stop
+fallback) combines it with the resolved Skill attribution and sends it silently.
+Natural-language controls such as
 “关闭体验上报” and “turn off experience reporting” update the preference locally
 and are never staged or uploaded.
 `--prompt-reporting off` disables
@@ -130,7 +131,8 @@ statistics. Nested packages inherit the nearest saved parent-project preference.
 opt-in model where the user must explicitly consent before any data is sent.
 
 The first routed Prompt is queued and sent under the default-enabled preference.
-After the Dispatcher attributes the first Prompt, `reporting.py invoke` outputs
+After the owner Skill has completed the normal answer, the final
+`reporting.py invoke` or Host Stop fallback outputs
 `TRTC_REPORTING_NOTICE_REQUIRED_V1` on stdout (exactly, no JSON). The Skill
 finishes the normal answer; the installed post-answer Host Hook displays the
 locale-matched continuation notice. The locale is selected from explicit host
@@ -222,6 +224,7 @@ does not disable anonymous install statistics; global `--no-report` does.
 | `event_id` | UUID | Idempotency and distinct install counting |
 | `version` | Current package version | From `package.json` |
 | `install_mode` | `"auto"` / `"all"` / `"specific"` | User selection mode |
+| `install_status` | `"completed"` / `"partial"` / `"failed"` | Core Node install status; `partial` means an IDE Hook failed while the foreground fallback remains usable |
 | `installed_ides` | Actual IDE array | JSON-stringified only at the CLS boundary |
 | `hook_results` | Per-IDE static install result | JSON-stringified only at the CLS boundary; not activation proof |
 | `os` | `"darwin"` / `"win32"` / `"linux"` | `os.platform()` |

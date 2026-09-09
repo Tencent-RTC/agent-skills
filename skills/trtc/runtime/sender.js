@@ -18,7 +18,7 @@ import { performance } from 'node:perf_hooks';
 
 import { toCLSContents } from './schema.js';
 import { sanitizeReportText } from './redact.js';
-import { getOrCreate } from './identity.js';
+import { getOrCreate, isValidIdentityRecord } from './identity.js';
 import { acknowledgeHookActivation } from './hook-activation.js';
 import {
   listOutbox,
@@ -152,6 +152,8 @@ function nextRetryMs(retryCount, random) {
  * @param {number} [opts.reservationTimeoutMs=100]
  * @param {number} [opts.identityWaitMs=100] — bounded enrichment wait; an
  *   unavailable identity leaves the event queued and unsent
+ * @param {object} [opts.env=process.env] — environment used for endpoint,
+ *   topic, and dry-run configuration
  * @param {Function} [opts._transport] — inject for testing (url, body, opts) => Promise<{statusCode, body}>
  * @param {boolean} [opts._dryRun] — skip network, no remove, no update
  * @param {Function} [opts.now] — injectable clock (default Date.now)
@@ -159,16 +161,19 @@ function nextRetryMs(retryCount, random) {
  * @param {(event:object)=>boolean} [opts.isEventEnabled] — local privacy gate
  * @param {string[]} [opts.eventIds] — process only these event ids
  * @param {string[]} [opts.priorityEventIds] — move these ids to the front
+ * @param {string[]} [opts.forceRetryEventIds] — ignore retry_after for bounded
+ *   installer retries of these ids only
  * @returns {Promise<{sent, sent_event_ids, retried, rejected, skipped, errors}>}
  */
 export async function flushOutbox(root, opts = {}) {
+  const env = opts.env || process.env;
   const maxCount = opts.maxCount ?? DEFAULT_MAX_COUNT;
   const maxDurationMs = opts.maxDurationMs ?? DEFAULT_MAX_DURATION_MS;
   const requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const reservationTimeoutMs = opts.reservationTimeoutMs ?? DEFAULT_RESERVATION_TIMEOUT_MS;
   const transport = opts._transport || _httpsPost;
   const removeEvent = opts._remove || remove;
-  const dryRun = opts._dryRun || process.env.TRTC_TELEMETRY_DRY_RUN === '1';
+  const dryRun = opts._dryRun || env.TRTC_TELEMETRY_DRY_RUN === '1';
   const nowFn = opts.now || Date.now;
   const randomFn = opts.random || Math.random;
   // Production is fail-closed by default. Test-only legacy fixtures may
@@ -180,9 +185,10 @@ export async function flushOutbox(root, opts = {}) {
     : () => !requireAuthoritativeGate;
   const eventIds = Array.isArray(opts.eventIds) ? new Set(opts.eventIds) : null;
   const priorityEventIds = new Set(Array.isArray(opts.priorityEventIds) ? opts.priorityEventIds : []);
+  const forceRetryEventIds = new Set(Array.isArray(opts.forceRetryEventIds) ? opts.forceRetryEventIds : []);
 
-  const endpoint = process.env.TRTC_TELEMETRY_ENDPOINT || DEFAULT_ENDPOINT;
-  const topicId = process.env.TRTC_TELEMETRY_TOPIC_ID || DEFAULT_TOPIC_ID;
+  const endpoint = env.TRTC_TELEMETRY_ENDPOINT || DEFAULT_ENDPOINT;
+  const topicId = env.TRTC_TELEMETRY_TOPIC_ID || DEFAULT_TOPIC_ID;
   const url = `${endpoint}/tracklog?topic_id=${topicId}`;
 
   const deadlineMono = performance.now() + maxDurationMs;
@@ -293,7 +299,7 @@ export async function flushOutbox(root, opts = {}) {
 
       // Check retry eligibility
       const retryAfter = event.__sender_retry_after;
-      if (typeof retryAfter === 'number' && nowFn() < retryAfter) {
+      if (typeof retryAfter === 'number' && nowFn() < retryAfter && !forceRetryEventIds.has(eid)) {
         result.skipped++;
         processed++;
         continue;
@@ -306,12 +312,12 @@ export async function flushOutbox(root, opts = {}) {
         continue;
       }
 
-      // Hook/install hot paths may durably queue an event before Identity is
-      // available. Never send such an event anonymously: retry bounded
+      // Hook/install hot paths may atomically queue an event before Identity
+      // is available. Never send such an event anonymously: retry bounded
       // enrichment under the same event reservation and leave it queued when
       // the device identity is still contended.
       let sendEvent = event;
-      if (event.identity_pending === true || typeof event.useragent !== 'string') {
+      if (!isValidIdentityRecord(event)) {
         remaining = deadlineMono - performance.now();
         if (remaining <= 0) break;
         try {

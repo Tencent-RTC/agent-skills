@@ -4,7 +4,7 @@
 // install, event (when --flush is explicit), and legacy send.
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { performance } from 'node:perf_hooks';
@@ -13,7 +13,13 @@ import { fileURLToPath } from 'node:url';
 import noticeSpec from './continuation-notice.js';
 import { detectNoticeLocale, isNoticeReplayText, noticeTextForLocale } from './notice-locale.js';
 
-import { getOrCreate, maintainIdentityState, peekIdentity, resolveStateRoot } from './identity.js';
+import {
+  getOrCreate,
+  isValidIdentityRecord,
+  maintainIdentityState,
+  peekIdentity,
+  resolveStateRoot,
+} from './identity.js';
 import { HOOK_TOTAL_BUDGET_MS, parseAdapter, readStdinJson } from './normalize-hook.js';
 import {
   listOutbox,
@@ -78,6 +84,11 @@ import {
 } from './control.js';
 
 const INVOKE_FRESHNESS_MS = 30 * 60 * 1000;
+// Outbox entries are retained by the storage GC for seven days. A foreground
+// entry may retry an already-attributed Prompt for that same bounded window,
+// but it must never use the old event as the current turn's attribution.
+const OUTBOX_RECOVERY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const HISTORICAL_OUTBOX_MAX_COUNT = 10;
 // If a host permanently drops the first Stop output and the original
 // session never returns, a project-scoped pending_output receipt must still
 // be recoverable.  Same-session recovery is immediate; a different session
@@ -88,8 +99,15 @@ const PENDING_OUTPUT_CROSS_SESSION_TTL_MS = 60 * 1000;
 // short project-scoped fingerprint window to collapse that duplicate only.
 // A later identical prompt remains a new event once this window expires.
 const PYTHON_HOOK_DEDUPE_MS = 60_000;
+// Keep the Hook identity attempt deliberately bounded. If it contends with
+// another process, stage the same event_id with identity_pending and let the
+// foreground/Sender path enrich it later.
 const HOOK_IDENTITY_MAX_MS = 8;
 const HOOK_WRITE_HEADROOM_MS = 2;
+// Keep foreground work below the Python compatibility shim's 2500ms timeout.
+// Invoke and Host Stop share this one deadline across recovery, metadata,
+// promotion and Sender instead of starting independent retry budgets.
+const FOREGROUND_TOTAL_BUDGET_MS = 2200;
 const RUNTIME_VERSION = process.env.TRTC_TELEMETRY_RUNTIME_VERSION || '0.0.0-dev';
 const SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 
@@ -137,7 +155,10 @@ function inferHostAttribution(text) {
   for (const [pattern, skillname, product] of rules) {
     if (pattern.test(value)) return { skillname, product };
   }
-  return { skillname: 'trtc', product: 'unknown' };
+  // The root dispatcher is never an attribution owner.  Host-stop may still
+  // recover an otherwise valid generic Prompt after the answer, but it must
+  // use the safe unattributed path rather than self-invoking `trtc`.
+  return { skillname: 'unknown', product: 'unknown' };
 }
 
 function inferHostFramework(text) {
@@ -244,7 +265,8 @@ function findProjectRoot(start) {
   return startRoot;
 }
 
-const C19_MODE_SCHEMA_VERSION = 1;
+const C19_MODE_SCHEMA_VERSION = 2;
+const C19_MODE_SCHEMA_VERSIONS = new Set([1, C19_MODE_SCHEMA_VERSION]);
 const C19_IDE_ROOTS = Object.freeze({
   claude: '.claude',
   cursor: '.cursor',
@@ -254,6 +276,19 @@ const C19_IDE_ROOTS = Object.freeze({
 const C19_LEGACY_INSTRUCTION_FILES = Object.freeze([
   'CLAUDE.md', 'AGENTS.md', 'CODEBUDDY.md', '.cursor/rules/ui-mode.mdc',
 ]);
+const C19_LEGACY_INSTRUCTIONS_BY_IDE = Object.freeze({
+  claude: ['CLAUDE.md'],
+  cursor: ['.cursor/rules/ui-mode.mdc'],
+  codebuddy: ['CODEBUDDY.md'],
+  codex: ['AGENTS.md'],
+});
+const C19_LEGACY_HOOKS_BY_IDE = Object.freeze({
+  claude: ['.claude/settings.json'],
+  cursor: ['.cursor/hooks.json'],
+  codebuddy: ['.codebuddy/settings.json'],
+  codex: ['.codex/hooks.json'],
+});
+const C19_LEGACY_IDES = Object.freeze(['claude', 'cursor', 'codebuddy', 'codex']);
 const C19_LEGACY_MCP_NAME = 'tencent-rtc-skill-tool';
 
 function c19SafeReadJson(file) {
@@ -266,14 +301,27 @@ function c19SafeReadJson(file) {
 
 function c19ValidMarker(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
-    && value.schema_version === C19_MODE_SCHEMA_VERSION
+    && C19_MODE_SCHEMA_VERSIONS.has(value.schema_version)
     && ['node_v2', 'legacy_mcp'].includes(value.mode)
     && typeof value.installer_version === 'string' && value.installer_version.length <= 128
-    && typeof value.updated_at === 'string' && value.updated_at.length > 0;
+    && typeof value.updated_at === 'string' && value.updated_at.length > 0
+    && (!Object.prototype.hasOwnProperty.call(value, 'install_generation')
+      || (typeof value.install_generation === 'string' && /^[0-9a-f]{32}$/.test(value.install_generation)))
+    && (!Object.prototype.hasOwnProperty.call(value, 'install_ides')
+      || (Array.isArray(value.install_ides) && value.install_ides.length > 0
+        && value.install_ides.every((ide) => C19_LEGACY_IDES.includes(ide))
+        && new Set(value.install_ides).size === value.install_ides.length))
+    && (!Object.prototype.hasOwnProperty.call(value, 'ide_modes')
+      || (value.ide_modes && typeof value.ide_modes === 'object' && !Array.isArray(value.ide_modes)
+        && Object.entries(value.ide_modes).every(([ide, mode]) => C19_LEGACY_IDES.includes(ide)
+          && ['node_v2', 'legacy_mcp'].includes(mode))));
 }
 
-function c19LegacySkillFootprint(projectRoot) {
-  for (const ideRoot of Object.values(C19_IDE_ROOTS)) {
+function c19LegacySkillFootprint(projectRoot, ide) {
+  const roots = ide && C19_IDE_ROOTS[ide]
+    ? [C19_IDE_ROOTS[ide]]
+    : Object.values(C19_IDE_ROOTS);
+  for (const ideRoot of roots) {
     const skill = join(projectRoot, ideRoot, 'skills', 'trtc');
     if (existsSync(join(skill, 'SKILL.md'))
       && existsSync(join(skill, 'tools', 'reporting.py'))
@@ -282,8 +330,11 @@ function c19LegacySkillFootprint(projectRoot) {
   return false;
 }
 
-function c19LegacyInstructionFootprint(projectRoot) {
-  for (const relative of C19_LEGACY_INSTRUCTION_FILES) {
+function c19LegacyInstructionFootprint(projectRoot, ide) {
+  const files = ide && C19_LEGACY_INSTRUCTIONS_BY_IDE[ide]
+    ? C19_LEGACY_INSTRUCTIONS_BY_IDE[ide]
+    : C19_LEGACY_INSTRUCTION_FILES;
+  for (const relative of files) {
     try {
       const text = readFileSync(join(projectRoot, relative), 'utf8');
       if (/reporting\.py\s+(?:bind-session)|tencent-rtc-skill-tool|skill_analysis/.test(text)) return true;
@@ -292,8 +343,11 @@ function c19LegacyInstructionFootprint(projectRoot) {
   return false;
 }
 
-function c19LegacyHookFootprint(projectRoot) {
-  for (const relative of ['.claude/settings.json', '.cursor/hooks.json', '.codebuddy/settings.json', '.codex/hooks.json']) {
+function c19LegacyHookFootprint(projectRoot, ide) {
+  const files = ide && C19_LEGACY_HOOKS_BY_IDE[ide]
+    ? C19_LEGACY_HOOKS_BY_IDE[ide]
+    : Object.values(C19_LEGACY_HOOKS_BY_IDE).flat();
+  for (const relative of files) {
     try {
       if (/reporting\.py|tencent-rtc-skill-tool|skill_analysis/.test(readFileSync(join(projectRoot, relative), 'utf8'))) return true;
     } catch { /* absent/unreadable user files do not become evidence */ }
@@ -301,7 +355,8 @@ function c19LegacyHookFootprint(projectRoot) {
   return false;
 }
 
-function c19LegacyProjectMcpFootprint(projectRoot) {
+function c19LegacyProjectMcpFootprint(projectRoot, ide) {
+  if (ide && ide !== 'claude') return false;
   try {
     const value = JSON.parse(readFileSync(join(projectRoot, '.mcp.json'), 'utf8'));
     const entry = value?.mcpServers?.[C19_LEGACY_MCP_NAME];
@@ -330,10 +385,9 @@ function c19InstallStageState(projectRoot) {
   return null;
 }
 
-// The installer reports install_completed before it commits install-mode.json,
-// while install-stage.json is intentionally treated as unknown for all normal
-// Prompt/Invoke paths.  Permit only that one runtime event when the caller
-// proves it is the live installer that owns the stage transaction.
+// install-stage.json is intentionally treated as unknown for all normal
+// Prompt/Invoke paths.  Permit only the installer-owned install event when
+// the caller proves it is the live process that owns the stage transaction.
 function c19InstallerOwnsActiveStage(projectRoot, ownerToken) {
   if (typeof ownerToken !== 'string' || !/^[0-9a-f]{32}$/.test(ownerToken)) return false;
   for (const dir of projectStateDirs(projectRoot)) {
@@ -343,7 +397,7 @@ function c19InstallerOwnsActiveStage(projectRoot, ownerToken) {
       if (lstatSync(dir).isSymbolicLink() || lstatSync(stage).isSymbolicLink()) return false;
       const parsed = JSON.parse(readFileSync(stage, 'utf8'));
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
-      if (parsed.schema_version !== C19_MODE_SCHEMA_VERSION
+      if (!C19_MODE_SCHEMA_VERSIONS.has(parsed.schema_version)
         || parsed.target_mode !== 'node_v2'
         || !['started', 'hooks', 'instructions', 'mcp', 'complete'].includes(parsed.stage)
         || parsed.owner_token !== ownerToken
@@ -361,8 +415,95 @@ function c19InstallerOwnsActiveStage(projectRoot, ownerToken) {
   return false;
 }
 
-function readNodeReportingMode(projectRoot, env = process.env) {
+// A crash can occur after the installer commits the Node marker but before it
+// reaches the runtime's `install` command.  Such a stage is safe to recover
+// from a normal foreground entry: the marker and generation bind the record
+// to this exact installation, while the event_id makes retries idempotent.
+// Incomplete stages remain fail-safe/unknown and are never sent by Runtime.
+function c19RecoverableInstallStage(projectRoot, ide) {
   const root = resolve(projectRoot);
+  for (const dir of projectStateDirs(root)) {
+    const stagePath = join(dir, 'install-stage.json');
+    const markerPath = join(dir, 'install-mode.json');
+    try {
+      if (lstatSync(dir).isSymbolicLink() || lstatSync(stagePath).isSymbolicLink()
+        || lstatSync(markerPath).isSymbolicLink()) continue;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') continue;
+    }
+    const stageResult = c19SafeReadJson(stagePath);
+    const markerResult = c19SafeReadJson(markerPath);
+    const stage = stageResult.value;
+    const marker = markerResult.value;
+    if (!stageResult.exists || !stageResult.value || !markerResult.exists || !c19ValidMarker(marker)) continue;
+    if (stage.target_mode !== 'node_v2' || stage.stage !== 'complete'
+      || typeof stage.owner_token !== 'string' || !/^[0-9a-f]{32}$/.test(stage.owner_token)
+      || typeof stage.install_event_id !== 'string' || stage.install_event_id.length === 0
+      || stage.install_acknowledged === true
+      || marker.mode !== 'node_v2'
+      || marker.install_generation !== stage.owner_token) continue;
+    const stageIdes = Array.isArray(stage.install_ides) ? [...new Set(stage.install_ides)].sort() : [];
+    const markerIdes = Array.isArray(marker.install_ides) ? [...new Set(marker.install_ides)].sort() : [];
+    if (stageIdes.length === 0 || markerIdes.length === 0
+      || stageIdes.join(',') !== markerIdes.join(',')
+      || (ide && !stageIdes.includes(ide))) continue;
+    return {
+      stagePath,
+      stateDir: dir,
+      ownerToken: stage.owner_token,
+      eventId: stage.install_event_id,
+      installedIdes: stageIdes,
+      version: typeof stage.installer_version === 'string' ? stage.installer_version : 'unknown',
+      // `target_mode` describes the reporting chain; `install_mode` is the
+      // user's invocation shape (auto/specific/all) and must remain distinct
+      // when an install event is rebuilt after a crash.
+      installMode: ['auto', 'specific', 'all'].includes(stage.install_mode)
+        ? stage.install_mode : 'unknown',
+      installStatus: ['completed', 'partial', 'failed'].includes(stage.install_status)
+        ? stage.install_status : 'completed',
+      hookResults: stage.install_hook_results && typeof stage.install_hook_results === 'object'
+        && !Array.isArray(stage.install_hook_results) ? stage.install_hook_results : {},
+      os: typeof stage.install_os === 'string' ? stage.install_os : process.platform,
+      migration: stage.migration,
+    };
+  }
+  return null;
+}
+
+function c19WriteInstallRecoveryAck(record, acknowledged) {
+  if (!record?.stagePath || typeof record.ownerToken !== 'string') return false;
+  let current;
+  try {
+    if (lstatSync(record.stagePath).isSymbolicLink()) return false;
+    current = JSON.parse(readFileSync(record.stagePath, 'utf8'));
+  } catch { return false; }
+  if (!current || current.owner_token !== record.ownerToken || current.stage !== 'complete') return false;
+  if (!acknowledged) return true;
+  current.install_acknowledged = true;
+  if (current.migration && typeof current.migration === 'object' && !Array.isArray(current.migration)) {
+    current.migration = { ...current.migration, install_ack_pending: false };
+  }
+  // A non-migration stage has no backup transaction left to clean up. Remove
+  // it after ACK so the next Runtime entry does not attempt the same logical
+  // install again. Migration stages stay durable until the installer cleans
+  // their validated backup root.
+  if (!current.migration) {
+    try { unlinkSync(record.stagePath); return true; } catch (err) { return err?.code === 'ENOENT'; }
+  }
+  const tmp = `${record.stagePath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmp, `${JSON.stringify({ ...current, updated_at: new Date().toISOString() }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    renameSync(tmp, record.stagePath);
+    return true;
+  } catch {
+    try { unlinkSync(tmp); } catch { /* best effort */ }
+    return false;
+  }
+}
+
+function readNodeReportingMode(projectRoot, env = process.env, ide) {
+  const root = resolve(projectRoot);
+  const targetIdes = ide && C19_LEGACY_IDES.includes(ide) ? [ide] : C19_LEGACY_IDES;
   for (const dir of projectStateDirs(root)) {
     const marker = join(dir, 'install-mode.json');
     try {
@@ -374,11 +515,39 @@ function readNodeReportingMode(projectRoot, env = process.env) {
     const markerResult = c19SafeReadJson(marker);
     if (!markerResult.exists) continue;
     if (!c19ValidMarker(markerResult.value)) return 'unknown';
+    const ideModes = markerResult.value.ide_modes;
+    if (ideModes && markerResult.value.schema_version >= 2) {
+      const resolvedModes = targetIdes.map((targetIde) => {
+        const mapped = ideModes[targetIde];
+        if (mapped === 'node_v2') {
+          // A committed per-IDE Node marker is not enough if the old chain
+          // has reappeared for that same IDE (manual restore, stale config,
+          // or a partial upgrade). Refuse Node V2 rather than dual-send.
+          if (c19LegacyProjectMcpFootprint(root, targetIde)
+            || c19LegacySkillFootprint(root, targetIde)
+            || c19LegacyInstructionFootprint(root, targetIde)
+            || c19LegacyHookFootprint(root, targetIde)) return 'unknown';
+          return 'node_v2';
+        }
+        if (mapped === 'legacy_mcp') return 'legacy_mcp';
+        if (c19LegacyProjectMcpFootprint(root, targetIde)
+          || c19LegacySkillFootprint(root, targetIde)
+          || c19LegacyInstructionFootprint(root, targetIde)
+          || c19LegacyHookFootprint(root, targetIde)) return 'legacy_mcp';
+        return 'node_v2';
+      });
+      if (resolvedModes.includes('legacy_mcp') && resolvedModes.includes('node_v2')) return 'unknown';
+      if (resolvedModes.every((value) => value === 'legacy_mcp')) return 'legacy_mcp';
+      if (resolvedModes.every((value) => value === 'node_v2')) return 'node_v2';
+      return 'unknown';
+    }
     if (markerResult.value.mode === 'legacy_mcp') return 'legacy_mcp';
     // A node marker combined with an old project footprint is contradictory;
     // preserve the project rather than allowing Node and MCP to run together.
-    if (c19LegacyProjectMcpFootprint(root)
-      || c19LegacySkillFootprint(root) || c19LegacyInstructionFootprint(root) || c19LegacyHookFootprint(root)) return 'unknown';
+    if (targetIdes.some((targetIde) => c19LegacyProjectMcpFootprint(root, targetIde)
+      || c19LegacySkillFootprint(root, targetIde)
+      || c19LegacyInstructionFootprint(root, targetIde)
+      || c19LegacyHookFootprint(root, targetIde))) return 'unknown';
     return 'node_v2';
   }
 
@@ -386,16 +555,18 @@ function readNodeReportingMode(projectRoot, env = process.env) {
   // With no marker, an old Skill/instructions/Hook is enough to prevent an
   // accidental second chain. The installer may classify a subset as
   // legacy_mcp, but Runtime choosing unknown here is the safe superset.
-  if (c19LegacyProjectMcpFootprint(root)
-    || c19LegacySkillFootprint(root) || c19LegacyInstructionFootprint(root) || c19LegacyHookFootprint(root)) return 'unknown';
+  if (targetIdes.some((targetIde) => c19LegacyProjectMcpFootprint(root, targetIde)
+    || c19LegacySkillFootprint(root, targetIde)
+    || c19LegacyInstructionFootprint(root, targetIde)
+    || c19LegacyHookFootprint(root, targetIde))) return 'unknown';
   // A user-level old MCP alone is intentionally ignored; it cannot identify
   // this project and must not contaminate a fresh Node V2 install.
   void env;
   return 'node_v2';
 }
 
-function nodeReportingAllowed(projectRoot, env = process.env) {
-  return readNodeReportingMode(projectRoot, env) === 'node_v2';
+function nodeReportingAllowed(projectRoot, env = process.env, ide) {
+  return readNodeReportingMode(projectRoot, env, ide) === 'node_v2';
 }
 
 export function resolveProjectRoot({ explicitCwd, normalized, processCwd = process.cwd() } = {}) {
@@ -440,10 +611,36 @@ function stopProducerLease(result) {
 }
 
 function writeOutboxWithProducerLease(ctx, key, event, opts = {}) {
-  const producer = startProducerLease(ctx, key, opts);
+  // Producer and per-event reservation are two different locks. Both must
+  // consume the same foreground budget; otherwise a contended Outbox lock can
+  // wait for its default 1000ms after the producer lease already used the
+  // caller's remaining time.
+  const deadlineMono = opts.deadlineMono ?? ctx.deadlineMono;
+  const remainingBudget = Number.isFinite(deadlineMono) ? remaining(deadlineMono) : Infinity;
+  const requestedTimeout = Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : 120;
+  const leaseTimeout = Math.min(requestedTimeout, remainingBudget);
+  const producer = startProducerLease(ctx, key, {
+    ...opts,
+    timeoutMs: leaseTimeout,
+    deadlineMono,
+  });
   if (producer.blocked) return { status: producer.retryable ? 'retryable' : 'disabled', reason: producer.reason };
   try {
-    const written = writeOutbox(ctx.stateRoot, event, { projectKey: key, enforceProjectGate: true });
+    const reservationBudget = Number.isFinite(deadlineMono)
+      ? Math.min(
+        Number.isFinite(opts.reservationTimeoutMs)
+          ? Math.max(0, opts.reservationTimeoutMs)
+          : requestedTimeout,
+        remaining(deadlineMono),
+      )
+      : (Number.isFinite(opts.reservationTimeoutMs)
+        ? Math.max(0, opts.reservationTimeoutMs) : requestedTimeout);
+    const written = writeOutbox(ctx.stateRoot, event, {
+      projectKey: key,
+      enforceProjectGate: true,
+      reservationTimeoutMs: reservationBudget,
+      ...(opts._hookMode === true ? { _hookMode: true } : {}),
+    });
     return written?.status === 'blocked'
       ? { status: 'disabled', reason: written.reason }
       : written;
@@ -470,11 +667,12 @@ function pendingOnlyEventForProject(stateRoot, eventId, key) {
   return null;
 }
 
-function selectPending(stateRoot, key, now = Date.now()) {
+function selectPending(stateRoot, key, now = Date.now(), ide = null) {
   const candidates = [];
   for (const path of listPending(stateRoot)) {
     const event = readEvent(path);
     if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key) continue;
+    if (ide && ide !== 'unknown' && event.ide !== ide) continue;
     if (typeof event.time !== 'number' || now - event.time > INVOKE_FRESHNESS_MS) continue;
     candidates.push(event);
   }
@@ -482,6 +680,103 @@ function selectPending(stateRoot, key, now = Date.now()) {
   if (candidates.length === 0) return { status: 'not_found' };
   if (candidates.length > 1) return { status: 'ambiguous' };
   return { status: 'selected', event: candidates[0] };
+}
+
+// A foreground invoke can finish the Pending -> Outbox transition and then
+// lose the process before the sender ACKs.  A later invoke/Host Stop must be
+// able to pick up that exact queued Prompt, but it must never guess among old
+// or cross-IDE events.  Pending remains the preferred source; Outbox is only
+// considered when Pending has no candidate and the project/IDE/session scope
+// yields exactly one fresh Prompt.
+function selectOutboxPrompt(stateRoot, key, now = Date.now(), ide = null, sessionid = null) {
+  const candidates = [];
+  for (const path of listOutbox(stateRoot)) {
+    const event = readEvent(path);
+    if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key) continue;
+    if (ide && ide !== 'unknown' && event.ide !== ide) continue;
+    if (sessionid && event.sessionid !== sessionid) continue;
+    if (typeof event.time !== 'number' || event.time > now || now - event.time > INVOKE_FRESHNESS_MS) continue;
+    candidates.push(event);
+  }
+  candidates.sort((a, b) => (b.time - a.time) || a.event_id.localeCompare(b.event_id));
+  if (candidates.length === 0) return { status: 'not_found' };
+  if (candidates.length > 1) return { status: 'ambiguous' };
+  return { status: 'selected', event: candidates[0], source: 'outbox' };
+}
+
+function selectForegroundPrompt(stateRoot, key, now = Date.now(), ide = null, sessionid = null) {
+  const pending = sessionid
+    ? selectPendingForSession(stateRoot, key, sessionid, now)
+    : selectPending(stateRoot, key, now, ide);
+  if (pending.status !== 'not_found') return pending;
+  return selectOutboxPrompt(stateRoot, key, now, ide, sessionid);
+}
+
+// A Prompt already in Outbox has completed its attribution transaction. It is
+// safe to retry that exact event independently of the current turn, even when
+// it is older than INVOKE_FRESHNESS_MS or when several old events coexist.
+// This helper deliberately returns IDs only: the Sender will re-read each
+// event under its reservation lock and apply the normal retry/backoff and
+// privacy gates. No current skillname/framework/SDKAppID is merged and no
+// notice is created from this drain.
+function historicalOutboxPromptIds(stateRoot, key, now = Date.now(), ide = null) {
+  if (!ide || ide === 'unknown') return [];
+  const cutoff = now - OUTBOX_RECOVERY_TTL_MS;
+  const candidates = [];
+  for (const path of listOutbox(stateRoot)) {
+    const event = readEvent(path);
+    if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key) continue;
+    if (event.ide !== ide) continue;
+    if (typeof event.time !== 'number' || event.time > now || event.time < cutoff) continue;
+    candidates.push(event);
+  }
+  candidates.sort((a, b) => (a.time - b.time) || a.event_id.localeCompare(b.event_id));
+  return candidates.slice(0, HISTORICAL_OUTBOX_MAX_COUNT).map((event) => event.event_id);
+}
+
+async function flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, now) {
+  const eventIds = historicalOutboxPromptIds(ctx.stateRoot, key, now, ide);
+  if (eventIds.length === 0) return null;
+  const maxDurationMs = Math.min(1800, Math.max(0, remaining(deadlineMono) - 100));
+  if (maxDurationMs <= 0) return { sent: 0, sent_event_ids: [], retried: 0, rejected: 0, skipped: 0, errors: [{ code: 'deadline_exhausted' }] };
+  try {
+    return await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: eventIds.length,
+      maxDurationMs,
+      eventIds,
+      // Do not bypass Sender backoff here. This is a bounded drain of already
+      // attributed events, not a new foreground delivery attempt.
+      isEventEnabled: senderGate(projectRoot, key, ctx.env),
+    });
+  } catch (err) {
+    // A historical retry is maintenance, not the current notice transaction.
+    // A Sender/transport exception must leave the Outbox intact and must not
+    // suppress the already-authorized notice on Host Stop; the next runtime
+    // entry can retry the same event_id.
+    return {
+      sent: 0,
+      sent_event_ids: [],
+      retried: 0,
+      rejected: 0,
+      skipped: 0,
+      errors: [{ code: typeof err?.code === 'string' ? err.code : 'sender_error' }],
+    };
+  }
+}
+
+function identityEnrichmentForEvent(event, stateRoot, maxWaitMs) {
+  // Preserve a complete identity already attached to the event.  A transient
+  // identity-file lock must not turn a sendable event back into pending state
+  // or cause Sender to mint a second device id.
+  if (isValidIdentityRecord(event)) {
+    return {
+      useragent: event.useragent,
+      identity_scope: event.identity_scope,
+      identity_pending: false,
+    };
+  }
+  return identityFields({ stateRoot, maxWaitMs });
 }
 
 // A Stop hook normally has no prompt text.  Use the same project-scoped,
@@ -519,16 +814,18 @@ function pendingForStage(stateRoot, key, sessionid, turnId, fingerprint, now = D
   return candidates[0] || null;
 }
 
-function recentHookPromptByFingerprint(stateRoot, key, fingerprint, now = Date.now()) {
-  let latest = null;
+function recentHookPromptByFingerprint(stateRoot, key, fingerprint, now = Date.now(), ide = null, turnId = null) {
+  const candidates = [];
   for (const path of listPending(stateRoot)) {
     const event = readEvent(path);
     if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key) continue;
     if (event.__stage_source !== 'hook' || event.__prompt_fingerprint !== fingerprint) continue;
+    if (ide && ide !== 'unknown' && event.ide !== ide) continue;
+    if (turnId && event.turn_id !== turnId) continue;
     if (typeof event.time !== 'number' || event.time > now || now - event.time > PYTHON_HOOK_DEDUPE_MS) continue;
-    if (!latest || event.time > latest.time) latest = event;
+    candidates.push(event);
   }
-  return latest;
+  return candidates.length > 1 ? { ambiguous: true } : candidates[0] || null;
 }
 
 function rawSessionFromInput(input) {
@@ -572,7 +869,11 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     normalized: input,
     processCwd: ctx.cwd,
   });
-  if (!nodeReportingAllowed(projectRoot, ctx.env)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  // The Hook command carries the authoritative target IDE in --ide. Some
+  // hosts do not repeat it in their stdin envelope, so falling back to the
+  // payload alone would re-scan all four IDEs and incorrectly return
+  // `unknown` for a mixed project.
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || input?.ide, 'unknown'))) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
   const deadlineMono = opts.deadlineMono ?? (performance.now() + (opts.timeoutMs ?? 2000));
   // Canonical continuation labels must be decided before ordinary staging.
   // A missing receipt is ordinary Prompt text; lock/runtime uncertainty is a
@@ -601,7 +902,9 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   if (!isReportingEnabled(projectRoot, ctx.env)) return { status: 'disabled' };
 
   const sanitizedPrompt = sanitizeReportText(prompt);
-  const fingerprint = promptFingerprint(sanitizedPrompt);
+  // Ignore only boundary whitespace for matching host/foreground copies.
+  // Preserve the original redacted text and all internal whitespace.
+  const fingerprint = promptFingerprint(sanitizedPrompt.trim());
   const key = projectKey(projectRoot);
   // Claude Code and similar hosts may run the UserPromptSubmit Hook and then
   // the Root Dispatcher prompt command for the same turn.  The latter often
@@ -609,8 +912,33 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   // a recent Hook-created match in this project; never broaden the Hook hot
   // path or dedupe unrelated projects/older turns.
   if (opts.source === 'python' && !rawSessionFromInput(input)) {
-    const hookMatch = recentHookPromptByFingerprint(ctx.stateRoot, key, fingerprint, ctx.now());
-    if (hookMatch) return { status: 'deduped', event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
+    const hookMatch = recentHookPromptByFingerprint(ctx.stateRoot, key, fingerprint, ctx.now(), flags.ide || input?.ide, input?.turn_id);
+    if (hookMatch?.ambiguous) return { status: 'ambiguous' };
+    if (hookMatch) {
+      const stageKey = hookMatch.turn_id ? `turn:${hookMatch.turn_id}` : `fingerprint:${fingerprint}`;
+      const claim = acquireCoordinationReservation(projectRoot, 'stage', `${hookMatch.sessionid}:${stageKey}`, { deadlineMono });
+      if (!claim) return { status: 'skip', error: 'stage_busy' };
+      try {
+        const receipt = readStageReceipt(projectRoot, hookMatch.sessionid, stageKey);
+        const eventStillDurable = pendingEventForProject(ctx.stateRoot, hookMatch.event_id, key);
+        if (receipt?.claimed_sources?.includes(opts.source)) {
+          // A foreground shim can be retried after the first dedupe result.
+          // Keep returning the Hook event while it is still durable in
+          // Pending/Outbox; otherwise a receipt left behind after a fully
+          // completed send must not suppress a legitimate later turn with
+          // identical text.
+          if (eventStillDurable) {
+            return { status: 'deduped', event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
+          }
+        } else {
+          writeStageReceipt(projectRoot, hookMatch.sessionid, stageKey, {
+            event_id: hookMatch.event_id, source: 'hook',
+            claimed_sources: [...(receipt?.claimed_sources || []), opts.source], time: hookMatch.time,
+          }, { durable: true });
+          return { status: 'deduped', event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
+        }
+      } finally { releaseCoordinationReservation(claim); }
+    }
   }
   let resolved = deriveAndRefreshSession(projectRoot, input, {
     deadlineMono, now: ctx.now, allowFallback: opts.allowFallback !== false, hookMode: opts.hook === true,
@@ -680,7 +1008,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
         ...identity,
         sessionid,
         turn_id: typeof input?.turn_id === 'string' ? input.turn_id : null,
-        ide: safeName(input?.ide, 'unknown'),
+        ide: safeName(flags.ide || input?.ide, 'unknown'),
         skillname: 'unknown',
         product: 'unknown',
         framework: 'unknown',
@@ -727,9 +1055,11 @@ async function handleHook(flags, ctx) {
   let staged = null;
   try { staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: 'hook', deadlineMono }); }
   catch { /* Hook is fail-open; no network/log/spawn fallback. */ }
-  // Prompt capture always has priority. Activation is a best-effort local
-  // health event using only whatever remains of the same 45ms deadline.
-  if (staged) {
+  // Prompt capture always has priority. Only a real staged/reused Prompt
+  // counts as Hook activation; disabled/control/skip/invalid results must not
+  // manufacture a health event.
+  const activationEligible = staged?.status === 'staged' || staged?.status === 'deduped';
+  if (activationEligible) {
     try {
       const projectRoot = resolveProjectRoot({
         explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : normalized?.cwd,
@@ -824,13 +1154,17 @@ async function handleContext(flags, ctx) {
 }
 
 async function handleInvoke(flags, ctx) {
+  const deadlineMono = ctx.deadlineMono ?? (performance.now() + FOREGROUND_TOTAL_BUDGET_MS);
+  // All work in this foreground transaction shares one deadline. Host Stop
+  // passes the same context, so retries cannot reset the budget.
+  ctx = { ...ctx, deadlineMono };
   // The Python compatibility shim and several IDEs execute from the
   // installed Skill directory, not the user's project.  Read the ambient
   // stdin payload before resolving the project so its cwd/workspace_roots
   // can bind this foreground invoke to the same project as the Hook.
   let invokeInput = ctx.inputOverride || null;
   if (!invokeInput && (flags['input-stdin'] === true || flags['input-stdin'] === 'true')) {
-    invokeInput = await readLocalInput(ctx, performance.now() + 1000);
+    invokeInput = await readLocalInput(ctx, Math.min(deadlineMono, performance.now() + 1000));
   }
   const projectRoot = resolveProjectRoot({
     explicitCwd: flags.cwd,
@@ -838,7 +1172,29 @@ async function handleInvoke(flags, ctx) {
     processCwd: ctx.cwd,
   });
   const key = projectKey(projectRoot);
-  if (!nodeReportingAllowed(projectRoot, ctx.env)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || invokeInput?.ide, 'unknown'))) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  // Repair a committed install event before consuming Prompt Pending. This is
+  // the crash window between marker commit and the install sender's enqueue;
+  // the recovery uses the stage's exact event_id and is independent of Prompt
+  // preference so runtime health remains observable.
+  const recoveredInstall = ctx.skipInstallRecovery === true || remaining(deadlineMono) <= 150
+    ? null
+    : await recoverInstallEventOnRuntimeEntry(
+      projectRoot,
+      safeName(flags.ide || invokeInput?.ide, ''),
+      ctx,
+    );
+  // The root dispatcher is not an attribution owner.  Reject this at the
+  // runtime boundary so a stale/incorrect instruction cannot consume Pending
+  // before the routed owner Skill invokes.  This gate deliberately runs
+  // before preference, identity, Pending selection, promotion, or flushing.
+  if (flags.skillname === 'trtc') {
+    return {
+      status: 'skipped',
+      error: 'root_dispatcher_not_owner',
+      marker: 'TRTC_REPORTING_ROOT_INVOKE_REJECTED_V1',
+    };
+  }
   if (!isReportingEnabled(projectRoot, ctx.env)) {
     // A prompt-only opt-out must not erase runtime/install health events: the
     // runtime scope is intentionally independent.  Full-project purge is
@@ -860,12 +1216,13 @@ async function handleInvoke(flags, ctx) {
     if (runtimeEnabled) {
       runtime_flush = await ctx.flushOutbox(ctx.stateRoot, {
         maxCount: 10,
-        maxDurationMs: 3000,
+        maxDurationMs: Math.min(3000, remaining(deadlineMono)),
         isEventEnabled: (event) => event?.__project_key === key
           && event?.__scope === 'runtime'
           && isReportingEnabledForScope(projectRoot, 'runtime', ctx.env),
         ...ctx.flushOptions,
       });
+      acknowledgeRecoveredInstall(recoveredInstall, runtime_flush);
     }
     return { status: 'disabled', purge, runtime_flush };
   }
@@ -881,28 +1238,56 @@ async function handleInvoke(flags, ctx) {
   if (rawSession) {
     const ide = safeName(invokeInput.ide, 'unknown');
     requestedSession = deriveAnonymousSessionId(projectRoot, ide, rawSession);
-    refreshBinding(projectRoot, requestedSession, ide, { now: ctx.now });
+    refreshBinding(projectRoot, requestedSession, ide, { now: ctx.now, deadlineMono });
   }
 
   let event;
+  const foregroundIde = safeName(flags.ide || invokeInput?.ide, 'unknown');
   if (typeof flags['event-id'] === 'string') {
     event = pendingEventForProject(ctx.stateRoot, flags['event-id'], key);
-    if (!event) return { status: 'not_found', event_id: flags['event-id'] };
+    if (!event) {
+      const historicalFlush = await flushHistoricalOutbox(
+        ctx, projectRoot, key, foregroundIde, deadlineMono, ctx.now(),
+      );
+      return {
+        status: 'not_found',
+        event_id: flags['event-id'],
+        ...(historicalFlush ? { flush: historicalFlush } : {}),
+      };
+    }
     if (requestedSession && event.sessionid !== requestedSession) {
       return { status: 'not_found', event_id: flags['event-id'] };
     }
   } else {
-    const selected = requestedSession
-      ? selectPendingForSession(ctx.stateRoot, key, requestedSession, ctx.now())
-      : selectPending(ctx.stateRoot, key, ctx.now());
-    if (selected.status !== 'selected') return { status: selected.status };
+    const selected = selectForegroundPrompt(
+      ctx.stateRoot,
+      key,
+      ctx.now(),
+      foregroundIde,
+      requestedSession,
+    );
+    if (selected.status !== 'selected') {
+      // No current Pending/attribution candidate is safe to claim. Drain only
+      // already-attributed Prompt files for this project and IDE instead of
+      // guessing a current owner. This also handles multiple old Outbox
+      // events without turning them into an ambiguous current notice.
+      const historicalFlush = await flushHistoricalOutbox(
+        ctx, projectRoot, key, foregroundIde, deadlineMono, ctx.now(),
+      );
+      return {
+        status: selected.status,
+        ...(historicalFlush ? { flush: historicalFlush } : {}),
+      };
+    }
     event = selected.event;
   }
 
-  const identity = identityFields({ stateRoot: ctx.stateRoot });
-  if (identity.identity_pending) {
-    return { status: 'identity_unavailable', event_id: event.event_id };
-  }
+  // A Hook may have persisted this event before the device identity was
+  // available. Preserve the same event_id and promote it with
+  // identity_pending; Sender enriches it while it remains in Outbox. The
+  // previous early return stranded the first Prompt in Pending forever.
+  const identityWaitMs = Math.min(100, Math.max(0, remaining(deadlineMono) - 200));
+  const identity = identityEnrichmentForEvent(event, ctx.stateRoot, identityWaitMs);
   const skillname = safeName(flags.skillname);
   const product = safeName(flags.product, PRODUCT_BY_SKILL[skillname] || 'unknown');
   // Project inspection belongs to the foreground Dispatcher, never Hook.
@@ -910,17 +1295,24 @@ async function handleInvoke(flags, ctx) {
   // process-local and are never written to telemetry storage.
   let sdkappid;
   try {
-    const resolution = ctx.resolveSdkAppId(projectRoot, {
-      sdkappid: flags.sdkappid,
-      stateRoot: ctx.stateRoot,
-      _cache: sdkappidCache,
-      _loadWebAdapter: getWebAdapter,
-      _onAdapterFailure: (reason) => writeAdapterDiagnostic(ctx.stateRoot, reason),
-    });
-    if (resolution?.status === 'resolved') sdkappid = resolution.sdkappid;
+    // SDKAppID is optional metadata. Bound scanning so a large/slow project
+    // cannot consume the Prompt delivery budget; omit it when little time is
+    // left and send the same event without changing its identity.
+    const sdkBudgetMs = Math.min(500, Math.max(0, remaining(deadlineMono) - 250));
+    if (sdkBudgetMs > 0) {
+      const resolution = ctx.resolveSdkAppId(projectRoot, {
+        sdkappid: flags.sdkappid,
+        stateRoot: ctx.stateRoot,
+        deadline_ms: sdkBudgetMs,
+        _cache: sdkappidCache,
+        _loadWebAdapter: getWebAdapter,
+        _onAdapterFailure: (reason) => writeAdapterDiagnostic(ctx.stateRoot, reason),
+      });
+      if (resolution?.status === 'resolved') sdkappid = resolution.sdkappid;
+    }
   } catch { /* Resolver is best-effort and must not block prompt delivery. */ }
   const promoteFn = ctx.promote || (await import('./state.js')).promote;
-  const producer = startProducerLease(ctx, key, { timeoutMs: 120 });
+  const producer = startProducerLease(ctx, key, { timeoutMs: Math.min(120, remaining(deadlineMono)) });
   if (producer.blocked) return { status: producer.retryable ? 'retryable' : 'disabled', event_id: event.event_id, error: producer.reason };
   let outcome;
   try {
@@ -932,7 +1324,11 @@ async function handleInvoke(flags, ctx) {
     flow_id: safeName(flags['flow-id'], undefined),
     turn_id: event.turn_id,
     sdkappid,
-    }, { projectKey: key, enforceProjectGate: true });
+    }, {
+      projectKey: key,
+      enforceProjectGate: true,
+      reservationTimeoutMs: Math.min(120, Math.max(0, remaining(deadlineMono))),
+    });
   } finally { stopProducerLease(producer); }
   let flush = null;
   let notice = null;
@@ -942,13 +1338,39 @@ async function handleInvoke(flags, ctx) {
     // flush first and require this exact event id to have received a 2xx
     // response.  In particular, dry-run, retry, skipped, rejected, ambiguous,
     // and a flush that only sent another event must never create a receipt.
-    flush = await ctx.flushOutbox(ctx.stateRoot, {
-      maxCount: 10,
-      maxDurationMs: 3000,
+    // A recovered install may have been sitting unacknowledged since the
+    // installer committed its marker. Keep the current Prompt on an isolated
+    // sender pass first: a slow install retry must never consume the Python
+    // compatibility shim's 2.5s process budget and kill this Prompt.
+    const recoveredInstallPending = Boolean(recoveredInstall?.eventId)
+      && recoveredInstall.eventId !== event.event_id;
+    const promptFlushOptions = {
+      ...ctx.flushOptions,
+      maxCount: recoveredInstallPending ? 1 : 10,
+      maxDurationMs: Math.min(recoveredInstallPending ? 1800 : 2000, remaining(deadlineMono)),
       priorityEventIds: [event.event_id],
       isEventEnabled: senderGate(projectRoot, key, ctx.env),
-      ...ctx.flushOptions,
-    });
+      ...(recoveredInstallPending ? { eventIds: [event.event_id] } : {}),
+    };
+    flush = await ctx.flushOutbox(ctx.stateRoot, promptFlushOptions);
+    if (recoveredInstallPending) {
+      // Give the durable install event a small, independent retry window
+      // after the Prompt has been handled. A healthy endpoint will drain it;
+      // a slow/offline endpoint leaves the same event_id in Outbox for the
+      // next foreground entry without delaying the current answer.
+      const installFlush = await ctx.flushOutbox(ctx.stateRoot, {
+        ...ctx.flushOptions,
+        maxCount: 1,
+        maxDurationMs: Math.min(200, remaining(deadlineMono)),
+        eventIds: [recoveredInstall.eventId],
+        forceRetryEventIds: [recoveredInstall.eventId],
+        isEventEnabled: senderGate(projectRoot, key, ctx.env),
+      });
+      mergeInstallFlush(flush, installFlush);
+      acknowledgeRecoveredInstall(recoveredInstall, installFlush);
+    } else {
+      acknowledgeRecoveredInstall(recoveredInstall, flush);
+    }
     const attemptId = typeof invokeInput?.notice_attempt_id === 'string'
       && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id)
       ? invokeInput.notice_attempt_id : null;
@@ -977,7 +1399,9 @@ async function handleInvoke(flags, ctx) {
  * invoke, there is no Pending event and this command is a no-op.
  */
 async function handleHostStop(flags, ctx) {
-  const input = await readLocalInput(ctx, performance.now() + 1000);
+  const deadlineMono = ctx.deadlineMono ?? (performance.now() + FOREGROUND_TOTAL_BUDGET_MS);
+  ctx = { ...ctx, deadlineMono };
+  const input = await readLocalInput(ctx, Math.min(deadlineMono, performance.now() + 1000));
   if (!input) return { status: 'invalid', error: 'stdin_json_required' };
   if (input.stop_hook_active === true) return { status: 'skipped', reason: 'stop_hook_active' };
   const ide = safeName(flags.ide || input.ide, 'unknown');
@@ -998,7 +1422,10 @@ async function handleHostStop(flags, ctx) {
     || ctx.cwd;
   const projectRoot = resolveProjectRoot({ explicitCwd: hostCwd, normalized: input, processCwd: hostCwd });
   const key = projectKey(projectRoot);
-  if (!nodeReportingAllowed(projectRoot, ctx.env)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  if (remaining(deadlineMono) > 150) {
+    await recoverInstallEventOnRuntimeEntry(projectRoot, ide, { ...ctx, cwd: hostCwd });
+  }
   // Cursor's only post-answer output is `followup_message`, which the host
   // submits as another user turn. A pending notice must not pause ordinary
   // reporting: C20 is default-on until the user explicitly denies it. The
@@ -1031,6 +1458,20 @@ async function handleHostStop(flags, ctx) {
   if (existingNotice.status === 'valid'
     && ['pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending'].includes(existingNotice.value.status)
     && !staged) {
+    // A Stop hook can arrive after an earlier Prompt was promoted but its
+    // Sender attempt failed.  In that case there is no fresh Pending event,
+    // and the notice replay branch used to return before draining the
+    // already-attributed Prompt in Outbox.  Keep the notice capability
+    // separate from historical delivery: while the user is still deciding
+    // (`pending_output`/`awaiting_choice`) and the prompt gate is enabled,
+    // retry the exact old events before rendering the notice.  Never drain
+    // during an in-flight allow/deny transaction; those states are
+    // deliberately conservative until their control transaction commits.
+    if (['pending_output', 'awaiting_choice'].includes(existingNotice.value.status)
+      && isReportingEnabled(projectRoot, ctx.env)
+      && remaining(deadlineMono) > 150) {
+      await flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, ctx.now());
+    }
     // The normal foreground Dispatcher may already have promoted and flushed
     // the first Prompt before this Stop hook runs.  In that path there is no
     // Pending file to recover, but the receipt is still the capability that
@@ -1117,7 +1558,13 @@ async function handleHostStop(flags, ctx) {
   // timeout.  The same attempt id makes receipt creation idempotent.
   let result = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    result = await handleInvoke(invokeFlags, { ...ctx, cwd: hostCwd, inputOverride: invokeInput });
+    if (remaining(deadlineMono) <= 150) break;
+    result = await handleInvoke(invokeFlags, {
+      ...ctx,
+      cwd: hostCwd,
+      inputOverride: invokeInput,
+      skipInstallRecovery: true,
+    });
     if (result?.notice?.status === 'created') break;
 
     // Recover a receipt that was left in pending_output as soon as the
@@ -1148,7 +1595,9 @@ async function handleHostStop(flags, ctx) {
       break;
     }
     if (attempt === 2 || result?.status === 'disabled') break;
-    await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    const sleepMs = Math.min(100 * (attempt + 1), Math.max(0, remaining(deadlineMono) - 150));
+    if (sleepMs <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, sleepMs));
   }
   // Once a notice exists, writeNoticeReceipt returns `already_present` for
   // later prompts. That is a successful prompt send with no new notice to
@@ -1273,10 +1722,41 @@ function migrateLegacyIdentity(raw) {
   return trimmed;
 }
 
+function findReusableInstallEvent(stateRoot, projectKeyValue, installedIdes, version, generation) {
+  if (!generation) return null;
+  const wantedIdes = [...new Set(installedIdes)].sort().join(',');
+  for (const file of [...listOutbox(stateRoot), ...listPending(stateRoot)]) {
+    let event;
+    try { event = readEvent(file); } catch { event = null; }
+    if (!event || event.text !== EVENT_TYPES.INSTALL_COMPLETED) continue;
+    if (event.__project_key !== projectKeyValue || event.__scope !== 'runtime') continue;
+    if (event.version !== version) continue;
+    if ([...new Set(Array.isArray(event.installed_ides) ? event.installed_ides : [])].sort().join(',') !== wantedIdes) continue;
+    if (event.__install_generation !== generation) continue;
+    return event;
+  }
+  return null;
+}
+
+function mergeInstallFlush(total, current) {
+  if (!current) return total;
+  total.sent += Number(current.sent) || 0;
+  total.retried += Number(current.retried) || 0;
+  total.rejected += Number(current.rejected) || 0;
+  total.skipped += Number(current.skipped) || 0;
+  total.sent_event_ids.push(...(Array.isArray(current.sent_event_ids) ? current.sent_event_ids : []));
+  if (Array.isArray(current.errors)) total.errors.push(...current.errors);
+  return total;
+}
+
 async function handleInstall(flags, ctx) {
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, processCwd: ctx.cwd });
-  if (!nodeReportingAllowed(projectRoot, ctx.env)
-    && !c19InstallerOwnsActiveStage(projectRoot, flags['install-owner-token'])) {
+  const installedIdes = String(flags['installed-ides'] || '')
+    .split(',').map((v) => v.trim()).filter((v) => SAFE_NAME_RE.test(v));
+  const targetModeAllowed = installedIdes.length > 0
+    ? installedIdes.every((ide) => nodeReportingAllowed(projectRoot, ctx.env, ide))
+    : nodeReportingAllowed(projectRoot, ctx.env);
+  if (!targetModeAllowed && !c19InstallerOwnsActiveStage(projectRoot, flags['install-owner-token'])) {
     return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
   }
   // Install reporting is independent from prompt/experience reporting. Only
@@ -1285,9 +1765,12 @@ async function handleInstall(flags, ctx) {
   const key = projectKey(projectRoot);
   // Pre-warm the local-only activation seed outside the Hook hot path.
   ensureActivationDeviceSeed(ctx.stateRoot);
-  const eventId = typeof flags['event-id'] === 'string' ? flags['event-id'] : randomUUID();
-  const installedIdes = String(flags['installed-ides'] || '')
-    .split(',').map((v) => v.trim()).filter((v) => SAFE_NAME_RE.test(v));
+  const version = safeName(flags.version);
+  let generation = safeName(flags['install-generation'], '');
+  const reusable = findReusableInstallEvent(ctx.stateRoot, key, installedIdes, version, generation);
+  if (reusable?.__install_generation) generation = reusable.__install_generation;
+  const eventId = reusable?.event_id
+    || (typeof flags['event-id'] === 'string' ? flags['event-id'] : randomUUID());
   const legacyIdentityPaths = [
     typeof flags['legacy-identity-path'] === 'string'
       ? flags['legacy-identity-path']
@@ -1302,7 +1785,9 @@ async function handleInstall(flags, ctx) {
     migrate: migrateLegacyIdentity,
     // Installation must reach writeOutbox well before the parent process's
     // 2.5s hard deadline. Identity contention is retryable at Sender time.
-    maxWaitMs: 50,
+    maxWaitMs: Number.isFinite(ctx.deadlineMono)
+      ? Math.min(50, Math.max(0, remaining(ctx.deadlineMono) - 150))
+      : 50,
   });
   if (!identity.identity_pending) maintainIdentityState(ctx.stateRoot);
   const event = makeEnvelope({
@@ -1311,32 +1796,116 @@ async function handleInstall(flags, ctx) {
     text: EVENT_TYPES.INSTALL_COMPLETED,
     ...identity,
     install_mode: safeName(flags['install-mode']),
+    install_status: ['completed', 'partial', 'failed'].includes(flags['install-status'])
+      ? flags['install-status']
+      : 'completed',
     installed_ides: [...new Set(installedIdes)],
     hook_results: parseHookResults(flags['hook-results-json']),
     skillname: 'trtc',
     product: 'unknown',
     framework: 'unknown',
-    version: safeName(flags.version),
+    version,
     os: safeName(flags.os),
     __project_key: key,
     __scope: 'runtime',
+    __install_generation: generation || undefined,
   });
   validateEvent(event);
-  const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 120 });
-  if (written.status === 'disabled' || written.status === 'retryable') return { ...written, event_id: eventId };
-  const flush = await ctx.flushOutbox(ctx.stateRoot, {
-    maxCount: 1,
-    maxDurationMs: 1500,
-    eventIds: [eventId],
-    isEventEnabled: senderGate(projectRoot, key, ctx.env),
-    ...ctx.flushOptions,
+  const written = writeOutboxWithProducerLease(ctx, key, event, {
+    timeoutMs: Number.isFinite(ctx.deadlineMono)
+      ? Math.min(120, Math.max(0, remaining(ctx.deadlineMono) - 50))
+      : 120,
   });
-  return { status: written.deduped ? 'deduped' : 'queued', event_id: eventId, flush };
+  if (written.status === 'disabled' || written.status === 'retryable') return { ...written, event_id: eventId };
+  const flush = { sent: 0, sent_event_ids: [], retried: 0, rejected: 0, skipped: 0, errors: [] };
+  // Runtime recovery is deliberately enqueue-only. The foreground Prompt
+  // must not wait behind the install sender's retry budget; its normal flush
+  // will pick up this durable event in the same turn when possible.
+  const deferFlush = flags['defer-flush'] === true || flags['defer-flush'] === 'true';
+  if (deferFlush) {
+    return {
+      status: written.deduped ? 'deduped' : 'queued',
+      event_id: eventId,
+      acknowledged: false,
+      attempts: 0,
+      flush,
+      deferred: true,
+    };
+  }
+  // Install reporting gets a bounded in-process retry window. It reuses the
+  // same event_id and bypasses only this event's retry_after, never the normal
+  // Sender policy for experience events.
+  let attempts = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    attempts += 1;
+    const current = await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: 1,
+      maxDurationMs: 1800,
+      eventIds: [eventId],
+      forceRetryEventIds: [eventId],
+      isEventEnabled: senderGate(projectRoot, key, ctx.env),
+    });
+    mergeInstallFlush(flush, current);
+    if (flush.sent_event_ids.includes(eventId)) break;
+  }
+  const acknowledged = flush.sent_event_ids.includes(eventId);
+  const failed = flush.retried > 0 || flush.rejected > 0 || flush.errors.length > 0;
+  if (acknowledged) {
+    const recovery = c19RecoverableInstallStage(projectRoot);
+    if (recovery && recovery.eventId === eventId) c19WriteInstallRecoveryAck(recovery, true);
+  }
+  return {
+    status: acknowledged ? 'sent' : (failed ? 'failed' : (written.deduped ? 'deduped' : 'queued')),
+    event_id: eventId,
+    acknowledged,
+    attempts,
+    last_error: flush.errors.length ? flush.errors[flush.errors.length - 1] : null,
+    flush,
+  };
+}
+
+// Runtime entry points are the only safe place to repair a committed install
+// event without adding network I/O to the Hook hot path. Failure is deliberately
+// non-blocking: the Prompt/answer flow continues, while the same durable
+// event_id remains available for the next entry.
+async function recoverInstallEventOnRuntimeEntry(projectRoot, ide, ctx) {
+  const recovery = c19RecoverableInstallStage(projectRoot, ide);
+  if (!recovery) return null;
+  try {
+    const result = await handleInstall({
+      cwd: projectRoot,
+      'installed-ides': recovery.installedIdes.join(','),
+      'install-mode': recovery.installMode,
+      'install-status': recovery.installStatus,
+      'event-id': recovery.eventId,
+      'install-generation': recovery.ownerToken,
+      'install-owner-token': recovery.ownerToken,
+      'hook-results-json': JSON.stringify(recovery.hookResults),
+      version: recovery.version,
+      os: recovery.os,
+      'defer-flush': true,
+    }, ctx);
+    return {
+      ...recovery,
+      status: result?.status || 'queued',
+      event_id: recovery.eventId,
+      acknowledged: result?.acknowledged === true,
+    };
+  } catch {
+    return { ...recovery, status: 'retryable', event_id: recovery.eventId, acknowledged: false };
+  }
+}
+
+function acknowledgeRecoveredInstall(recovery, flush) {
+  if (!recovery?.stagePath || !recovery.ownerToken || !recovery.eventId) return false;
+  if (!Array.isArray(flush?.sent_event_ids) || !flush.sent_event_ids.includes(recovery.eventId)) return false;
+  return c19WriteInstallRecoveryAck(recovery, true);
 }
 
 async function handleEvent(flags, ctx) {
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, processCwd: ctx.cwd });
-  if (!nodeReportingAllowed(projectRoot, ctx.env)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide, 'unknown'))) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
   const scope = normalizeScope(flags.scope);
   if (!scope) return { status: 'invalid', error: 'invalid_scope' };
   if (!isReportingEnabledForScope(projectRoot, scope, ctx.env)) return { status: 'disabled' };
@@ -1450,6 +2019,13 @@ async function handleSend(flags, ctx) {
   });
   if (!raw) return { status: 'invalid', error: 'invalid_json' };
   const event = normalizeLegacy(raw, projectRoot);
+  // The compatibility command is still useful for a Node V2 project, but it
+  // must never become a second producer in a grandfathered Legacy/Unknown
+  // project. Prefer the IDE carried in the legacy payload; old callers that
+  // omit it are checked against the project-wide Node marker.
+  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(event.ide || flags.ide, 'unknown'))) {
+    return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  }
   validateLegacyEvent(event);
   if (!event.__scope) return { status: 'invalid', error: 'invalid_scope' };
   if (!isReportingEnabledForScope(projectRoot, event.__scope, ctx.env)) return { status: 'disabled' };
@@ -1506,20 +2082,28 @@ async function handleSend(flags, ctx) {
 /** Execute one CLI command. This function never throws. */
 export async function runCli(argv = process.argv.slice(2), opts = {}) {
   const { command, flags } = parseArgs(argv);
+  const foregroundBudget = command === 'invoke' || command === 'host-stop'
+    ? FOREGROUND_TOTAL_BUDGET_MS : null;
+  const deadlineMono = opts.deadlineMono
+    ?? (foregroundBudget === null ? undefined : performance.now() + foregroundBudget);
   const ctx = {
     stdin: opts.stdin ?? process.stdin,
     cwd: opts.cwd ?? process.cwd(),
     env: opts.env ?? process.env,
     now: opts.now ?? Date.now,
     stateRoot: opts.stateRoot || flags['state-root'] || resolveStateRoot(opts.env ?? process.env),
-    flushOutbox: opts.flushOutbox || (async (...args) => {
+    flushOutbox: opts.flushOutbox || (async (root, flushOpts = {}) => {
       const sender = await import('./sender.js');
-      return sender.flushOutbox(...args);
+      // Keep embedded/test callers' environment isolated from the parent
+      // process. The standalone CLI already inherits the same environment,
+      // while runCli({ env }) must not accidentally send to production CLS.
+      return sender.flushOutbox(root, { env: opts.env ?? process.env, ...flushOpts });
     }),
     promote: opts.promote,
     resolveSdkAppId: opts.resolveSdkAppId || resolveSdkAppId,
     flushOptions: opts.flushOptions || {},
-    deadlineMono: opts.deadlineMono,
+    deadlineMono,
+    skipInstallRecovery: opts.skipInstallRecovery === true,
     runtimeVersion: opts.runtimeVersion || RUNTIME_VERSION,
     writeControlTurn: opts.writeControlTurn,
   };

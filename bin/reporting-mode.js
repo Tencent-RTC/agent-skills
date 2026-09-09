@@ -10,17 +10,42 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 
-const MODE_SCHEMA_VERSION = 1;
+const MODE_SCHEMA_VERSION = 2;
+const SUPPORTED_MODE_SCHEMA_VERSIONS = new Set([1, MODE_SCHEMA_VERSION]);
 const MODES = new Set(["node_v2", "legacy_mcp"]);
 const PROJECT_STATE_DIR = ".trtc-skill-state";
 const LEGACY_PROJECT_STATE_DIR = ".trtc-reporting";
 const INSTALL_STAGE = "install-stage.json";
 const INSTALL_LOCK = "install.lock";
 const INSTALL_GRACE_MS = 30_000;
+// Reporting dashboards may use a 24-hour ACK window. This constant remains
+// exported for compatibility, but it is deliberately not used to expire the
+// install event's idempotency identity; delayed retries keep the same ID.
+const INSTALL_EVENT_REUSE_TTL_MS = 24 * 60 * 60 * 1000;
 const LEGACY_NAME = "tencent-rtc-skill-tool";
 const LEGACY_ARGS = ["-y", "@tencent-rtc/skill-tool@latest"];
 const LEGACY_PERMITTED_KEYS = new Set(["command", "args", "type", "env"]);
 const STAGES = new Set(["started", "hooks", "instructions", "mcp", "complete"]);
+const INSTALL_MODES = new Set(["auto", "specific", "all"]);
+const SUPPORTED_IDES = Object.freeze(["claude", "cursor", "codebuddy", "codex"]);
+const IDE_LEGACY_ROOTS = Object.freeze({
+  claude: ".claude",
+  cursor: ".cursor",
+  codebuddy: ".codebuddy",
+  codex: ".codex",
+});
+const IDE_LEGACY_INSTRUCTIONS = Object.freeze({
+  claude: ["CLAUDE.md"],
+  cursor: [".cursor/rules/ui-mode.mdc"],
+  codebuddy: ["CODEBUDDY.md"],
+  codex: ["AGENTS.md"],
+});
+const IDE_LEGACY_HOOKS = Object.freeze({
+  claude: [".claude/settings.json"],
+  cursor: [".cursor/hooks.json"],
+  codebuddy: [".codebuddy/settings.json"],
+  codex: [".codex/hooks.json"],
+});
 
 function markerDir(projectRoot, { mode } = {}) {
   const root = path.resolve(projectRoot);
@@ -99,9 +124,18 @@ function safeReadJson(file) {
 
 function validMarker(value) {
   return !!value && typeof value === "object" && !Array.isArray(value) &&
-    value.schema_version === MODE_SCHEMA_VERSION && MODES.has(value.mode) &&
+    SUPPORTED_MODE_SCHEMA_VERSIONS.has(value.schema_version) && MODES.has(value.mode) &&
     typeof value.installer_version === "string" && value.installer_version.length <= 128 &&
-    typeof value.updated_at === "string" && value.updated_at.length > 0;
+    typeof value.updated_at === "string" && value.updated_at.length > 0 &&
+    (!Object.prototype.hasOwnProperty.call(value, "install_generation") ||
+      (typeof value.install_generation === "string" && /^[0-9a-f]{32}$/.test(value.install_generation))) &&
+    (!Object.prototype.hasOwnProperty.call(value, "install_ides") ||
+      (Array.isArray(value.install_ides) && value.install_ides.length > 0 &&
+       value.install_ides.every((ide) => SUPPORTED_IDES.includes(ide)) &&
+       new Set(value.install_ides).size === value.install_ides.length)) &&
+    (!Object.prototype.hasOwnProperty.call(value, "ide_modes") ||
+      (value.ide_modes && typeof value.ide_modes === "object" && !Array.isArray(value.ide_modes) &&
+       Object.entries(value.ide_modes).every(([ide, mode]) => SUPPORTED_IDES.includes(ide) && MODES.has(mode))));
 }
 
 function readInstallMarker(projectRoot) {
@@ -129,7 +163,24 @@ function readInstallStage(projectRoot) {
       !MODES.has(value.target_mode) || typeof value.stage !== "string" ||
       !STAGES.has(value.stage) || typeof value.owner_token !== "string" ||
       !/^[0-9a-f]{32}$/.test(value.owner_token) || !Number.isInteger(value.pid) || value.pid <= 0 ||
-      !Array.isArray(value.owned_files)) {
+      !Array.isArray(value.owned_files) ||
+      (value.install_event_id !== undefined && value.install_event_id !== null &&
+        (typeof value.install_event_id !== "string" || value.install_event_id.length > 128)) ||
+      (value.install_acknowledged !== undefined && typeof value.install_acknowledged !== "boolean") ||
+      (value.install_ides !== undefined &&
+        (!Array.isArray(value.install_ides) ||
+          value.install_ides.length === 0 ||
+          value.install_ides.some((ide) => !SUPPORTED_IDES.includes(ide)) ||
+          new Set(value.install_ides).size !== value.install_ides.length)) ||
+      (value.install_event_created_at !== undefined &&
+        (!Number.isFinite(value.install_event_created_at) || value.install_event_created_at <= 0)) ||
+      (value.install_mode !== undefined && !INSTALL_MODES.has(value.install_mode)) ||
+      (value.install_status !== undefined &&
+        !["completed", "partial", "failed"].includes(value.install_status)) ||
+      (value.install_os !== undefined &&
+        (typeof value.install_os !== "string" || value.install_os.length > 32)) ||
+      (value.install_hook_results !== undefined &&
+        (!value.install_hook_results || typeof value.install_hook_results !== "object" || Array.isArray(value.install_hook_results)))) {
     return { status: "invalid", reason: "malformed_stage" };
   }
   return { status: "valid", value };
@@ -233,18 +284,20 @@ function tomlHasOwnedMcp(file) {
   return command === "npx" && !!args;
 }
 
-function legacyMcpPaths({ home = os.homedir(), projectRoot } = {}) {
+function legacyMcpPaths({ home = os.homedir(), projectRoot, ide } = {}) {
   const root = path.resolve(projectRoot);
-  return [
-    path.join(root, ".mcp.json"),
-    path.join(home, ".cursor", "mcp.json"),
-    path.join(home, ".codebuddy", "mcp.json"),
-    path.join(home, ".codex", "config.toml"),
-  ];
+  const paths = {
+    claude: path.join(root, ".mcp.json"),
+    cursor: path.join(home, ".cursor", "mcp.json"),
+    codebuddy: path.join(home, ".codebuddy", "mcp.json"),
+    codex: path.join(home, ".codex", "config.toml"),
+  };
+  if (ide && paths[ide]) return [paths[ide]];
+  return SUPPORTED_IDES.map((name) => paths[name]);
 }
 
-function hasLegacyMcp({ home, projectRoot } = {}) {
-  return legacyMcpPaths({ home, projectRoot }).some((file) =>
+function hasLegacyMcp({ home, projectRoot, ide } = {}) {
+  return legacyMcpPaths({ home, projectRoot, ide }).some((file) =>
     file.endsWith("config.toml") ? tomlHasOwnedMcp(file) : jsonHasOwnedMcp(file));
 }
 
@@ -265,11 +318,14 @@ function containsLegacyInstruction(file) {
 
 function hasLegacyHookFootprint(projectRoot, { ides = ["claude", "cursor", "codebuddy", "codex"] } = {}) {
   const root = path.resolve(projectRoot);
-  const settings = [
-    ".claude/settings.json", ".cursor/hooks.json", ".codebuddy/settings.json", ".codex/hooks.json",
-  ];
+  const settings = ides.flatMap((ide) => IDE_LEGACY_HOOKS[ide] || []);
   return settings.some((file) => {
-    try { return /reporting\.py|tencent-rtc-skill-tool|skill_analysis/.test(fs.readFileSync(path.join(root, file), "utf8")); }
+    try {
+      const text = fs.readFileSync(path.join(root, file), "utf8");
+      const normalized = text.replace(/["']/g, "").replace(/\\/g, "/");
+      return /reporting\.py|tencent-rtc-skill-tool|skill_analysis/.test(normalized)
+        || /cursor-adapter\.py\s+bind-reporting-session\b/i.test(normalized);
+    }
     catch { return false; }
   });
 }
@@ -283,7 +339,7 @@ function hasLegacySkillFootprint(projectRoot, { ides = ["claude", "cursor", "cod
       && fs.existsSync(path.join(skill, "tools", "reporting.py"))
       && !fs.existsSync(path.join(skill, "runtime", "telemetry.cjs"));
   });
-  const instructionFiles = ["CLAUDE.md", "AGENTS.md", "CODEBUDDY.md", ".cursor/rules/ui-mode.mdc"];
+  const instructionFiles = ides.flatMap((ide) => IDE_LEGACY_INSTRUCTIONS[ide] || []);
   return oldSkill || instructionFiles.some((file) => containsLegacyInstruction(path.join(root, file)));
 }
 
@@ -295,17 +351,68 @@ function hasNodeFootprint(projectRoot, { ides = ["claude", "cursor", "codebuddy"
   });
 }
 
-function resolveReportingMode(projectRoot, { home = os.homedir(), ides, now = new Date() } = {}) {
+function normalizeTargetIdes({ ide, ides } = {}) {
+  if (ide === "all") return [...SUPPORTED_IDES];
+  const values = ide ? [ide] : Array.isArray(ides) && ides.length ? ides : SUPPORTED_IDES;
+  const unique = [...new Set(values)];
+  return unique.filter((value) => SUPPORTED_IDES.includes(value));
+}
+
+function legacyEvidenceForIde(projectRoot, home, ide) {
+  const legacySkill = hasLegacySkillFootprint(projectRoot, { ides: [ide] });
+  const legacyMcp = hasLegacyMcp({ home, projectRoot, ide });
+  const projectLegacyMcp = ide === "claude" && hasProjectLegacyMcp(projectRoot);
+  const legacyHook = hasLegacyHookFootprint(projectRoot, { ides: [ide] });
+  return {
+    ide,
+    legacy_skill: legacySkill,
+    legacy_mcp: legacyMcp,
+    legacy_hook: legacyHook,
+    complete: legacySkill && legacyMcp,
+    partial: projectLegacyMcp || legacySkill || legacyHook,
+    project_legacy_mcp: projectLegacyMcp,
+  };
+}
+
+function resolveReportingMode(projectRoot, { home = os.homedir(), ide, ides, upgradeIntent = false, includeDetails = false, now = new Date() } = {}) {
   const root = path.resolve(projectRoot);
+  const targetIdes = normalizeTargetIdes({ ide, ides });
+  const withDetails = (result) => includeDetails ? { ...result, ide_results: ideResults } : result;
   const marker = readInstallMarker(root);
-  const legacySkill = hasLegacySkillFootprint(root, { ides });
-  const legacyMcp = hasLegacyMcp({ home, projectRoot: root });
-  const projectLegacyMcp = hasProjectLegacyMcp(root);
-  const legacyFootprint = legacySkill && legacyMcp;
+  const ideResults = targetIdes.map((targetIde) => legacyEvidenceForIde(root, home, targetIde));
+  const legacyFootprint = ideResults.some((result) => result.complete);
+  const partialLegacy = ideResults.some((result) => result.partial && !result.complete);
   const stage = readInstallStage(root);
 
   if (marker.status === "invalid") return { mode: "unknown", reason: marker.reason };
   if (marker.status === "valid") {
+    const ideModes = marker.value?.ide_modes;
+    if (ideModes && marker.value.schema_version >= 2) {
+      const resolvedModes = targetIdes.map((targetIde) => {
+        const evidence = ideResults.find((result) => result.ide === targetIde) || {};
+        const mapped = ideModes[targetIde];
+        if (mapped === "node_v2") {
+          return evidence.project_legacy_mcp || (evidence.legacy_mcp && (evidence.legacy_skill || evidence.legacy_hook))
+            ? "unknown" : "node_v2";
+        }
+        if (mapped === "legacy_mcp") {
+          return upgradeIntent ? "node_v2" : "legacy_mcp";
+        }
+        if (evidence.complete) return upgradeIntent ? "node_v2" : "legacy_mcp";
+        if (evidence.partial) return "unknown";
+        return "node_v2";
+      });
+      if (resolvedModes.includes("unknown")) return withDetails({ mode: "unknown", reason: "ide_marker_conflict" });
+      if (resolvedModes.includes("node_v2") && resolvedModes.includes("legacy_mcp") && !upgradeIntent) {
+        return withDetails({ mode: "unknown", reason: "mixed_ide_modes" });
+      }
+      if (resolvedModes.length > 0 && resolvedModes.every((value) => value === "node_v2")) {
+        return withDetails({ mode: "node_v2", reason: upgradeIntent && resolvedModes.some((value) => value === "node_v2") ? "explicit_upgrade" : "ide_marker" });
+      }
+      if (resolvedModes.length > 0 && resolvedModes.every((value) => value === "legacy_mcp")) {
+        return withDetails({ mode: "legacy_mcp", reason: "ide_marker" });
+      }
+    }
     // A stable marker is authoritative for a completed install.  Only an
     // explicit old Hook plus old MCP is a contradiction; the current Node
     // instructions themselves still mention the Python compatibility shim,
@@ -315,16 +422,29 @@ function resolveReportingMode(projectRoot, { home = os.homedir(), ides, now = ne
     // only evidence when paired with an old project Hook/Skill; otherwise it
     // may belong to another project and must not taint a fresh install.
     if (marker.mode === "node_v2"
-      && (projectLegacyMcp || (legacyMcp && (legacySkill || hasLegacyHookFootprint(root, { ides }))))) {
+      && ideResults.some((result) => result.project_legacy_mcp || (result.legacy_mcp && (result.legacy_skill || result.legacy_hook)))) {
       return { mode: "unknown", reason: "marker_footprint_conflict" };
     }
-    return { mode: marker.mode, reason: "marker" };
+    if (marker.mode === "legacy_mcp" && upgradeIntent) {
+      return withDetails({ mode: "node_v2", reason: "explicit_upgrade" });
+    }
+    return withDetails({ mode: marker.mode, reason: "marker" });
   }
   if (stage.status === "invalid") return { mode: "unknown", reason: stage.reason };
   if (stage.status === "valid" && stage.value.target_mode === "node_v2") {
+    // An explicit legacy migration is not a resumable Node install for the
+    // runtime. Until the committed marker exists, every intermediate phase
+    // must fail safe so a crash cannot leave old and new reporting chains
+    // active together. The installer recovers this state before resolving
+    // its own explicit upgrade path.
+    if (stage.value.migration && !upgradeIntent) {
+      return withDetails({ mode: "unknown", reason: "migration_uncommitted" });
+    }
     const alive = isPidAlive(stage.value.pid);
     if (alive !== false) return { mode: "unknown", reason: alive === true ? "install_in_progress" : "install_owner_unknown" };
-    if (projectLegacyMcp || legacyFootprint || legacySkill) return { mode: "unknown", reason: "stage_footprint_conflict" };
+    if (ideResults.some((result) => result.project_legacy_mcp || result.complete || result.partial)) {
+      return withDetails({ mode: "unknown", reason: "stage_footprint_conflict" });
+    }
     if (!stageMinimumFootprint(root, stage.value.stage)
       || !sameOwnedFiles(stage.value.owned_files, ownedFilesSnapshot(root))) {
       return { mode: "unknown", reason: "stage_footprint_changed" };
@@ -333,11 +453,28 @@ function resolveReportingMode(projectRoot, { home = os.homedir(), ides, now = ne
     if (stage.value.stage === "started") return { mode: "node_v2", reason: "resume_stage" };
     return { mode: "unknown", reason: "stage_footprint_missing" };
   }
-  if (legacyFootprint) return { mode: "legacy_mcp", reason: "legacy_footprint" };
-  if (projectLegacyMcp) return { mode: "unknown", reason: "project_legacy_mcp" };
-  if (legacySkill && !legacyMcp) return { mode: "unknown", reason: "legacy_mcp_missing" };
+  if (legacyFootprint) {
+    if (upgradeIntent) return withDetails({ mode: "node_v2", reason: "explicit_upgrade" });
+    if (targetIdes.length > 1 && !ideResults.every((result) => result.complete || !result.partial)) {
+      return withDetails({ mode: "unknown", reason: "mixed_legacy_state" });
+    }
+    return withDetails({ mode: "legacy_mcp", reason: "legacy_footprint" });
+  }
+  // A deliberate `add` is also the repair entry for an incomplete legacy
+  // footprint. Without this explicit intent, the same evidence remains
+  // `unknown` and fail-safe; never auto-enable Node V2 during Runtime/Hook
+  // detection. Once the user explicitly upgrades, each affected IDE is
+  // handled as an independent migration target and can still be rolled back
+  // if its new Hook/configuration is not usable.
+  if (upgradeIntent && (partialLegacy || ideResults.some((result) => result.project_legacy_mcp))) {
+    return withDetails({ mode: "node_v2", reason: "explicit_upgrade" });
+  }
+  if (ideResults.some((result) => result.project_legacy_mcp)) {
+    return withDetails({ mode: "unknown", reason: "project_legacy_mcp" });
+  }
+  if (partialLegacy) return withDetails({ mode: "unknown", reason: "legacy_chain_incomplete" });
   // A user-level old MCP by itself does not make a new project legacy.
-  return { mode: "node_v2", reason: "fresh_project" };
+  return withDetails({ mode: "node_v2", reason: "fresh_project" });
 }
 
 function atomicJsonWrite(file, value) {
@@ -359,22 +496,64 @@ function atomicJsonWrite(file, value) {
   }
 }
 
-function writeInstallMarker(projectRoot, mode, { installerVersion = "unknown", now = new Date() } = {}) {
+function writeInstallMarker(projectRoot, mode, {
+  installerVersion = "unknown",
+  now = new Date(),
+  ides,
+  installGeneration,
+  installIdes,
+} = {}) {
   if (!MODES.has(mode)) throw new TypeError("only stable reporting modes may be committed");
   const dir = markerDir(projectRoot, { mode });
-  atomicJsonWrite(path.join(dir, "install-mode.json"), {
+  const markerFile = path.join(dir, "install-mode.json");
+  const previous = safeReadJson(markerFile);
+  const value = {
     schema_version: MODE_SCHEMA_VERSION,
     mode,
     installer_version: String(installerVersion).slice(0, 128),
     updated_at: new Date(now).toISOString(),
-  });
-  return path.join(dir, "install-mode.json");
+  };
+  const targets = Array.isArray(ides) ? [...new Set(ides)].filter((ide) => SUPPORTED_IDES.includes(ide)) : [];
+  const oldModes = previous.valid && validMarker(previous.value) && previous.value.ide_modes
+    ? { ...previous.value.ide_modes } : {};
+  if (targets.length > 0) {
+    for (const ide of targets) oldModes[ide] = mode;
+    value.ide_modes = oldModes;
+  } else if (previous.valid && validMarker(previous.value) && previous.value.ide_modes) {
+    value.ide_modes = { ...previous.value.ide_modes };
+  }
+  if (typeof installGeneration === "string" && /^[0-9a-f]{32}$/.test(installGeneration)) {
+    value.install_generation = installGeneration;
+  }
+  const committedIdes = Array.isArray(installIdes)
+    ? [...new Set(installIdes)].filter((ide) => SUPPORTED_IDES.includes(ide)).sort()
+    : [];
+  if (committedIdes.length > 0) value.install_ides = committedIdes;
+  atomicJsonWrite(markerFile, value);
+  return markerFile;
 }
 
-function writeInstallStage(projectRoot, targetMode, stage, { installerVersion = "unknown", ownerToken, ownerPid = process.pid, now = new Date() } = {}) {
+function writeInstallStage(projectRoot, targetMode, stage, {
+  installerVersion = "unknown",
+  ownerToken,
+  ownerPid = process.pid,
+  now = new Date(),
+  migration,
+  installEventId,
+  installAcknowledged,
+  installIdes,
+  installEventCreatedAt,
+  installMode,
+  installStatus,
+  installHookResults,
+  installOs,
+} = {}) {
   if (!MODES.has(targetMode)) throw new TypeError("invalid install stage mode");
   const token = ownerToken || crypto.randomBytes(16).toString("hex");
-  atomicJsonWrite(stagePath(projectRoot), {
+  const previous = safeReadJson(stagePath(projectRoot));
+  const sameGeneration = previous.valid && previous.value &&
+    previous.value.owner_token === token;
+  const value = {
     schema_version: MODE_SCHEMA_VERSION,
     target_mode: targetMode,
     stage: String(stage),
@@ -383,7 +562,53 @@ function writeInstallStage(projectRoot, targetMode, stage, { installerVersion = 
     pid: ownerPid,
     updated_at: new Date(now).toISOString(),
     owned_files: ownedFilesSnapshot(projectRoot),
-  });
+  };
+  // Stage writes are full replacements. Carry the durable install identity
+  // forward when a caller updates only the lifecycle stage; otherwise a crash
+  // between hooks/instructions/MCP phases would lose the event_id needed for
+  // an idempotent install retry.
+  if (sameGeneration) {
+    if (installEventId === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_event_id")) {
+      installEventId = previous.value.install_event_id;
+    }
+    if (installAcknowledged === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_acknowledged")) {
+      installAcknowledged = previous.value.install_acknowledged;
+    }
+    if (installIdes === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_ides")) {
+      installIdes = previous.value.install_ides;
+    }
+    if (installEventCreatedAt === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_event_created_at")) {
+      installEventCreatedAt = previous.value.install_event_created_at;
+    }
+    if (installMode === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_mode")) {
+      installMode = previous.value.install_mode;
+    }
+    if (installStatus === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_status")) {
+      installStatus = previous.value.install_status;
+    }
+    if (installHookResults === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_hook_results")) {
+      installHookResults = previous.value.install_hook_results;
+    }
+    if (installOs === undefined && Object.prototype.hasOwnProperty.call(previous.value, "install_os")) {
+      installOs = previous.value.install_os;
+    }
+  }
+  if (migration !== undefined) value.migration = migration;
+  if (installEventId !== undefined) value.install_event_id = installEventId;
+  if (installAcknowledged !== undefined) value.install_acknowledged = Boolean(installAcknowledged);
+  if (installIdes !== undefined) {
+    value.install_ides = [...new Set(installIdes)]
+      .filter((ide) => SUPPORTED_IDES.includes(ide))
+      .sort();
+  }
+  if (installEventCreatedAt !== undefined) {
+    value.install_event_created_at = installEventCreatedAt;
+  }
+  if (installMode !== undefined) value.install_mode = installMode;
+  if (installStatus !== undefined) value.install_status = installStatus;
+  if (installHookResults !== undefined) value.install_hook_results = installHookResults;
+  if (installOs !== undefined) value.install_os = String(installOs).slice(0, 32);
+  atomicJsonWrite(stagePath(projectRoot), value);
   return { path: stagePath(projectRoot), ownerToken: token };
 }
 
@@ -456,6 +681,7 @@ function releaseProjectInstallLock(lock, { force = false } = {}) {
 module.exports = {
   MODE_SCHEMA_VERSION,
   MODES,
+  INSTALL_EVENT_REUSE_TTL_MS,
   PROJECT_STATE_DIR,
   LEGACY_PROJECT_STATE_DIR,
   markerDir,
