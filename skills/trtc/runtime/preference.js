@@ -31,18 +31,22 @@ import {
   CONTROL_RETRY,
   DISABLED,
   DISABLE_RETRY,
+  NOTICE_ATTEMPT_MAX_AGE_MS,
+  acquireProjectAdmissionReservation,
   acquireControlReservation,
   controlKey,
   isCanonicalOption,
   readControlTurn,
   readDenyTombstone,
   readNoticeReceipt,
+  recordNoticeRetry,
   quarantineDenyTombstone,
   releaseControlReservation,
   updateNoticeStatus,
   writeControlTurn,
   writeDenyTombstone,
   writeDenyTombstoneFromHook,
+  releaseProjectAdmissionReservation,
 } from './control.js';
 import { projectStateDirs, resolveProjectStateDir } from './project-state.js';
 
@@ -54,6 +58,63 @@ const LOCK_FILE = '.pref-owner.json';
 const LOCK_GRACE_FOREGROUND_MS = 5000;
 
 const VALID_CONTINUATION_CHOICES = new Set(['unanswered', 'allowed', 'denied']);
+
+function noticeCapabilityFresh(receipt) {
+  if (receipt?.status !== 'valid') return false;
+  const state = receipt.value?.status;
+  // Once a choice has been durably accepted, its transaction is a recovery
+  // obligation rather than a fresh authorization capability.  It remains
+  // resumable after the seven-day capability window so a crash or a failed
+  // preference/notice write cannot strand the project in a half-applied state.
+  if (['allow_pending', 'deny_pending'].includes(state)) return true;
+  if (!['pending_output', 'awaiting_choice'].includes(state)) return true;
+  return Number.isFinite(receipt.value.created_at)
+    && Date.now() - receipt.value.created_at <= NOTICE_ATTEMPT_MAX_AGE_MS;
+}
+
+function controlTurnAccepted(turn, choice) {
+  if (turn?.status !== 'valid' || turn.value?.control_kind !== choice) return false;
+  return choice === 'allowed'
+    ? ['allowed_pending', 'allowed', 'retryable'].includes(turn.value.control_status)
+    : ['deny_pending', 'denied', 'retryable'].includes(turn.value.control_status);
+}
+
+function acceptedControlFact(stateRoot, key, choice, turn = null, tombstone = null) {
+  if (controlTurnAccepted(turn || readControlTurn(stateRoot, key, controlKey(key, choice)), choice)) return true;
+  // The bounded Hook deny path can durably create the kill-switch tombstone
+  // before the foreground process writes its replay turn. Treat that as an
+  // accepted deny transaction even when the notice capability has expired.
+  return choice === 'denied'
+    && (tombstone || readDenyTombstone(stateRoot, key)).status === 'valid';
+}
+
+// A deny is a kill-switch transaction.  Serialize only the short tombstone
+// write with Prompt admission; do not hold this lock while preference writes,
+// queue purging, or network/sender work waits for existing producers.
+function writeDenyWithAdmission(stateRoot, key, controlKeyValue, opts = {}) {
+  const hook = opts.source === 'hook';
+  const requested = Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : (hook ? 25 : 120);
+  const deadlineMono = Number.isFinite(opts.deadlineMono)
+    ? opts.deadlineMono : performance.now() + requested;
+  const lock = acquireProjectAdmissionReservation(stateRoot, key, {
+    timeoutMs: Math.min(requested, Math.max(0, deadlineMono - performance.now())),
+    deadlineMono,
+    _hookMode: hook,
+  });
+  if (!lock) return { status: hook ? 'retryable' : 'error', reason: 'admission_busy' };
+  try {
+    const writerOpts = {
+      ...opts,
+      timeoutMs: Math.min(requested, Math.max(0, deadlineMono - performance.now())),
+      deadlineMono,
+    };
+    return hook
+      ? writeDenyTombstoneFromHook(stateRoot, key, controlKeyValue, writerOpts)
+      : writeDenyTombstone(stateRoot, key, controlKeyValue, writerOpts);
+  } finally {
+    releaseProjectAdmissionReservation(lock);
+  }
+}
 
 const OFF_TEXTS = new Set([
   '关闭体验上报', '停止体验上报', '关闭提示词上报', '停止提示词上报',
@@ -516,18 +577,66 @@ export function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
  * from changing reporting state in an unrelated conversation.
  */
 export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
-  const choice = isCanonicalOption(text);
+  const explicit = opts.controlChoice ?? opts.control_choice;
+  const choice = explicit === 'allow'
+    ? 'allowed'
+    : explicit === 'deny'
+      ? 'denied'
+      : explicit === 'ambiguous'
+        ? 'ambiguous'
+        : isCanonicalOption(text);
   // Non-control text remains on the ordinary Prompt path.  Canonical labels
   // are checked against a project-scoped notice below; without that receipt
   // they also remain ordinary Prompt text.
   if (!choice) return null;
   if (!opts.stateRoot) return { status: 'control_retry', control: true, marker: CONTROL_RETRY };
   const key = projectKey(projectRoot);
+
+  // Ambiguous intent is deliberately a local, non-blocking transition.  It
+  // never changes the reporting preference: the default remains enabled.  A
+  // successful transition closes the current notice so a later foreground
+  // entry does not ask the same question again.  If the single authoritative
+  // notice file cannot be updated, keep ordinary Prompt delivery flowing and
+  // retry the same-file transition after a bounded backoff.
+  if (choice === 'ambiguous') {
+    const notice = readNoticeReceipt(opts.stateRoot, key);
+    if (notice.status === 'missing') return null;
+    if (notice.status === 'corrupt') return { status: 'control_continue', control: true, defaulted: false, notice_error: 'notice_corrupt' };
+    if (!['pending_output', 'awaiting_choice'].includes(notice.value.status)) {
+      return { status: 'control_continue', control: true, defaulted: notice.value.status === 'defaulted' };
+    }
+    if (Number.isFinite(notice.value.choice_next_retry_at)
+      && notice.value.choice_next_retry_at > Date.now()) {
+      return { status: 'control_continue', control: true, defaulted: false, retry_suppressed: true };
+    }
+    const writeNotice = typeof opts._updateNoticeStatus === 'function'
+      ? opts._updateNoticeStatus : updateNoticeStatus;
+    const persisted = writeNotice(opts.stateRoot, key, notice.value.status, 'defaulted');
+    if (['updated', 'conflict'].includes(persisted.status)) {
+      return { status: 'control_continue', control: true, defaulted: true };
+    }
+    const retry = recordNoticeRetry(
+      opts.stateRoot, key, notice.value.status,
+      persisted.reason || 'notice_defaulted_write_failed', opts,
+    );
+    return {
+      status: 'control_continue', control: true, defaulted: false,
+      defaulted_retry: retry.status,
+      notice_error: persisted.reason || 'notice_defaulted_write_failed',
+    };
+  }
   const ckey = controlKey(key, choice);
   // Test-only seam for deterministic write-failure coverage. Production
   // callers leave this unset and use the shared control writer directly.
   const writeTurn = typeof opts._writeControlTurn === 'function'
     ? opts._writeControlTurn : writeControlTurn;
+  // The preference is the authoritative user-facing choice.  Control-turn
+  // and notice files are replay/transport bookkeeping and may be unavailable
+  // in a desktop sandbox.  Keep an injectable writer for deterministic
+  // failure tests, but never let a best-effort auxiliary write erase an
+  // already durable choice.
+  const writeNotice = typeof opts._updateNoticeStatus === 'function'
+    ? opts._updateNoticeStatus : updateNoticeStatus;
   const retry = (marker = CONTROL_RETRY) => ({
     status: 'control_retry', control: true, marker,
   });
@@ -538,12 +647,20 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     const deadlineMono = Number.isFinite(opts.deadlineMono)
       ? opts.deadlineMono : performance.now() + (opts.timeoutMs ?? 25);
     const notice = readNoticeReceipt(opts.stateRoot, key);
+    const turn = readControlTurn(opts.stateRoot, key, ckey);
+    const tombstone = readDenyTombstone(opts.stateRoot, key);
     if (performance.now() > deadlineMono) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
+    if (tombstone.status === 'valid') return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
     // A familiar phrase in an unrelated conversation is ordinary Prompt
     // text. Only a live project-scoped notice can authorize the control path.
-    if (notice.status !== 'valid' || !['awaiting_choice', 'deny_pending'].includes(notice.value.status)) return null;
-    const tomb = writeDenyTombstoneFromHook(opts.stateRoot, key, ckey, {
+    if (!noticeCapabilityFresh(notice) && !acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone)) return null;
+    if (notice.status !== 'valid'
+      || !['pending_output', 'awaiting_choice', 'deny_pending'].includes(notice.value?.status)) return null;
+    const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, {
+      ...opts,
+      source: 'hook',
       timeoutMs: Math.max(0, Math.min(25, deadlineMono - performance.now())),
+      deadlineMono,
     });
     if (['pending', 'already_present'].includes(tomb.status)) {
       return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
@@ -560,10 +677,16 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     const deadlineMono = Number.isFinite(opts.deadlineMono)
       ? opts.deadlineMono : performance.now() + (opts.timeoutMs ?? 25);
     const notice = readNoticeReceipt(opts.stateRoot, key);
+    const turn = readControlTurn(opts.stateRoot, key, ckey);
+    const tombstone = readDenyTombstone(opts.stateRoot, key);
     if (performance.now() > deadlineMono) return { status: 'control_retry', control: true, marker: ALLOW_RETRY };
-    if (notice.status === 'corrupt') return { status: 'control_retry', control: true, marker: ALLOW_RETRY };
-    if (notice.status !== 'valid') return null;
-    if (!['awaiting_choice', 'allow_pending'].includes(notice.value.status)) return null;
+    const accepted = acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone);
+    if (notice.status === 'corrupt' && !accepted) return { status: 'control_retry', control: true, marker: ALLOW_RETRY };
+    if (!noticeCapabilityFresh(notice) && !accepted) return null;
+    // A global deny always wins over a stale or in-flight allow replay.
+    if (tombstone.status === 'valid') return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
+    if (!['pending_output', 'awaiting_choice', 'allow_pending'].includes(notice.value?.status)
+      && !accepted) return null;
     return { status: 'control_in_progress', control: true, marker: ALLOW_RETRY };
   }
   // Fast negative path for the overwhelmingly common case: no notice and no
@@ -573,10 +696,22 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
   // no directory scan or mutation occurs here.
   const preNotice = readNoticeReceipt(opts.stateRoot, key);
   const preTurn = readControlTurn(opts.stateRoot, key, ckey);
-  if (preNotice.status === 'missing' && preTurn.status === 'missing') return null;
+  const preTombstone = readDenyTombstone(opts.stateRoot, key);
+  if (preNotice.status === 'missing' && preTurn.status === 'missing'
+    && !(choice === 'denied' && preTombstone.status === 'valid')) return null;
   if (preNotice.status === 'corrupt' || preTurn.status === 'corrupt') return retry();
+  // A notice attempt is a seven-day capability. An old localized label is
+  // ordinary user text (or an explicit enum control retry), never permission
+  // to change the current project preference.
+  if (preNotice.status === 'valid' && !noticeCapabilityFresh(preNotice)
+    && !acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone)) {
+    // A deny tombstone is the global kill switch even if a stale allow label
+    // is presented later; let the locked path return the disabled marker.
+    if (choice === 'allowed' && preTombstone.status === 'valid') return retry(DISABLE_RETRY);
+    return null;
+  }
   if (preTurn.status === 'missing' && preNotice.status === 'valid'
-    && !['awaiting_choice', 'allow_pending', 'deny_pending'].includes(preNotice.value.status)) return null;
+    && !['pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending'].includes(preNotice.value.status)) return null;
   const finishAllowed = () => {
     // `allowed_pending` is deliberately resumable.  It can be left behind by
     // a crash or a failed preference write between the durable control-turn
@@ -584,7 +719,13 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     const persisted = setContinuationChoiceLocked(projectRoot, 'allowed', opts);
     if (persisted.action !== 'updated') return retry(ALLOW_RETRY);
     const finalLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-    if (!finalLock) return retry(ALLOW_RETRY);
+    if (!finalLock) {
+      return {
+        status: 'control_in_progress', control: true, marker: ALLOWED,
+        control_turn_persisted: false,
+        control_turn_error: 'control_busy',
+      };
+    }
     let committed = false;
     try {
       const final = writeTurn(opts.stateRoot, key, ckey, {
@@ -592,20 +733,38 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
       });
       committed = ['updated', 'created', 'already_present'].includes(final.status);
     } finally { releaseControlReservation(finalLock); }
-    if (!committed) return retry(ALLOW_RETRY);
-    // Do not hold the control reservation while updateNoticeStatus acquires
-    // it again.  A failed notice update remains retryable on the next turn.
+    // The preference above is the user-facing source of truth.  If the
+    // auxiliary replay turn cannot be finalized, do not turn a completed
+    // allow into an endless privacy prompt; report the diagnostic and let a
+    // later foreground entry repair the replay file.
+    const result = {
+      status: 'control_in_progress', control: true, marker: ALLOWED,
+      control_turn_persisted: committed,
+      ...(committed ? {} : { control_turn_error: 'control_write_failed' }),
+    };
+    // Do not hold the control reservation while the notice writer acquires
+    // it again. A failed notice update is also auxiliary: the durable
+    // preference must suppress all future re-prompts.
     const currentNotice = readNoticeReceipt(opts.stateRoot, key);
     const expected = currentNotice.status === 'valid'
       ? currentNotice.value.status : null;
-    if (expected && !['awaiting_choice', 'allow_pending', 'allowed'].includes(expected)) {
-      return retry(ALLOW_RETRY);
+    if (expected && !['pending_output', 'awaiting_choice', 'allow_pending', 'allowed'].includes(expected)) {
+      return {
+        ...result,
+        notice_persisted: false,
+        notice_error: 'notice_state_conflict',
+      };
     }
     if (expected && expected !== 'allowed') {
-      const done = updateNoticeStatus(opts.stateRoot, key, expected, 'allowed');
-      if (!['updated', 'conflict'].includes(done.status)) return retry(ALLOW_RETRY);
+      const done = writeNotice(opts.stateRoot, key, expected, 'allowed');
+      return {
+        ...result,
+        notice_persisted: ['updated', 'conflict'].includes(done.status),
+        ...(['updated', 'conflict'].includes(done.status)
+          ? {} : { notice_error: done.reason || 'notice_write_failed' }),
+      };
     }
-    return { status: 'control_in_progress', control: true, marker: ALLOWED };
+    return { ...result, notice_persisted: true };
   };
   const completeDenied = () => {
     // A Hook tombstone is intentionally only close-durable.  Before the
@@ -613,7 +772,7 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     // emit the terminal marker, re-open the existing tombstone through the
     // durable writer.  This fsyncs the file and its directory; a close-only
     // artifact must never be treated as a completed deny.
-    const durableTombstone = writeDenyTombstone(opts.stateRoot, key, ckey);
+    const durableTombstone = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
     if (!['created', 'already_present'].includes(durableTombstone.status)) {
       return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
     }
@@ -636,12 +795,44 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     if (!['updated', 'created', 'already_present'].includes(final.status)) {
       return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
     }
-    const done = updateNoticeStatus(opts.stateRoot, key, 'deny_pending', 'denied');
+    const done = writeNotice(opts.stateRoot, key, 'deny_pending', 'denied');
     if (!['updated', 'conflict'].includes(done.status)) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
     return { status: 'control_in_progress', control: true, marker: DISABLED };
   };
   let lock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-  if (!lock) return retry();
+  if (!lock) {
+    // The foreground allow is already backed by a fresh, project-scoped
+    // notice receipt.  A short-lived control-lock collision must not turn a
+    // successful user choice into an endless re-prompt (this is observable in
+    // Codex when a Hook and the foreground shim finish at the same time).
+    // Persist the authoritative preference directly and treat the replay
+    // turn/notice close as auxiliary; the next foreground entry can repair
+    // those files.  Deny remains fail-closed while a tombstone is present.
+    const allowable = choice === 'allowed'
+      && opts.source !== 'hook'
+      && preNotice.status === 'valid'
+      && (noticeCapabilityFresh(preNotice)
+        || acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone))
+      && preTombstone.status !== 'valid'
+      && preTombstone.status !== 'corrupt';
+    if (!allowable) return retry();
+    const persisted = setContinuationChoiceLocked(projectRoot, 'allowed', opts);
+    if (persisted.action !== 'updated') return retry(ALLOW_RETRY);
+    const expected = preNotice.value.status;
+    const done = expected === 'allowed'
+      ? { status: 'conflict' }
+      : writeNotice(opts.stateRoot, key, expected, 'allowed');
+    return {
+      status: 'control_in_progress',
+      control: true,
+      marker: ALLOWED,
+      control_turn_persisted: false,
+      notice_persisted: ['updated', 'conflict'].includes(done.status),
+      ...(done.status === 'updated' || done.status === 'conflict'
+        ? {} : { notice_error: done.reason || 'notice_write_failed' }),
+      control_turn_error: 'control_busy',
+    };
+  }
   let receipt;
   let turn;
   let tombstone;
@@ -650,6 +841,13 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     receipt = notice.status === 'valid' ? notice.value : null;
     tombstone = readDenyTombstone(opts.stateRoot, key);
     turn = readControlTurn(opts.stateRoot, key, ckey);
+    if (notice.status === 'valid' && !noticeCapabilityFresh(notice)
+      && !acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone)) {
+      if (choice === 'allowed' && tombstone.status === 'valid') {
+        return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
+      }
+      return null;
+    }
     // Any deny fact wins over an allow replay.  A malformed/foreign
     // tombstone is also fail-closed and must not be guessed around.
     if (tombstone.status === 'valid' || tombstone.status === 'corrupt') {
@@ -666,7 +864,7 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
           if (!['quarantined', 'missing'].includes(quarantined.status)) {
             return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
           }
-          const recreated = writeDenyTombstone(opts.stateRoot, key, ckey);
+          const recreated = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
           if (!['created', 'already_present'].includes(recreated.status)) {
             return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
           }
@@ -695,7 +893,7 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
           if (!created) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
           const currentNotice = readNoticeReceipt(opts.stateRoot, key);
           if (currentNotice.status === 'valid' && currentNotice.value.status === 'awaiting_choice') {
-            const advanced = updateNoticeStatus(opts.stateRoot, key, 'awaiting_choice', 'deny_pending');
+            const advanced = writeNotice(opts.stateRoot, key, 'awaiting_choice', 'deny_pending');
             if (!['updated', 'conflict'].includes(advanced.status)) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
           }
           return completeDenied();
@@ -725,16 +923,13 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
       // text.  Do not swallow it or mutate reporting state globally.
       return null;
     }
-    if (receipt.status === 'pending_output') {
+    if (!['pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending'].includes(receipt.status)) {
       return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
     }
-    if (!['awaiting_choice', 'allow_pending', 'deny_pending'].includes(receipt.status)) {
+    if (choice === 'allowed' && !['pending_output', 'awaiting_choice'].includes(receipt.status)) {
       return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
     }
-    if (choice === 'allowed' && receipt.status !== 'awaiting_choice') {
-      return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === 'denied' && receipt.status !== 'awaiting_choice') {
+    if (choice === 'denied' && !['pending_output', 'awaiting_choice'].includes(receipt.status)) {
       return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
     }
     if (choice === 'allowed') {
@@ -743,20 +938,50 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
         control_kind: choice, control_status: 'allowed_pending',
       }, { firstWriter: true });
       if (!['created', 'already_present'].includes(created.status)) {
-        return { status: 'control_retry', control: true, marker: CONTROL_RETRY };
+        // The replay file is auxiliary to the actual user choice.  Some
+        // hosts can write the existing control directory but cannot create
+        // its first control-turns child (for example a desktop sandbox).
+        // Persist the choice and close the notice before returning so the
+        // user is not asked again every foreground turn.  A later entry can
+        // still recreate the replay file when the directory becomes
+        // writable.
+        releaseControlReservation(lock); lock = null;
+        const persisted = setContinuationChoiceLocked(projectRoot, 'allowed', opts);
+        if (persisted.action !== 'updated') return retry(ALLOW_RETRY);
+        const currentNotice = readNoticeReceipt(opts.stateRoot, key);
+        const expected = currentNotice.status === 'valid' ? currentNotice.value.status : null;
+        if (expected && expected !== 'allowed') {
+          const done = writeNotice(opts.stateRoot, key, expected, 'allowed');
+          // The project preference was already durably written.  A notice
+          // receipt that cannot be closed is recoverable bookkeeping, not a
+          // reason to ask the user again on every subsequent Prompt.
+          return {
+            status: 'control_in_progress',
+            control: true,
+            marker: ALLOWED,
+            control_turn_persisted: false,
+            notice_persisted: ['updated', 'conflict'].includes(done.status),
+            notice_error: ['updated', 'conflict'].includes(done.status) ? undefined : (done.reason || 'notice_write_failed'),
+            control_turn_error: created.reason || 'control_turn_unavailable',
+          };
+        }
+        return {
+          status: 'control_in_progress',
+          control: true,
+          marker: ALLOWED,
+          control_turn_persisted: false,
+          control_turn_error: created.reason || 'control_turn_unavailable',
+        };
       }
       releaseControlReservation(lock); lock = null;
-      const advanced = updateNoticeStatus(opts.stateRoot, key, receipt.status, 'allow_pending');
-      if (!['updated', 'conflict'].includes(advanced.status)) {
-        return { status: 'control_retry', control: true, marker: CONTROL_RETRY };
-      }
+      // Do not advance to allow_pending before the authoritative preference
+      // is written.  `finishAllowed()` persists the choice first, then
+      // closes the auxiliary replay/notice records best-effort.
     } else {
       // Deny is ordered tombstone → replay control → notice.  This ensures a
       // crash after the kill switch is durable can always be resumed.
       releaseControlReservation(lock); lock = null;
-      const tomb = opts.source === 'hook'
-        ? writeDenyTombstoneFromHook(opts.stateRoot, key, ckey, { timeoutMs: opts.timeoutMs ?? 25 })
-        : writeDenyTombstone(opts.stateRoot, key, ckey);
+      const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
       if (!(opts.source === 'hook' ? ['pending', 'already_present'].includes(tomb.status) : ['created', 'already_present'].includes(tomb.status))) {
         return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
       }
@@ -773,7 +998,7 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
           return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
         }
       } finally { releaseControlReservation(controlLock); }
-      const advanced = updateNoticeStatus(opts.stateRoot, key, receipt.status, 'deny_pending');
+      const advanced = writeNotice(opts.stateRoot, key, receipt.status, 'deny_pending');
       if (!['updated', 'conflict'].includes(advanced.status)) {
         return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
       }
@@ -792,7 +1017,7 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
   // the Python shim.  This keeps the hot path bounded while making replay
   // deterministic and preventing the choice from entering telemetry.
   if (opts.source === 'hook') return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
-  const tomb = writeDenyTombstone(opts.stateRoot, key, ckey);
+  const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
   if (!['created', 'already_present'].includes(tomb.status)) {
     return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
   }

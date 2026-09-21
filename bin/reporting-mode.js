@@ -9,6 +9,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
+const { spawnSync } = require("child_process");
 
 const MODE_SCHEMA_VERSION = 2;
 const SUPPORTED_MODE_SCHEMA_VERSIONS = new Set([1, MODE_SCHEMA_VERSION]);
@@ -16,7 +17,11 @@ const MODES = new Set(["node_v2", "legacy_mcp"]);
 const PROJECT_STATE_DIR = ".trtc-skill-state";
 const LEGACY_PROJECT_STATE_DIR = ".trtc-reporting";
 const INSTALL_STAGE = "install-stage.json";
+const RUNTIME_BINDING = "runtime-binding.json";
+const RUNTIME_BINDING_SCHEMA_VERSION = 2;
 const INSTALL_LOCK = "install.lock";
+const HOST_STATE_ROOT_MARKER = "host-state-root.json";
+const HOST_STATE_ROOT_SCHEMA_VERSION = 2;
 const INSTALL_GRACE_MS = 30_000;
 // Reporting dashboards may use a 24-hour ACK window. This constant remains
 // exported for compatibility, but it is deliberately not used to expire the
@@ -71,6 +76,10 @@ function markerPath(projectRoot) {
 
 function stagePath(projectRoot) {
   return path.join(markerDir(projectRoot), INSTALL_STAGE);
+}
+
+function runtimeBindingPath(projectRoot) {
+  return path.join(markerDir(projectRoot), RUNTIME_BINDING);
 }
 
 function isSymlink(file) {
@@ -135,7 +144,16 @@ function validMarker(value) {
        new Set(value.install_ides).size === value.install_ides.length)) &&
     (!Object.prototype.hasOwnProperty.call(value, "ide_modes") ||
       (value.ide_modes && typeof value.ide_modes === "object" && !Array.isArray(value.ide_modes) &&
-       Object.entries(value.ide_modes).every(([ide, mode]) => SUPPORTED_IDES.includes(ide) && MODES.has(mode))));
+       Object.entries(value.ide_modes).every(([ide, mode]) => SUPPORTED_IDES.includes(ide) && MODES.has(mode)))) &&
+    (!Object.prototype.hasOwnProperty.call(value, "runtime_binding_required") ||
+      (Array.isArray(value.runtime_binding_required) &&
+       new Set(value.runtime_binding_required).size === value.runtime_binding_required.length &&
+       value.runtime_binding_required.every((ide) => SUPPORTED_IDES.includes(ide)))) &&
+    (!Object.prototype.hasOwnProperty.call(value, "runtime_binding_generations") ||
+      (value.runtime_binding_generations && typeof value.runtime_binding_generations === "object" &&
+       !Array.isArray(value.runtime_binding_generations) &&
+       Object.entries(value.runtime_binding_generations).every(([ide, generation]) =>
+         SUPPORTED_IDES.includes(ide) && typeof generation === "string" && /^[0-9a-f]{32}$/.test(generation))));
 }
 
 function readInstallMarker(projectRoot) {
@@ -496,12 +514,328 @@ function atomicJsonWrite(file, value) {
   }
 }
 
+function hostStateRootMarkerPath(projectRoot, { legacy = false } = {}) {
+  return path.join(path.resolve(projectRoot), legacy ? LEGACY_PROJECT_STATE_DIR : PROJECT_STATE_DIR, HOST_STATE_ROOT_MARKER);
+}
+
+function hostStateRootGeneration(value) {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value) ? value : null;
+}
+
+function validateHostStateRoot(value, { create = false } = {}) {
+  if (!isAbsoluteRuntimePath(value)) return { status: "invalid", reason: "relative_path" };
+  const candidate = path.resolve(value);
+  try {
+    if (create) fs.mkdirSync(candidate, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(candidate);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return { status: "invalid", reason: "symlink_or_not_directory" };
+    return { status: "valid", path: fs.realpathSync.native(candidate) };
+  } catch (error) {
+    return { status: "unavailable", reason: error?.code || "state_root_unavailable" };
+  }
+}
+
+function readHostStateRootBinding(projectRoot, ide = "codex", { expectedGeneration } = {}) {
+  if (ide !== "codex") return { status: "ignored" };
+  const root = path.resolve(projectRoot);
+  const markerCandidates = [hostStateRootMarkerPath(root), hostStateRootMarkerPath(root, { legacy: true })];
+  for (const file of markerCandidates) {
+    if (!fs.existsSync(file)) continue;
+    if (isSymlink(path.dirname(file)) || isSymlink(file)) return { status: "invalid", reason: "symlink_path", path: file };
+    const result = safeReadJson(file);
+    if (!result.valid || !result.value || typeof result.value !== "object" || Array.isArray(result.value)) {
+      return { status: "invalid", reason: "malformed_marker", path: file };
+    }
+    let entry;
+    if (result.value.schema_version === 1) {
+      // Schema 1 was written by the manual host runner. It is accepted only
+      // for Codex and is never read by another IDE.
+      entry = result.value;
+    } else if (result.value.schema_version === HOST_STATE_ROOT_SCHEMA_VERSION) {
+      entry = result.value.bindings?.codex;
+    } else {
+      return { status: "invalid", reason: "unsupported_schema", path: file };
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)
+      || !["ready", "unavailable"].includes(entry.status || "ready")
+      || !hostStateRootGeneration(entry.generation || (result.value.schema_version === 1 ? "0".repeat(32) : null))) {
+      return { status: "invalid", reason: "malformed_binding", path: file };
+    }
+    const checked = validateHostStateRoot(entry.state_root);
+    if (checked.status !== "valid") return { status: checked.status, reason: checked.reason, path: file };
+    const generation = hostStateRootGeneration(entry.generation);
+    if (expectedGeneration && generation !== expectedGeneration) {
+      return { status: "invalid", reason: "generation_mismatch", path: file };
+    }
+    return {
+      status: entry.status === "ready" ? "valid" : "unavailable",
+      stateRoot: checked.path,
+      generation,
+      path: file,
+      schemaVersion: result.value.schema_version,
+    };
+  }
+  return { status: "missing" };
+}
+
+function defaultTelemetryStateRoot(env = process.env, platform = process.platform) {
+  if (platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "tencent-rtc-skill");
+  if (platform === "win32") {
+    const local = env.LOCALAPPDATA || path.join(env.USERPROFILE || os.homedir(), "AppData", "Local");
+    return path.win32.join(local, "TencentRTC", "Skill");
+  }
+  return path.join(env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "tencent-rtc-skill");
+}
+
+function projectStateKey(projectRoot) {
+  return crypto.createHash("sha256").update(canonicalizeProjectPath(projectRoot)).digest("hex").slice(0, 32);
+}
+
+function stateRootContainsProjectData(stateRoot, projectRoot) {
+  const key = projectStateKey(projectRoot);
+  for (const bucket of ["pending", "outbox", "ack", "acknowledgements"]) {
+    const dir = path.join(stateRoot, "telemetry", bucket);
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries.slice(0, 256)) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      try {
+        const value = JSON.parse(fs.readFileSync(path.join(dir, entry.name), "utf8"));
+        if (value && value.__project_key === key) return true;
+      } catch { /* unrelated/corrupt files do not prove ownership */ }
+    }
+  }
+  return false;
+}
+
+function resolveCodexStateRoot(projectRoot, { explicitStateRoot, env = process.env } = {}) {
+  const marker = readHostStateRootBinding(projectRoot, "codex");
+  if (marker.status === "valid") return { ...marker, source: "marker" };
+  const explicit = typeof explicitStateRoot === "string" && explicitStateRoot.length > 0
+    ? explicitStateRoot : null;
+  // An explicit diagnostic/repair root is the only permitted override for a
+  // corrupt or unavailable marker. An inherited environment value is never
+  // allowed to bypass that fail-closed state.
+  if ((marker.status === "unavailable" || marker.status === "invalid") && !explicit) return marker;
+  if (explicit) {
+    const checked = validateHostStateRoot(explicit, { create: true });
+    return checked.status === "valid" ? { ...checked, stateRoot: checked.path, source: "explicit" } : checked;
+  }
+  const envRoot = typeof env.TRTC_TELEMETRY_STATE_ROOT === "string" && env.TRTC_TELEMETRY_STATE_ROOT.length > 0
+    ? env.TRTC_TELEMETRY_STATE_ROOT : null;
+  if (envRoot && path.isAbsolute(envRoot)) {
+    // Compatibility probing must not create an otherwise-unowned directory;
+    // only an existing root containing this project's durable records is
+    // evidence that an older installation owns it.
+    const checked = validateHostStateRoot(envRoot);
+    // A custom environment root is an old-install compatibility path only.
+    // An empty directory is not evidence that it belongs to this project and
+    // must not become a new project's canonical root (otherwise a second
+    // project can inherit the first project's environment setting).
+    if (checked.status === "valid" && stateRootContainsProjectData(checked.path, projectRoot)) {
+      return { ...checked, stateRoot: checked.path, source: "legacy_env" };
+    }
+  }
+  const checked = validateHostStateRoot(defaultTelemetryStateRoot(env), { create: true });
+  return checked.status === "valid" ? { ...checked, stateRoot: checked.path, source: "default" } : checked;
+}
+
+function writeHostStateRootBinding(projectRoot, {
+  stateRoot, generation, status = "ready", now = new Date(), installerVersion = "unknown",
+} = {}) {
+  if (!hostStateRootGeneration(generation)) {
+    const error = new Error("host state-root generation is invalid"); error.code = "HOST_STATE_ROOT_GENERATION_INVALID"; throw error;
+  }
+  if (!["ready", "unavailable"].includes(status)) {
+    const error = new Error("host state-root status is invalid"); error.code = "HOST_STATE_ROOT_STATUS_INVALID"; throw error;
+  }
+  const checked = validateHostStateRoot(stateRoot);
+  if (checked.status !== "valid") {
+    const error = new Error("host state-root is unavailable"); error.code = "STATE_ROOT_UNAVAILABLE"; throw error;
+  }
+  const file = hostStateRootMarkerPath(projectRoot);
+  const previous = safeReadJson(file);
+  if (previous.exists && (!previous.valid || !previous.value || typeof previous.value !== "object")) {
+    const error = new Error("existing host state-root marker is corrupt"); error.code = "HOST_STATE_ROOT_CORRUPT"; throw error;
+  }
+  const bindings = previous.valid && previous.value.schema_version === HOST_STATE_ROOT_SCHEMA_VERSION
+    && previous.value.bindings && typeof previous.value.bindings === "object" ? { ...previous.value.bindings } : {};
+  bindings.codex = { state_root: checked.path, generation, status };
+  const value = {
+    schema_version: HOST_STATE_ROOT_SCHEMA_VERSION,
+    installer_version: String(installerVersion).slice(0, 128),
+    updated_at: new Date(now).toISOString(),
+    bindings,
+  };
+  atomicJsonWrite(file, value);
+  return { path: file, value };
+}
+
+function isAbsoluteRuntimePath(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 4096 && path.isAbsolute(value);
+}
+
+function canonicalRuntimePath(file) {
+  return fs.realpathSync.native(file);
+}
+
+function inspectNodeRuntime(nodePath) {
+  const nodeRealpath = canonicalRuntimePath(nodePath);
+  const stat = fs.statSync(nodeRealpath);
+  if (!stat.isFile()) throw Object.assign(new Error("runtime Node executable is not a file"), { code: "NODE_NOT_FOUND" });
+  const probe = spawnSync(nodeRealpath, ["-p", "process.versions.node"], {
+    encoding: "utf8",
+    timeout: 3000,
+    windowsHide: true,
+  });
+  if (probe.error || probe.status !== 0) {
+    throw Object.assign(new Error("runtime Node executable could not be verified"), { code: "NODE_VERIFY_FAILED" });
+  }
+  const nodeVersion = String(probe.stdout || "").trim();
+  const nodeMajor = Number.parseInt(nodeVersion.split(".")[0], 10);
+  if (!/^\d+\.\d+\.\d+$/.test(nodeVersion) || !Number.isInteger(nodeMajor) || nodeMajor < 16) {
+    throw Object.assign(new Error("runtime Node version is unsupported"), { code: "NODE_UNSUPPORTED" });
+  }
+  return {
+    nodePath: nodeRealpath,
+    nodeRealpath,
+    nodeVersion,
+    nodeIdentity: {
+      dev: Number(stat.dev) || 0,
+      ino: Number(stat.ino) || 0,
+      size: Number(stat.size) || 0,
+      mtime_ms: Number(stat.mtimeMs) || 0,
+    },
+  };
+}
+
+function validRuntimeBindingEntry(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value) &&
+    isAbsoluteRuntimePath(value.node_path) &&
+    isAbsoluteRuntimePath(value.node_realpath) &&
+    typeof value.node_version === "string" && value.node_version.length <= 64 &&
+    value.node_identity && typeof value.node_identity === "object" && !Array.isArray(value.node_identity) &&
+    ["dev", "ino", "size", "mtime_ms"].every((key) => Number.isFinite(value.node_identity[key])) &&
+    typeof value.bundle_path === "string" && value.bundle_path.length > 0 && value.bundle_path.length <= 4096 &&
+    !path.isAbsolute(value.bundle_path) && !value.bundle_path.split(/[\\/]/).includes("..") &&
+    /^[a-f0-9]{64}$/.test(value.bundle_sha256) &&
+    typeof value.generation === "string" && /^[0-9a-f]{32}$/.test(value.generation);
+}
+
+function validRuntimeBinding(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value) &&
+    value.schema_version === RUNTIME_BINDING_SCHEMA_VERSION &&
+    typeof value.installer_version === "string" && value.installer_version.length <= 128 &&
+    typeof value.updated_at === "string" && value.updated_at.length > 0 &&
+    value.bindings && typeof value.bindings === "object" && !Array.isArray(value.bindings) &&
+    Object.keys(value.bindings).length > 0 &&
+    Object.entries(value.bindings).every(([ide, entry]) => SUPPORTED_IDES.includes(ide) && validRuntimeBindingEntry(entry));
+}
+
+function readRuntimeBinding(projectRoot) {
+  const dir = markerDir(projectRoot);
+  const file = runtimeBindingPath(projectRoot);
+  if (isSymlink(dir) || isSymlink(file)) return { status: "invalid", reason: "symlink_path" };
+  const result = safeReadJson(file);
+  if (!result.exists) return { status: "missing" };
+  if (!result.valid || !validRuntimeBinding(result.value)) {
+    return { status: "invalid", reason: "malformed_binding" };
+  }
+  return { status: "valid", value: result.value };
+}
+
+function writeRuntimeBinding(projectRoot, {
+  ides,
+  bundlePaths,
+  installerVersion = "unknown",
+  generation,
+  nodePath = process.execPath,
+  now = new Date(),
+} = {}) {
+  const targets = [...new Set(Array.isArray(ides) ? ides : [])]
+    .filter((ide) => SUPPORTED_IDES.includes(ide));
+  if (targets.length === 0) return null;
+  if (!isAbsoluteRuntimePath(nodePath) || !fs.existsSync(nodePath)) {
+    const error = new Error("runtime Node executable is unavailable");
+    error.code = "NODE_NOT_FOUND";
+    throw error;
+  }
+  if (typeof generation !== "string" || !/^[0-9a-f]{32}$/.test(generation)) {
+    const error = new Error("runtime binding generation is invalid");
+    error.code = "RUNTIME_BINDING_GENERATION_INVALID";
+    throw error;
+  }
+  const node = inspectNodeRuntime(nodePath);
+  const previous = readRuntimeBinding(projectRoot);
+  if (previous.status === "invalid") {
+    const error = new Error("existing runtime binding is corrupt; repair is required");
+    error.code = "RUNTIME_BINDING_CORRUPT";
+    throw error;
+  }
+  const bindings = previous.status === "valid" ? { ...previous.value.bindings } : {};
+  const succeeded = [];
+  const failed = [];
+  for (const ide of targets) {
+    try {
+      const bundlePath = bundlePaths?.[ide];
+      if (!isAbsoluteRuntimePath(bundlePath) || !fs.existsSync(bundlePath)) {
+        const error = new Error(`runtime bundle is unavailable for ${ide}`);
+        error.code = "RUNTIME_BUNDLE_NOT_FOUND";
+        throw error;
+      }
+      const bundleRelative = path.relative(path.resolve(projectRoot), path.resolve(bundlePath));
+      if (!bundleRelative || bundleRelative.startsWith("..") || path.isAbsolute(bundleRelative)) {
+        const error = new Error(`runtime bundle is outside project for ${ide}`);
+        error.code = "RUNTIME_BUNDLE_OUTSIDE_PROJECT";
+        throw error;
+      }
+      const projectRealpath = fs.realpathSync.native(path.resolve(projectRoot));
+      const bundleRealpath = fs.realpathSync.native(path.resolve(bundlePath));
+      if (bundleRealpath !== projectRealpath && !bundleRealpath.startsWith(projectRealpath + path.sep)) {
+        const error = new Error(`runtime bundle resolves outside project for ${ide}`);
+        error.code = "RUNTIME_BUNDLE_OUTSIDE_PROJECT";
+        throw error;
+      }
+      const bundleSha256 = crypto.createHash("sha256").update(fs.readFileSync(bundlePath)).digest("hex");
+      bindings[ide] = {
+        node_path: node.nodePath,
+        node_realpath: node.nodeRealpath,
+        node_version: node.nodeVersion,
+        node_identity: node.nodeIdentity,
+        bundle_path: bundleRelative.split(path.sep).join("/"),
+        bundle_sha256: bundleSha256,
+        generation,
+      };
+      succeeded.push(ide);
+    } catch (error) {
+      failed.push({
+        ide,
+        code: typeof error?.code === "string" ? error.code : "RUNTIME_BUNDLE_INVALID",
+      });
+    }
+  }
+  if (succeeded.length === 0) {
+    const error = new Error("no runtime binding could be committed");
+    error.code = failed[0]?.code || "RUNTIME_BINDING_FAILED";
+    throw error;
+  }
+  const value = {
+    schema_version: RUNTIME_BINDING_SCHEMA_VERSION,
+    installer_version: String(installerVersion).slice(0, 128),
+    updated_at: new Date(now).toISOString(),
+    bindings,
+  };
+  atomicJsonWrite(runtimeBindingPath(projectRoot), value);
+  return { path: runtimeBindingPath(projectRoot), succeeded, failed };
+}
+
 function writeInstallMarker(projectRoot, mode, {
   installerVersion = "unknown",
   now = new Date(),
   ides,
   installGeneration,
   installIdes,
+  runtimeBindingRequiredIdes,
 } = {}) {
   if (!MODES.has(mode)) throw new TypeError("only stable reporting modes may be committed");
   const dir = markerDir(projectRoot, { mode });
@@ -529,6 +863,27 @@ function writeInstallMarker(projectRoot, mode, {
     ? [...new Set(installIdes)].filter((ide) => SUPPORTED_IDES.includes(ide)).sort()
     : [];
   if (committedIdes.length > 0) value.install_ides = committedIdes;
+  const previousRequired = previous.valid && validMarker(previous.value) && Array.isArray(previous.value.runtime_binding_required)
+    ? previous.value.runtime_binding_required : [];
+  const required = new Set(previousRequired);
+  const previousGenerations = previous.valid && validMarker(previous.value) && previous.value.runtime_binding_generations
+    ? { ...previous.value.runtime_binding_generations } : {};
+  if (runtimeBindingRequiredIdes !== undefined) {
+    const requested = [...new Set(runtimeBindingRequiredIdes)]
+      .filter((ide) => SUPPORTED_IDES.includes(ide));
+    for (const ide of targets) required.delete(ide);
+    for (const ide of requested) {
+      required.add(ide);
+      if (typeof installGeneration === "string" && /^[0-9a-f]{32}$/.test(installGeneration)) {
+        previousGenerations[ide] = installGeneration;
+      }
+    }
+    if (required.size > 0) value.runtime_binding_required = [...required].sort();
+    if (Object.keys(previousGenerations).length > 0) value.runtime_binding_generations = previousGenerations;
+  } else {
+    if (previousRequired.length > 0) value.runtime_binding_required = [...previousRequired].sort();
+    if (Object.keys(previousGenerations).length > 0) value.runtime_binding_generations = previousGenerations;
+  }
   atomicJsonWrite(markerFile, value);
   return markerFile;
 }
@@ -684,13 +1039,22 @@ module.exports = {
   INSTALL_EVENT_REUSE_TTL_MS,
   PROJECT_STATE_DIR,
   LEGACY_PROJECT_STATE_DIR,
+  RUNTIME_BINDING,
+  RUNTIME_BINDING_SCHEMA_VERSION,
+  HOST_STATE_ROOT_SCHEMA_VERSION,
   markerDir,
   markerPath,
   stagePath,
+  runtimeBindingPath,
+  hostStateRootMarkerPath,
+  readHostStateRootBinding,
+  resolveCodexStateRoot,
+  writeHostStateRootBinding,
   canonicalizeProjectPath,
   findProjectRoot,
   readInstallMarker,
   readInstallStage,
+  readRuntimeBinding,
   resolveReportingMode,
   hasLegacyMcp,
   hasProjectLegacyMcp,
@@ -700,6 +1064,7 @@ module.exports = {
   isPidAlive,
   writeInstallMarker,
   writeInstallStage,
+  writeRuntimeBinding,
   clearInstallStage,
   acquireProjectInstallLock,
   releaseProjectInstallLock,

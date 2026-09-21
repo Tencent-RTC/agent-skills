@@ -4,12 +4,15 @@
 //   { conversation_id, generation_id, prompt, workspace_roots: [...], ... }
 // Output: normalized hook shape or null (fail-open)
 
+import { hostMetadata } from './metadata.js';
+
 export function parse(input) {
   if (typeof input.prompt !== 'string') return null;
   const roots = Array.isArray(input.workspace_roots)
     ? input.workspace_roots.filter((r) => typeof r === 'string')
     : [];
   return {
+    ...hostMetadata(input),
     prompt: input.prompt,
     session_id: typeof input.conversation_id === 'string' && input.conversation_id
       ? input.conversation_id

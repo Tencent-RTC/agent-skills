@@ -155,11 +155,18 @@ export function toCLSContents(event) {
         '— use the internal name (version/skillname/product/sessionid) instead',
     );
   }
+  // Anonymous fallback events retain a private correlation bucket so local
+  // Pending/Outbox recovery remains deterministic, but they must not expose
+  // that bucket as a misleading CLS userid. Reliable host session/turn
+  // events leave `__anonymous_session` unset and continue to map sessionid →
+  // userid normally.
+  const anonymousSession = event.__anonymous_session === true;
   const out = {};
   for (const [key, value] of Object.entries(event)) {
     if (value === undefined || value === null) continue;
     if (key.startsWith('__')) continue;
     if (WIRE_STRIPPED_INTERNAL_KEYS.has(key)) continue;
+    if (anonymousSession && key === 'sessionid') continue;
     const wireKey = INTERNAL_TO_WIRE[key] ?? key;
     if (typeof value === 'string') {
       out[wireKey] = value;

@@ -90,9 +90,11 @@ def _resolve_session_path() -> Path:
     explicit = os.environ.get("TRTC_SESSION_PATH")
     if explicit:
         return Path(explicit)
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project_dir:
-        return Path(project_dir) / ".trtc-session.yaml"
+    for _key in ("TRTC_PROJECT_ROOT", "CLAUDE_PROJECT_DIR",
+                 "CODEBUDDY_PROJECT_DIR", "CURSOR_PROJECT_DIR"):
+        project_dir = os.environ.get(_key)
+        if project_dir:
+            return Path(project_dir) / ".trtc-session.yaml"
     return Path.cwd() / ".trtc-session.yaml"
 
 
@@ -320,7 +322,7 @@ def _run_parsed(args: argparse.Namespace) -> tuple[int, dict]:
     session_path = args.session if args.session is not None else _resolve_session_path()
     if not session_path.exists():
         raise InputError(
-            f"session file not found: {session_path}; cd to the user project root or set TRTC_SESSION_PATH / CLAUDE_PROJECT_DIR"
+            f"session file not found: {session_path}; cd to the user project root or set TRTC_SESSION_PATH / TRTC_PROJECT_ROOT (or CLAUDE_PROJECT_DIR / CODEBUDDY_PROJECT_DIR / CURSOR_PROJECT_DIR)"
         )
 
     session_data = _load_session(session_path)

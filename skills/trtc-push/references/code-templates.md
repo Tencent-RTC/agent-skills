@@ -84,6 +84,9 @@ buildscript {
 }
 ```
 
+`<current-version>` 按 Gradle 版本选择：Gradle 7.1 及以上用 `1.9.1.301` 或更高已验证版本；
+Gradle 7.0 及以下用 `1.6.0.300`（AGP 8 工程不要用 `1.6.0.300`，AGP 8.0 已移除 Transform API）。
+
 Kotlin DSL（app `build.gradle.kts`）：
 
 ```kotlin
@@ -119,7 +122,7 @@ Using the AGConnect-Config file: <project>/app/agconnect-services.json
 | 厂商 | 项目级 classpath | 应用级插件 | 配置文件 |
 |---|---|---|---|
 | 荣耀 | `com.hihonor.mcs:asplugin:2.0.1.300` | `com.hihonor.mcs.asplugin` | `app/mcs-services.json` |
-| FCM | `com.google.gms:google-services:4.3.15` | `com.google.gms.google-services` | `app/google-services.json` |
+| FCM | `com.google.gms:google-services:4.4.2`（AGP < 7.3.0 时用 `4.3.15`） | `com.google.gms.google-services` | `app/google-services.json` |
 
 Groovy DSL（项目级 `build.gradle`）：
 
@@ -127,7 +130,8 @@ Groovy DSL（项目级 `build.gradle`）：
 buildscript {
     dependencies {
         classpath 'com.hihonor.mcs:asplugin:2.0.1.300'
-        classpath 'com.google.gms:google-services:4.3.15'
+        // AGP < 7.3.0 时改用 com.google.gms:google-services:4.3.15
+        classpath 'com.google.gms:google-services:4.4.2'
     }
 }
 ```
@@ -145,7 +149,8 @@ Kotlin DSL（项目级 `build.gradle.kts`）：
 buildscript {
     dependencies {
         classpath("com.hihonor.mcs:asplugin:2.0.1.300")
-        classpath("com.google.gms:google-services:4.3.15")
+        // AGP < 7.3.0 时改用 com.google.gms:google-services:4.3.15
+        classpath("com.google.gms:google-services:4.4.2")
     }
 }
 ```

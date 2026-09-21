@@ -51,7 +51,12 @@ import { join, basename, dirname } from 'node:path';
 
 import { isPidAlive } from './identity.js';
 import { performance } from 'node:perf_hooks';
-import { listActiveProducerLeases, readProjectDenyGate } from './control.js';
+import {
+  listActiveProducerLeases,
+  markFirstEventExpired,
+  readEventAcknowledgement,
+  readProjectDenyGate,
+} from './control.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1319,6 +1324,10 @@ export function writeOutboxFromHook(root, event, opts = {}) {
 const SENDER_METADATA_WHITELIST = new Set([
   '__sender_retry_count',
   '__sender_retry_after',
+  '__sender_last_error',
+  '__sender_last_attempt_at',
+  '__sender_acknowledged',
+  '__sender_acknowledged_at',
 ]);
 
 /**
@@ -1326,7 +1335,8 @@ const SENDER_METADATA_WHITELIST = new Set([
  * tmp + fsync + rename (same-path atomic replace) — NOT
  * atomicCreateOrDedupe (which is for first-write-wins, not updates).
  *
- * Whitelist: only `__sender_retry_count` and `__sender_retry_after`
+ * Whitelist: retry scheduling plus bounded local diagnostics. These fields
+ * never cross the CLS wire boundary.
  * are accepted. All other keys (especially event identity fields) are
  * rejected with a TypeError to prevent Sender code from accidentally
  * rewriting event content.
@@ -1396,6 +1406,163 @@ export function updateOutboxMetadata(root, eventId, meta, opts = {}) {
     if (lock) releaseReservation(lock);
   }
 }
+
+// Dispatcher attribution is a separate ownership operation from Sender
+// retry metadata.  A Hook can move a Prompt to Outbox before the Root router
+// knows its owner; the later owner invoke must be able to fill only unknown
+// attribution fields on that same event_id without rewriting its text or
+// identity.  Keep this whitelist private to the runtime and never broaden the
+// Sender metadata API to accept route fields by accident.
+const OUTBOX_ATTRIBUTION_KEYS = new Set([
+  'skillname', 'product', 'framework', 'flow_id', 'turn_id', 'sdkappid',
+  '__route_hint', '__route_product', '__route_framework',
+]);
+
+function validAttributionValue(value) {
+  if (value === undefined || value === null || value === '' || value === 'unknown') return null;
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? String(value) : null;
+  if (typeof value !== 'string' || value.length > 128 || /[\u0000-\u001f\u007f]/u.test(value)) return null;
+  return value;
+}
+
+function concreteAttribution(value) {
+  const normalized = validAttributionValue(value);
+  return normalized && normalized !== 'unknown' ? normalized : null;
+}
+
+/**
+ * Fill missing/unknown route attribution on an existing Outbox Prompt.
+ *
+ * The event_id, text, time, method, and schema identity are immutable. A
+ * concrete existing skillname is never overwritten; a different owner is
+ * returned as `owner_mismatch` so the caller can retry the correct owner
+ * without sending a relabeled event.
+ */
+function updateAttributionInBucket(root, eventId, attribution, opts = {}, bucket = 'outbox') {
+  if (!isSafeEventId(eventId)) {
+    throw new TypeError(`updateAttributionInBucket: unsafe eventId ${JSON.stringify(eventId)}`);
+  }
+  if (!attribution || typeof attribution !== 'object') {
+    throw new TypeError('updateAttributionInBucket: attribution must be an object');
+  }
+  for (const key of Object.keys(attribution)) {
+    if (!OUTBOX_ATTRIBUTION_KEYS.has(key)) {
+      throw new TypeError(`updateAttributionInBucket: key "${key}" is not allowed`);
+    }
+  }
+
+  const d = ensureLayout(root);
+  const targetDir = bucket === 'pending' ? d.pending : d.outbox;
+  let lock = null;
+  if (!opts._locked) {
+    lock = acquireReservation(root, eventId, opts);
+    if (!lock) return { ok: false, error: 'reservation_timeout' };
+  }
+  try {
+    const filePath = join(targetDir, payloadFilename(eventId));
+    const event = readEvent(filePath);
+    if (!event) return { ok: false, error: 'event_not_found' };
+    if (event.method !== 'prompt') return { ok: false, error: 'not_prompt' };
+    if (opts.projectKey && event.__project_key !== opts.projectKey) {
+      return { ok: false, error: 'project_mismatch' };
+    }
+
+    const requestedOwner = concreteAttribution(attribution.skillname);
+    const existingOwner = concreteAttribution(event.skillname);
+    // Sender persists the ACK receipt before it removes an Outbox entry, but
+    // a crash can occur after the receipt write and before the event metadata
+    // is updated with __sender_acknowledged.  Treat the receipt as an equally
+    // authoritative freeze signal so a late dispatcher owner cannot relabel
+    // an event that CLS has already accepted.
+    const ackProjectKey = typeof opts.projectKey === 'string'
+      ? opts.projectKey
+      : (typeof event.__project_key === 'string' ? event.__project_key : null);
+    const ackReceipt = ackProjectKey
+      ? readEventAcknowledgement(root, ackProjectKey, eventId)
+      : { status: 'missing' };
+    const ownerFrozen = (bucket === 'outbox' && event.ide === 'codex')
+      || event.__sender_acknowledged === true
+      || Number.isFinite(event.__sender_acknowledged_at)
+      || ackReceipt.status === 'valid';
+    if (ownerFrozen) return { ok: true, updated: false, event };
+    const replaceableRootFallback = opts.allowRootFallbackReplace === true
+      && existingOwner === 'trtc'
+      && event.__first_prompt_candidate === true
+      && !ownerFrozen;
+    if (existingOwner && requestedOwner && existingOwner !== requestedOwner && !replaceableRootFallback) {
+      return {
+        ok: false,
+        error: 'owner_mismatch',
+        existing_skillname: existingOwner,
+        requested_skillname: requestedOwner,
+      };
+    }
+
+    const updates = {};
+    const fill = (key) => {
+      const requested = concreteAttribution(attribution[key]);
+      const existing = concreteAttribution(event[key]);
+      if (requested && !existing) updates[key] = requested;
+    };
+    if (replaceableRootFallback && requestedOwner) updates.skillname = requestedOwner;
+    else fill('skillname');
+    for (const key of ['product', 'framework', 'flow_id', 'turn_id', 'sdkappid']) fill(key);
+    for (const key of ['__route_hint', '__route_product', '__route_framework']) fill(key);
+    if (Object.keys(updates).length === 0) return { ok: true, updated: false, event };
+
+    const updated = { ...event, ...updates };
+    const body = JSON.stringify(updated);
+    const tmp = join(targetDir, `.${randomBytes(4).toString('hex')}.${eventId}.attribution.tmp`);
+    let fd;
+    try {
+      fd = openSync(tmp, 'wx', 0o600);
+      writeAll(fd, body);
+      fsyncSync(fd);
+    } catch (err) {
+      try { if (fd !== undefined) closeSync(fd); } catch { /* best effort */ }
+      try { unlinkSync(tmp); } catch { /* best effort */ }
+      return { ok: false, error: `write: ${err?.code || 'unknown'}` };
+    }
+    try { closeSync(fd); } catch (err) {
+      try { unlinkSync(tmp); } catch { /* best effort */ }
+      return { ok: false, error: `close: ${err?.code || 'unknown'}` };
+    }
+    try {
+      renameSync(tmp, filePath);
+      fsyncDirBestEffort(targetDir);
+    } catch (err) {
+      try { unlinkSync(tmp); } catch { /* best effort */ }
+      return { ok: false, error: `rename: ${err?.code || 'unknown'}` };
+    }
+    return { ok: true, updated: true, event: updated };
+  } finally {
+    if (lock) releaseReservation(lock);
+  }
+}
+
+/**
+ * Fill missing/unknown route attribution on an existing Outbox Prompt.
+ *
+ * The event_id, text, time, method, and schema identity are immutable. A
+ * concrete existing skillname is never overwritten; a different owner is
+ * returned as `owner_mismatch` so the caller can retry the correct owner
+ * without sending a relabeled event.
+ */
+export function updateOutboxAttribution(root, eventId, attribution, opts = {}) {
+  return updateAttributionInBucket(root, eventId, attribution, opts, 'outbox');
+}
+
+/**
+ * Apply the same immutable attribution rules while an event is still in
+ * Pending. Hooks intentionally create an owner-neutral event before the
+ * dispatcher has routed the Prompt; the foreground copy must be able to fill
+ * that owner on the exact same event_id before promotion, otherwise Sender
+ * can publish `level=unknown` even though the dispatcher supplied a route.
+ */
+export function updatePendingAttribution(root, eventId, attribution, opts = {}) {
+  return updateAttributionInBucket(root, eventId, attribution, opts, 'pending');
+}
+
 function sanitizeEnrichment(enrichment) {
   const out = {};
   if (!enrichment || typeof enrichment !== 'object') return out;
@@ -1584,6 +1751,15 @@ function evictOne(dir, filename, droppedDir, dropTs) {
   const priority = classifyEvent(event);
   const tomb = buildTombstone(event, eid, /* reason set by caller */ 'evicted', priority, dropTs);
   const status = commitTombstone(droppedDir, tomb);
+
+  // A first Prompt that expires before ACK must not be silently replaced by a
+  // later event. Keep only a compact project-level terminal reason; the
+  // tombstone never contains Prompt text.
+  if (status === 'created' && event?.method === 'prompt' && typeof event.__project_key === 'string') {
+    try {
+      markFirstEventExpired(dirname(dirname(droppedDir)), event.__project_key, eid, { expiredAt: dropTs });
+    } catch { /* GC must remain best-effort; the drop tombstone is durable. */ }
+  }
   try { unlinkSync(claimPath); } catch (err) {
     if (!err || err.code !== 'ENOENT') throw err;
   }
@@ -1717,6 +1893,16 @@ function _evictOneWithReasonLocked(dir, src, claimPath, filename, droppedDir, dr
     try { unlinkSync(claimPath); }
     catch (err) { if (!err || err.code !== 'ENOENT') throw err; }
     return 'duplicate';
+  }
+
+  // A first Prompt that expires before ACK must not be silently replaced by a
+  // later event.  Keep the project-level terminal fact even on the
+  // reason-aware eviction path used by normal GC (the simpler evictOne path
+  // is only used by a few legacy recovery branches).
+  if (status === 'created' && event?.method === 'prompt' && typeof event.__project_key === 'string') {
+    try {
+      markFirstEventExpired(dirname(dirname(droppedDir)), event.__project_key, eid, { expiredAt: dropTs });
+    } catch { /* GC remains best-effort; the drop tombstone is durable. */ }
   }
 
   try { unlinkSync(claimPath); }

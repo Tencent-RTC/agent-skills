@@ -1,20 +1,31 @@
 # 华为 / 荣耀厂商配置问题
 
+## 与 MCP 的关系
+
+本文件是 **知识卡**，不拥有独立主链。
+
+- ROUTER `workflow_id`：`troubleshoot-android`
+- 关联 flow：`flows/android/vendor-not-received.md`
+- 挂载：主要挂 `stage-3-config-alignment`
+- 执行仍走 MCP 状态机；命中本卡后按挂载阶段取证，禁止用本卡替代 `complete_workflow_step`。
+
 ## 适用现象
 
 当用户反馈以下任一现象时，优先使用本卡：
 
-- 华为 / 荣耀通道 `registerPush failed`。
-- 日志包含 `errCode=800006`、`Huawei appId missing`。
-- 日志包含 `certificate fingerprint empty` 或 `ApiException 907135702`。
-- 华为 / 荣耀 Android 兼容通道注册失败，且现象指向 AppId、签名指纹或 AGConnect 配置。
+- 华为 / 荣耀通道 `registerPush failed`，且日志含 `Huawei appId missing`、
+  `certificate fingerprint empty` 或 `ApiException 907135702`。
+- 已在 `error-codes.md` 确认 `800006` 码义后，证据指向 AGConnect / 签名指纹 /
+  AppId 配置。
 
 不适用于：
 
-- 厂商已返回成功但设备不展示通知。这类问题应走
-  `../../flows/android/delivered-not-displayed.md`。
-- HarmonyOS NEXT / 纯血鸿蒙原生 Push 接入问题。这类问题应走
-  `../../flows/cross-platform/harmonyos.md`。
+- 裸报 `800006` 且尚未按「先本机厂商 → 再 FCM」排查：先读 `error-codes.md` 的
+  **800006** 节。
+- 华为服务端发送回执 `80300002`（对 Token 下发无权限）：`error-codes.md` 的
+  **80300002** 节；勿与本卡客户端配置混淆。
+- 厂商已返回成功但设备不展示通知 → `../../flows/android/delivered-not-displayed.md`。
+- HarmonyOS NEXT / 纯血鸿蒙原生 Push → `../../flows/harmonyos/offline-not-received.md`。
 
 ## 共同根因
 
@@ -22,6 +33,9 @@
 `com.tencent.timpush:huawei` 或荣耀依赖并不够；如果 AGConnect / MCS 配置文件没有被
 构建解析，或当前安装包的 SHA-256 与厂商控制台不一致，厂商 SDK 运行时就读不到 AppId
 或拒绝注册。
+
+> 说明：TIMPush `800006` 的权威码义是「本机通道失败后再试 FCM 也失败」。本卡只覆盖
+> 本机通道侧的**华为/荣耀配置子因**，不代表 800006 仅等于华为指纹问题。
 
 常见错误模式：
 
@@ -44,15 +58,16 @@
 
 ## 排查步骤
 
-1. 先确认设备是普通 Android / Android 兼容鸿蒙，还是 HarmonyOS NEXT / 纯血鸿蒙。
-2. 核对 `applicationId` 与厂商控制台包名完全一致。
-3. 核对当前测试包 SHA-256 与厂商控制台填写的指纹一致。
-4. 确认 App 模块应用了对应厂商 Gradle 插件。
-5. 确认 `agconnect-services.json` / `mcs-services.json` 位于 App 模块根目录，不在
+1. 若用户只给了 `800006`：先打开 `error-codes.md#800006`，按「本机 → FCM」顺序排。
+2. 确认设备是普通 Android / Android 兼容鸿蒙，还是 HarmonyOS NEXT / 纯血鸿蒙。
+3. 核对 `applicationId` 与厂商控制台包名完全一致。
+4. 核对当前测试包 SHA-256 与厂商控制台填写的指纹一致。
+5. 确认 App 模块应用了对应厂商 Gradle 插件。
+6. 确认 `agconnect-services.json` / `mcs-services.json` 位于 App 模块根目录，不在
    `src/main/assets`。
-6. 运行构建，确认日志显示配置文件被读取。
-7. 重新安装到华为 / 荣耀真机，抓取 `registerPush` 日志。
-8. 如果厂商注册成功但终端不展示，转 `../../flows/android/delivered-not-displayed.md`。
+7. 运行构建，确认日志显示配置文件被读取。
+8. 重新安装到华为 / 荣耀真机，抓取 `registerPush` 日志。
+9. 如果厂商注册成功但终端不展示，转 `../../flows/android/delivered-not-displayed.md`。
 
 ## 解决方案
 

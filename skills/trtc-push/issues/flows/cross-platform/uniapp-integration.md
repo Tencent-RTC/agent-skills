@@ -1,57 +1,46 @@
-# uni-app TIMPush 集成 / 云打包 / 运行时异常排查流程
+# UniApp 推送集成排查流程
 
-## 入口现象
+## 与 MCP 的关系
 
-用户使用 uni-app / HBuilderX / UTS 插件接入 TIMPush，反馈云打包失败、`registerPush`
-异常、某个平台收不到离线推送、角标或点击回调不符合预期。
+uni-app「收不到 / 注册失败」排障由 **MCP `troubleshoot-uniapp`** 状态机固化：
 
-uni-app 是跨端入口，不是单一根因。必须先判断问题落在构建、插件、iOS APNs、Android
-厂商通道、配置文件还是业务参数。
+| state | 主链步骤 |
+|-------|----------|
+| `stage-0-investigation-plan` | 排查计划确认（开场闸口） |
+| `stage-1-console-validity` | 控制台有效性（服务 + 目标端证书） |
+| `stage-2-scenario` | 测法与形态（collect：基座、编译/运行期） |
+| `stage-3-config-alignment` | 配置对齐（verify：原生 + nativeResources） |
+| `stage-4-register-observation` | registerPush 观测 |
+| `stage-5-token-binding` | 推送 token 绑定 |
+| `stage-6-offline-test` | 离线发测 |
+| `stage-7-analyze` → `stage-9-final-report` | 分析 / 修复 / 结论 |
 
-## 首轮证据
-
-- HBuilderX 版本。
-- TencentCloud-Push / TIMPush 插件版本。
-- 目标平台：iOS / Android / HarmonyOS。
-- 云打包完整错误日志。
-- `timpush-configs.json`。
-- `registerPush` 成功 / 失败回调。
-- 是否调用 `setRegistrationID`。
-- 控制台证书 ID、厂商配置、目标设备品牌。
-- 角标、点击回调或 ext/payload 相关参数。
-
-## 排查顺序
-
-1. 先区分编译期问题和运行期问题。
-2. 编译期问题先看 HBuilderX、UTS 插件、CocoaPods / Gradle 依赖。
-3. iOS 运行期问题转 `../ios/offline-not-received.md`。
-4. Android 运行期问题转 `../android/vendor-not-received.md`。
-5. 鸿蒙问题转 `harmonyos.md`。
-6. 配置文件问题核对 `timpush-configs.json` 与控制台证书 ID / `businessID`。
-7. 注册链路问题核对 `setRegistrationID` 和 `registerPush` 调用顺序。
-8. 角标 / 点击问题转 `../common/badge.md` 或 `../common/server-api.md`。
+打包 / 基座 / 插件导入属**集成问题**（SDK 安装路线）；MCP stage-2 已区分编译期 vs 运行期，编译期问题走打包/基座知识，本文件不替代 wizard。
 
 ## 分支处理
 
 | 分支 | 判断信号 | 处理动作 |
 |---|---|---|
-| iOS 云打包 CocoaPods 依赖失败 | 找不到 `TXIMSDK_Plus_iOS_XCFramework` 等 Pod | 升级插件、等待云打包源同步或改用原生构建验证 |
-| iOS 离线不达 | iOS 在线正常但离线无通知 | 转 iOS APNs 流程 |
-| Android 厂商注册失败 | `800006`、`800008`、厂商 token 异常 | 转 Android 厂商流程 |
-| 配置文件错误 | `timpush-configs.json`、证书 ID 不一致 | 重新下载正确应用配置 |
-| 注册顺序错误 | 未绑定 UserID 或无回调 | 转 `../../cards/common/registration-binding.md` |
-| 角标 / 点击回调 | 通知到达但角标/跳转异常 | 转角标或 API 流程 |
+| 控制台无效 | 插件未开/到期、证书无效 | `../../cards/common/console-validity-gate.md`；MCP stage-1 |
+| 基座 / 路径 / config.json | 打包或配置层 | MCP stage-3 + 原生 flow |
+| Android 厂商 | 某品牌收不到 | `../android/vendor-not-received.md` + `troubleshoot-android` |
+| Android 收不到通用 | 场景不清 | `../android/offline-not-received.md` |
+| Android 错误码 | registerPush fail | `../../cards/android/error-codes.md` |
+| Android 已送达不弹 | 后台点击恢复 | `../android/delivered-not-displayed.md` |
+| Android 点击无跳转 | 能收不跳 | `../android/click-no-action.md` |
+| Android 强杀不达 | 强制停止后 | `../../cards/android/kill-process-offline.md` |
+| FCM | 海外设备 / `FCM unavailable` | `../../cards/android/fcm-gms-domestic.md` |
+| iOS | 证书/展示/点击/收不到 | `../ios/offline-not-received.md` + `troubleshoot-ios` |
+| 鸿蒙 | HarmonyOS 或 APK | `../harmonyos/offline-not-received.md` + `troubleshoot-harmony` |
 
 ## 验证信号
 
-- 云打包或本地构建通过。
-- `registerPush` 成功回调。
-- 对应平台可查到 token / RegistrationID。
-- iOS / Android 分别通过离线推送验证。
-- 角标 / 点击回调符合平台支持范围。
+- MCP stage-1 / stage-3 通过。
+- registerPush 成功；能查到已绑定推送 token。
+- 自定义基座 + 后台/杀进程离线测试可达或回执可解释。
 
 ## 何时升级 / 转交
 
-- 云打包平台依赖源未同步，需要插件或云打包服务侧确认。
-- 插件版本支持范围不明确。
-- 同一代码原生可用、uni-app 插件不可用，需要产研提供最小复现。
+- 原生证据齐全仍不达。
+- 需产品确认基座 / HBuilderX 限制。
+- 用户授权修改工程与配置后执行具体修复（走 wizard/集成路线）。

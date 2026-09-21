@@ -1,6 +1,6 @@
 {
   "$schema_note": "Lightweight TIMPush issue router. Keep this file small: route only, no solution body.",
-  "version": "2026-07-08",
+  "version": "2026-08-04",
   "routing_policy": {
     "purpose": "Best-effort candidate routing, not an exhaustive decision tree.",
     "order": [
@@ -12,6 +12,24 @@
   },
   "routing_rules": [
     {
+      "id": "card-android-error-codes",
+      "priority": 110,
+      "type": "card",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/android/error-codes.md",
+      "match_any": [
+        "800005",
+        "800006",
+        "800008",
+        "10302",
+        "80300002",
+        "regId 不合法",
+        "本机通道注册",
+        "注册推送服务超时"
+      ]
+    },
+    {
       "id": "card-android-huawei-honor-config",
       "priority": 100,
       "type": "card",
@@ -19,7 +37,6 @@
       "workflow_id": "troubleshoot-android",
       "target": "cards/android/vendor-huawei.md",
       "match_any": [
-        "800006",
         "907135702",
         "Huawei appId missing",
         "certificate fingerprint empty",
@@ -38,7 +55,6 @@
       "workflow_id": "troubleshoot-android",
       "target": "cards/android/fcm-gms-domestic.md",
       "match_any": [
-        "800005",
         "FCM unavailable",
         "FCM 注册失败",
         "google-services.json",
@@ -62,6 +78,131 @@
         "pushLogin",
         "offline push token",
         "Set offline push token successfully"
+      ]
+    },
+    {
+      "id": "card-ios-device-token-binding",
+      "priority": 96,
+      "type": "card",
+      "platform": "ios",
+      "workflow_id": "troubleshoot-ios",
+      "target": "cards/ios/device-token-binding.md",
+      "match_any": [
+        "BadDeviceToken",
+        "deviceToken 未上报",
+        "没有 deviceToken",
+        "didFailToRegisterForRemoteNotifications",
+        "APNs 请求 token 失败"
+      ]
+    },
+    {
+      "id": "card-ios-atomicx-vs-timpush",
+      "priority": 97,
+      "type": "card",
+      "platform": "ios",
+      "workflow_id": "troubleshoot-ios",
+      "target": "cards/ios/atomicx-vs-timpush.md",
+      "match_any": [
+        "setCertificateID",
+        "LoginStore.setCertificateID",
+        "AtomicX PushManager",
+        "AtomicXCore 推送",
+        "setCertificateID 和 registerPush",
+        "CallKit 证书 ID TIMPush"
+      ]
+    },
+    {
+      "id": "card-ios-p8-invalid-provider-token",
+      "priority": 96,
+      "type": "card",
+      "platform": "ios",
+      "workflow_id": "troubleshoot-ios",
+      "target": "cards/ios/p8-invalid-provider-token.md",
+      "match_any": [
+        "InvalidProviderToken",
+        "Invalid Provider Token",
+        "P8",
+        "p8 证书",
+        "Key ID",
+        "Team ID"
+      ]
+    },
+    {
+      "id": "card-ios-stats-extension",
+      "priority": 88,
+      "type": "card",
+      "platform": "ios",
+      "workflow_id": "troubleshoot-ios",
+      "target": "cards/ios/stats-extension.md",
+      "match_any": [
+        "触达统计",
+        "Notification Service Extension",
+        "NSE",
+        "iOS 统计不准",
+        "推送回执"
+      ]
+    },
+    {
+      "id": "card-ios-notification-click-ext",
+      "priority": 96,
+      "type": "card",
+      "platform": "ios",
+      "workflow_id": "troubleshoot-ios",
+      "target": "cards/ios/notification-click-ext.md",
+      "match_any": [
+        "ext 为空",
+        "点击通知 ext",
+        "通知 ext",
+        "onRemoteNotificationReceived",
+        "didReceiveNotificationResponse",
+        "点击回调重复",
+        "点击拿不到推送"
+      ]
+    },
+    {
+      "id": "card-common-timpush-only-registrationid",
+      "priority": 88,
+      "type": "card",
+      "platform": "common",
+      "workflow_id": null,
+      "target": "cards/common/timpush-only-registrationid.md",
+      "match_any": [
+        "只有 TIMPush",
+        "不需要 IM SDK",
+        "只接入 Push",
+        "RegistrationID 推送",
+        "registrationID 推送",
+        "TPNS 停服"
+      ]
+    },
+    {
+      "id": "card-harmonyos-click-ohmurl-crash",
+      "priority": 92,
+      "type": "card",
+      "platform": "harmonyos",
+      "workflow_id": "troubleshoot-harmony",
+      "target": "cards/harmonyos/click-ohmurl-crash.md",
+      "match_any": [
+        "useNormalizedOHMUrl",
+        "鸿蒙点击崩溃",
+        "HarmonyOS 点击崩溃",
+        "OHMUrl",
+        "HAR 点击"
+      ]
+    },
+    {
+      "id": "flow-cross-platform-flutter-push-troubleshoot",
+      "priority": 76,
+      "type": "flow",
+      "platform": "flutter",
+      "workflow_id": "troubleshoot-flutter",
+      "target": "flows/cross-platform/flutter-push-troubleshoot.md",
+      "match_any": [
+        "Flutter 收不到推送",
+        "Flutter 推送排查",
+        "tencent_cloud_chat_push",
+        "Flutter 离线推送异常",
+        "Flutter onNotificationClicked"
       ]
     },
     {
@@ -98,6 +239,105 @@
       ]
     },
     {
+      "id": "card-android-oppo-channel-display",
+      "priority": 96,
+      "type": "card",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/android/oppo-channel-display.md",
+      "match_any": [
+        "OPPO 收不到",
+        "oppo 收不到",
+        "OPPO ChannelID",
+        "setAndroidOPPOChannelID",
+        "realme 收不到",
+        "一加 收不到"
+      ]
+    },
+    {
+      "id": "card-android-xiaomi-vivo-store-channel",
+      "priority": 96,
+      "type": "card",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/android/xiaomi-vivo-store-channel.md",
+      "match_any": [
+        "小米 黑名单",
+        "vivo 黑名单",
+        "应用在黑名单",
+        "关闭 push 通道",
+        "未上架",
+        "上架应用市场后",
+        "小米10收不到",
+        "小米14能收到"
+      ]
+    },
+    {
+      "id": "card-android-message-category-limit",
+      "priority": 94,
+      "type": "card",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/android/message-category-limit.md",
+      "match_any": [
+        "只能收到两条",
+        "只能收到几条",
+        "消息分类",
+        "营销类",
+        "11043",
+        "日限额",
+        "私信通道",
+        "推送条数限制"
+      ]
+    },
+    {
+      "id": "card-android-kill-process-offline",
+      "priority": 93,
+      "type": "card",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/android/kill-process-offline.md",
+      "match_any": [
+        "杀死应用后收不到",
+        "强杀后收不到",
+        "彻底杀死",
+        "杀进程收不到",
+        "前台能收后台收不到",
+        "vivo/小米前台能收"
+      ]
+    },
+    {
+      "id": "card-android-notification-click-jump",
+      "priority": 92,
+      "type": "card",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/android/notification-click-jump.md",
+      "match_any": [
+        "点击不跳转",
+        "点击无法跳转",
+        "指定页面",
+        "onNotificationClicked",
+        "通知点击回调"
+      ]
+    },
+    {
+      "id": "card-android-proguard-release-stats",
+      "priority": 90,
+      "type": "card",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/android/proguard-release-stats.md",
+      "match_any": [
+        "ProGuard",
+        "R8",
+        "minifyEnabled",
+        "Release 统计",
+        "混淆后推送",
+        "Debug 正常 Release"
+      ]
+    },
+    {
       "id": "flow-android-delivered-not-displayed",
       "priority": 85,
       "type": "flow",
@@ -113,7 +353,64 @@
         "自启动",
         "后台限制",
         "电池优化",
-        "消息分类"
+        "消息分类",
+        "发送成功但端上无通知",
+        "IM 排查已发送成功",
+        "不弹通知",
+        "手机不弹通知",
+        "回执成功但不弹",
+        "回执成功但手机不弹",
+        "厂商回执成功但不弹"
+      ]
+    },
+    {
+      "id": "flow-android-register-failed",
+      "priority": 74,
+      "type": "flow",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "flows/android/register-failed.md",
+      "match_any": [
+        "registerPush failed",
+        "注册推送失败",
+        "无 RegistrationID",
+        "getRegistrationID 无回调",
+        "RegistrationID 为空"
+      ]
+    },
+    {
+      "id": "flow-android-click-no-action",
+      "priority": 93,
+      "type": "flow",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "flows/android/click-no-action.md",
+      "match_any": [
+        "点击不跳转",
+        "点击无反应",
+        "通知点击打不开",
+        "指定页面不生效",
+        "onNotificationClicked"
+      ]
+    },
+    {
+      "id": "flow-android-offline-not-received",
+      "priority": 72,
+      "type": "flow",
+      "platform": "android",
+      "workflow_id": "troubleshoot-android",
+      "target": "flows/android/offline-not-received.md",
+      "match_any": [
+        "Android 推送收不到",
+        "安卓推送收不到",
+        "Android 离线推送",
+        "安卓离线推送",
+        "Android TIMPush 排查",
+        "Android 推送异常",
+        "离线推送丢",
+        "收不到离线推送",
+        "推送收不到",
+        "杀进程后收不到"
       ]
     },
     {
@@ -126,13 +423,26 @@
       "match_any": [
         "厂商推送收不到",
         "厂商通道注册失败",
-        "离线推送丢",
         "小米收不到推送",
         "vivo 离线推送丢",
         "OPPO 收不到",
         "魅族收不到",
-        "honor 收不到",
-        "registerPush failed"
+        "honor 收不到"
+      ]
+    },
+    {
+      "id": "flow-ios-click-display-merged",
+      "priority": 95,
+      "type": "flow",
+      "platform": "ios",
+      "workflow_id": "troubleshoot-ios",
+      "target": "flows/ios/offline-not-received.md",
+      "match_any": [
+        "iOS 点击不跳转",
+        "iOS 能收到通知",
+        "iPhone 点击不跳转",
+        "iOS 不弹通知",
+        "iOS 发送成功但不弹"
       ]
     },
     {
@@ -151,7 +461,16 @@
         "deviceToken",
         "didRegisterForRemoteNotifications",
         "Notification authorization denied",
-        "iPhone 收不到推送"
+        "iPhone 收不到推送",
+        "iOS 点击不跳转",
+        "iOS 证书",
+        "businessID 不同步",
+        "换证书后收不到",
+        "不弹通知",
+        "发送成功但不弹",
+        "控制台显示发送成功",
+        "iOS 能收到通知",
+        "能收到通知，点击不跳转"
       ]
     },
     {
@@ -285,12 +604,12 @@
       ]
     },
     {
-      "id": "flow-cross-platform-harmonyos",
+      "id": "flow-harmonyos-offline-not-received",
       "priority": 70,
       "type": "flow",
-      "platform": "cross-platform",
-      "workflow_id": null,
-      "target": "flows/cross-platform/harmonyos.md",
+      "platform": "harmonyos",
+      "workflow_id": "troubleshoot-harmony",
+      "target": "flows/harmonyos/offline-not-received.md",
       "match_any": [
         "HarmonyOS",
         "鸿蒙",
@@ -350,7 +669,12 @@
         "产品能力",
         "厂商权益",
         "即时通信分类",
-        "私信通道"
+        "私信通道",
+        "pushID",
+        "PushID",
+        "排查工具",
+        "离线测试工具",
+        "自助排查"
       ]
     },
     {
@@ -391,14 +715,11 @@
       "type": "flow",
       "platform": "android",
       "workflow_id": "troubleshoot-android",
-      "target": "flows/android/vendor-not-received.md",
+      "target": "flows/android/offline-not-received.md",
       "match_any": [
-        "Android 推送收不到",
-        "安卓推送收不到",
-        "Android 离线推送",
-        "安卓离线推送",
-        "Android TIMPush 排查",
-        "Android 推送异常"
+        "Android 推送排查",
+        "安卓推送排查",
+        "Android push troubleshooting"
       ]
     },
     {

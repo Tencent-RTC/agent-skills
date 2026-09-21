@@ -1,5 +1,14 @@
 # iOS：No such module 'TIMPush'（XcodeGen 清掉 CocoaPods 脚本）
 
+## 与 MCP 的关系
+
+本文件是 **知识卡**，不拥有独立主链。
+
+- ROUTER `workflow_id`：`troubleshoot-ios`
+- 关联 flow：`flows/ios/offline-not-received.md`
+- 挂载：主要挂 `stage-4-register-observation`（编译/模块）
+- 执行仍走 MCP 状态机；命中本卡后按挂载阶段取证，禁止用本卡替代 `complete_workflow_step`。
+
 ## 适用现象
 
 当用户反馈以下任一现象时，优先使用本卡：

@@ -24,6 +24,8 @@ SKILL.md 路由 `active_flow = demo-experience` 时，先检查 session 字段�
 
 | 条件 | 跳转 |
 |---|---|
+| `sdkappid_state = collected` 且 `sdkappid` 为正整数，且 `q_demo_platform` 非空 | SDKAppID 已由前置集成流程收集；跳过 D1（不重复询问 SDKAppID/凭证）和 D2.1，直接进 D2.2（运行引导；提醒 SecretKey 仅在本地配置）|
+| `sdkappid_state = collected` 且 `sdkappid` 为正整数，且 `q_demo_platform` 为空 | SDKAppID 已由前置集成流程收集；跳过 D1（不重复询问 SDKAppID/凭证），直接进 D2.1（选平台）|
 | `phase_a_state = has-credentials` 且 `q_demo_platform` 非空 | 跳过 D1 + D2.1，直接进 D2.2（运行引导）|
 | `phase_a_state = has-credentials` 且 `q_demo_platform` 为空 | 跳过 D1，直接进 D2.1（选平台）|
 | 以上均不满足 | 从 D1 开始 |
@@ -31,6 +33,11 @@ SKILL.md 路由 `active_flow = demo-experience` 时，先检查 session 字段�
 ---
 
 ## Phase D1 — 凭证获取
+
+进入本阶段前必须先读取项目根目录 `.trtc-session.yaml` 的 `sdkappid_state` 和 `sdkappid`：
+
+- 当 `sdkappid_state = collected` 且 `sdkappid` 是正整数时，说明前置集成流程已经收集过 SDKAppID。此时不得再次询问“是否已有 SDKAppID/凭证”，按上面的续接表直接进入 D2；运行 demo 时提醒用户只在本地配置 SecretKey，不要把 SecretKey 发到对话中。
+- 只有 SDKAppID 未收集（字段缺失、状态不是 `collected`，或值为空/0）时，才执行下面的 D1 主问。
 
 `AskUserQuestion` 单选：
 
@@ -48,21 +55,20 @@ SKILL.md 路由 `active_flow = demo-experience` 时，先检查 session 字段�
 
 ### D1.3 无凭证 → 控制台引导
 
+> **注**：正常路径下 root `flows/collect-sdkappid.md` §Step 2b 已处理"未获取"场景；本节仅作为 domain skill 的 fallback。链接必须与 root flow 保持一致（改动请同步 root）。
+
 展示：
 
 ```
-1. 注册 / 登录腾讯云账号
-   国内站 → https://cloud.tencent.com/register
-   国际站 → https://sc-rp.tencentcloud.com:8106/t/GF
+到腾讯云控制台创建 TRTC 应用（未登录会先引导注册）：
+  国内站 → https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje?utm_campaign=skill&_channel_track_key=lDTHxeje
+  国际站 → https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy
 
-2. 创建 TRTC 应用
-   国内站 → https://console.cloud.tencent.com/trtc/app
-   国际站 → https://sc-rp.tencentcloud.com:8106/t/GF
-   进入应用管理 → 创建应用 → 场景选"音视频通话"
+进入应用管理 → 创建应用 → 场景选"音视频通话"
 
-3. 记录凭证：
-   - SDKAppID（应用管理页的数字 ID）
-   - SecretKey（应用 → 快速上手 → 密钥管理）
+记录凭证：
+  - SDKAppID（应用管理页的数字 ID）
+  - SecretKey（应用 → 快速上手 → 密钥管理）
 ```
 
 写 session `phase_a_state = needs-onboarding-pending`，`STOP`。
@@ -100,12 +106,14 @@ SKILL.md 路由 `active_flow = demo-experience` 时，先检查 session 字段�
 > **第一步：在你的设备上跑 demo**
 > 按文档操作（5-10 分钟）：**`<对应平台文档链接>`**
 > 1. 克隆 / 下载 demo（文档内有链接）
-> 2. 仅在本地按 demo 文档填入 SDKAppID 和 SecretKey，不要发送到聊天或提交到版本库
+> 2. 如果 session 已经记录 SDKAppID，直接复用该值；仅在本地按 demo 文档填入 SDKAppID 和 SecretKey，不要发送到聊天或提交到版本库
 > 3. 构建运行（Flutter: `flutter pub get && flutter run`；iOS 需先 `cd ios && pod install`）
 >
-> **第二步：用电脑浏览器作为第二端互通**
-> 打开 **https://trtc.io/demo/homepage/#/detail?scene=callkit**，选 **Call a Friend**
-> 两端用同一 SDKAppID，不同的 userId 登录，互相拨号测试通话效果。
+> **第二步：在两台设备上运行 Flutter Demo 做互通测试**
+> 在两台设备上分别运行同一个 Flutter Call Demo，并使用同一 SDKAppID、不同的 userId 登录。
+> 选择其中一台作为呼叫方，另一台作为被呼叫方，发起并接听通话，确认双方能够正常互通。
+
+需要我帮你操作吗？
 
 `STOP`，等用户反馈。
 

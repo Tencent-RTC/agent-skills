@@ -70,9 +70,12 @@ Phase 7.6 微调 + P1 slice 菜单        等用户选择；完成后 status=com
 **目的**：确认用户是否已有 TRTC 应用资源。只确认是否具备，不在对话、session 或源码中
 收集 SecretKey；local-dev 运行时通过 `--dart-define` 注入。
 
-**短路检测**：若 session `phase_a_state = has-credentials`，或历史 session 已有
-`q8_sdk_app_id`（非 null 非 0），直接写 `phase_a_state = has-credentials`，清空
-`q9_secret_key`，跳过 A.1–A.4，进入 Phase 1a。
+**短路检测**（任一满足即跳过 A.1–A.4，直接进入 Phase 1a）：
+- session `phase_a_state = has-credentials`
+- 历史 session 已有 `q8_sdk_app_id`（非 null 非 0）
+- **session 有 root 层写入的 `sdkappid`（非 null 非 0，由 root `flows/collect-sdkappid.md` 收集）** —— 命中时写 `q8_sdk_app_id = <session.sdkappid>`
+
+短路命中时统一写 `phase_a_state = has-credentials`，清空 `q9_secret_key`，进入 Phase 1a。
 
 ### A.1 主问
 
@@ -95,21 +98,20 @@ SDKAppID 或 SecretKey 的具体值；Phase 7 再给出本地 `--dart-define` �
 
 ### A.3 分支：还没有
 
+> **注**：正常路径下 root `flows/collect-sdkappid.md` §Step 2b 已处理"未获取"场景；本节仅作为 domain skill 的 fallback（用户直接进入 trtc-call 或老 session 迁移时命中）。下面的链接必须与 root flow 保持一致（改动请同步 root）。
+
 展示注册引导：
 
 ```
-1. 注册 / 登录腾讯云账号
-   国内站 → https://cloud.tencent.com/register
-   国际站 → https://sc-rp.tencentcloud.com:8106/t/GF
+到腾讯云控制台创建 TRTC 应用（未登录会先引导注册）：
+  国内站 → https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje?utm_campaign=skill&_channel_track_key=lDTHxeje
+  国际站 → https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy
 
-2. 创建 TRTC 应用
-   国内站 → https://console.cloud.tencent.com/trtc/app
-   国际站 → https://sc-rp.tencentcloud.com:8106/t/GF
-   进入应用管理 → 创建应用 → 场景选"音视频通话"
+进入应用管理 → 创建应用 → 场景选"音视频通话"
 
-3. 记录凭证：
-   - SDKAppID（应用管理页的数字 ID）
-   - SecretKey（应用 → 快速上手 → 密钥管理）
+记录凭证：
+  - SDKAppID（应用管理页的数字 ID）
+  - SecretKey（应用 → 快速上手 → 密钥管理）
 ```
 
 写 `phase_a_state = needs-onboarding-pending`，`STOP`。
@@ -129,7 +131,7 @@ q9_secret_key = null
 pending_todos += {
   field: "TRTC local-dev runtime config",
   location: "flutter run --dart-define",
-  source: "https://sc-rp.tencentcloud.com:8106/t/GF",
+  source: "https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy",
   default: "TRTC_SDK_APP_ID=0, TRTC_SECRET_KEY=''"
 }
 ```

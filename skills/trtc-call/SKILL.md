@@ -8,7 +8,7 @@ description: >
   "呼叫", "来电", "客服外呼", "IM 聊天页加通话按钮", "integrate call",
   "add calling", "video call", "voice call", "ringing", "callkit".
 metadata:
-  version: 1.1.0
+  version: 1.1.1
 ---
 
 # trtc-call — Call 集成域 dispatcher

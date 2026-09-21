@@ -1,5 +1,14 @@
 # iOS 证书 ID / businessID 配置失效
 
+## 与 MCP 的关系
+
+本文件是 **知识卡**，不拥有独立主链。
+
+- ROUTER `workflow_id`：`troubleshoot-ios`
+- 关联 flow：`flows/ios/offline-not-received.md`
+- 挂载：主要挂 `stage-1` / `stage-3-config-alignment`
+- 执行仍走 MCP 状态机；命中本卡后按挂载阶段取证，禁止用本卡替代 `complete_workflow_step`。
+
 ## 适用现象
 
 当用户反馈以下现象时，优先使用本卡：
@@ -30,8 +39,10 @@ iOS 离线推送依赖客户端上报的 APNs token 和当前腾讯云应用下�
 
 ## 排查步骤
 
+0. 先过控制台有效性（校验提醒）：推送服务未到期 + APNs 证书未过期/可用 →
+   `../../cards/common/console-validity-gate.md`（对齐 `flows/ios/offline-not-received` 主链第 1 步）。
 1. 先区分在线消息、离线 APNs、通知展示三个阶段。
-2. 核对 `SDKAppID`：IM 应用、Push 控制台和客户端配置必须指向同一应用。
+2. 核对 `SDKAppID`：IM 应用、Push 控制台和客户端配置必须指向同一应用（**校验提醒**，勿先索要原文清单）。
 3. 核对 Bundle ID：APNs 证书绑定的 Bundle ID 必须与 App 实际 Bundle ID 一致。
 4. 核对 `timpush-configs.json`：证书编号 / `businessID` 必须来自当前控制台证书。
 5. 核对 APNs 环境：开发包、Release 包、Sandbox / Production 证书不能混用。

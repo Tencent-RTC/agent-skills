@@ -5,9 +5,12 @@
 //
 // Codex provides an explicit turn_id (unlike Claude/CodeBuddy).
 
+import { hostMetadata } from './metadata.js';
+
 export function parse(input) {
   if (typeof input.prompt !== 'string') return null;
   return {
+    ...hostMetadata(input),
     prompt: input.prompt,
     session_id: typeof input.session_id === 'string' && input.session_id ? input.session_id : null,
     turn_id: typeof input.turn_id === 'string' ? input.turn_id : null,

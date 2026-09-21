@@ -1,5 +1,14 @@
 # RegistrationID / UserID 设备绑定问题
 
+## 与 MCP 的关系
+
+本文件是 **知识卡**，不拥有独立主链。
+
+- ROUTER `workflow_id`：`troubleshoot-android（及各平台同类阶段）`
+- 关联 flow：`flows/android/offline-not-received.md`
+- 挂载：MCP `stage-5-token-binding`
+- 执行仍走 MCP 状态机；命中本卡后按挂载阶段取证，禁止用本卡替代 `complete_workflow_step`。
+
 ## 适用现象
 
 当用户反馈以下任一现象时，优先使用本卡：

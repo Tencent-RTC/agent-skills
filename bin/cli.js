@@ -40,6 +40,10 @@ const {
   readInstallStage,
   writeInstallMarker,
   writeInstallStage,
+  writeRuntimeBinding,
+  readRuntimeBinding,
+  resolveCodexStateRoot,
+  writeHostStateRootBinding,
   clearInstallStage,
   acquireProjectInstallLock,
   releaseProjectInstallLock,
@@ -82,6 +86,7 @@ const SKILL_ALLOWLIST = new Set([
   "trtc-ai-oral-coach",
   "trtc-ai-realtime-interpreter",
   "trtc-chat",
+  "trtc-chat-android",
   "trtc-push",
   "trtc-sdk-log-analysis",
 ]);
@@ -359,7 +364,12 @@ function quoteWindowsArg(value) {
   return `"${String(value).replace(/"/g, '""')}"`;
 }
 
-function buildPromptHookCommand({ ide, nodePath = process.execPath, runtimePath, cwd = null, platform = process.platform }) {
+function canonicalNodeExecutable(nodePath = process.execPath) {
+  try { return fs.realpathSync.native(nodePath); }
+  catch { return path.resolve(nodePath); }
+}
+
+function buildPromptHookCommand({ ide, nodePath = process.execPath, runtimePath, cwd = null, platform = process.platform, stateRoot = null }) {
   if (!HOOKS_TARGETS[ide]) throw new Error(`unsupported hook IDE: ${ide}`);
   if (!fs.existsSync(nodePath)) {
     const err = new Error("Node runtime not found"); err.code = "NODE_NOT_FOUND"; throw err;
@@ -367,12 +377,17 @@ function buildPromptHookCommand({ ide, nodePath = process.execPath, runtimePath,
   if (!runtimePath || !fs.existsSync(runtimePath)) {
     const err = new Error("Telemetry runtime not found"); err.code = "RUNTIME_NOT_FOUND"; throw err;
   }
+  nodePath = canonicalNodeExecutable(nodePath);
   const cwdArg = typeof cwd === "string" && cwd.length > 0
     ? ` --cwd ${quotePosixArg(cwd)}` : "";
   const cwdArgWindows = typeof cwd === "string" && cwd.length > 0
     ? ` --cwd ${quoteWindowsArg(cwd)}` : "";
-  const command = `${quotePosixArg(nodePath)} ${quotePosixArg(runtimePath)} hook --ide ${quotePosixArg(ide)}${cwdArg}`;
-  const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(runtimePath)} hook --ide ${quoteWindowsArg(ide)}${cwdArgWindows}`;
+  const stateRootArg = ide === "codex" && typeof stateRoot === "string" && stateRoot.length > 0
+    ? ` --state-root ${quotePosixArg(stateRoot)}` : "";
+  const stateRootArgWindows = ide === "codex" && typeof stateRoot === "string" && stateRoot.length > 0
+    ? ` --state-root ${quoteWindowsArg(stateRoot)}` : "";
+  const command = `${quotePosixArg(nodePath)} ${quotePosixArg(runtimePath)} hook --ide ${quotePosixArg(ide)}${cwdArg}${stateRootArg}`;
+  const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(runtimePath)} hook --ide ${quoteWindowsArg(ide)}${cwdArgWindows}${stateRootArgWindows}`;
   return { command: platform === "win32" && ide === "cursor" ? commandWindows : command, commandWindows };
 }
 
@@ -380,7 +395,7 @@ function buildPromptHookCommand({ ide, nodePath = process.execPath, runtimePath,
 // this command is wired to every host's Stop event. Stop runs after the
 // assistant response and can safely perform the bounded foreground
 // promote/flush when the host skipped the model-issued invoke instruction.
-function buildHostStopCommand({ ide, nodePath = process.execPath, runtimePath, cwd = null, platform = process.platform }) {
+function buildHostStopCommand({ ide, nodePath = process.execPath, runtimePath, cwd = null, platform = process.platform, stateRoot = null }) {
   if (!HOOKS_TARGETS[ide]) throw new Error(`unsupported hook IDE: ${ide}`);
   if (!fs.existsSync(nodePath)) {
     const err = new Error("Node runtime not found"); err.code = "NODE_NOT_FOUND"; throw err;
@@ -388,6 +403,7 @@ function buildHostStopCommand({ ide, nodePath = process.execPath, runtimePath, c
   if (!runtimePath || !fs.existsSync(runtimePath)) {
     const err = new Error("Telemetry runtime not found"); err.code = "RUNTIME_NOT_FOUND"; throw err;
   }
+  nodePath = canonicalNodeExecutable(nodePath);
   const runtimeDir = path.dirname(runtimePath);
   const wrapperPath = path.join(runtimeDir, "stop-hook-dispatcher.cjs");
   if (!fs.existsSync(wrapperPath)) {
@@ -401,6 +417,10 @@ function buildHostStopCommand({ ide, nodePath = process.execPath, runtimePath, c
     ? ` --cwd ${quotePosixArg(cwd)}` : "";
   const cwdArgWindows = typeof cwd === "string" && cwd.length > 0
     ? ` --cwd ${quoteWindowsArg(cwd)}` : "";
+  const stateRootArg = ide === "codex" && typeof stateRoot === "string" && stateRoot.length > 0
+    ? ` --state-root ${quotePosixArg(stateRoot)}` : "";
+  const stateRootArgWindows = ide === "codex" && typeof stateRoot === "string" && stateRoot.length > 0
+    ? ` --state-root ${quoteWindowsArg(stateRoot)}` : "";
   if (ide === "cursor") {
     const command = `${quotePosixArg(nodePath)} ${quotePosixArg(runtimePath)} host-stop --ide ${quotePosixArg(ide)}${cwdArg}`;
     const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(runtimePath)} host-stop --ide ${quoteWindowsArg(ide)}${cwdArgWindows}`;
@@ -408,8 +428,8 @@ function buildHostStopCommand({ ide, nodePath = process.execPath, runtimePath, c
   }
   const guardArg = fs.existsSync(guardPath) ? ` --guard-path ${quotePosixArg(guardPath)}` : "";
   const guardArgWindows = fs.existsSync(guardPath) ? ` --guard-path ${quoteWindowsArg(guardPath)}` : "";
-  const command = `${quotePosixArg(nodePath)} ${quotePosixArg(wrapperPath)} --ide ${quotePosixArg(ide)} --runtime-path ${quotePosixArg(runtimePath)}${cwdArg}${guardArg}`;
-  const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(wrapperPath)} --ide ${quoteWindowsArg(ide)} --runtime-path ${quoteWindowsArg(runtimePath)}${cwdArgWindows}${guardArgWindows}`;
+  const command = `${quotePosixArg(nodePath)} ${quotePosixArg(wrapperPath)} --ide ${quotePosixArg(ide)} --runtime-path ${quotePosixArg(runtimePath)}${cwdArg}${stateRootArg}${guardArg}`;
+  const commandWindows = `${quoteWindowsArg(nodePath)} ${quoteWindowsArg(wrapperPath)} --ide ${quoteWindowsArg(ide)} --runtime-path ${quoteWindowsArg(runtimePath)}${cwdArgWindows}${stateRootArgWindows}${guardArgWindows}`;
   return { command: platform === "win32" && ide === "cursor" ? commandWindows : command, commandWindows };
 }
 
@@ -1371,7 +1391,7 @@ function copyHooksDir(target, resolvedRoot, ide) {
 // ~/.cursor/hooks.json we merge per-event arrays so a previously-installed
 // project's adapter path gets replaced by ours but the user's own hook
 // entries (if any) are preserved.
-function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide, { preserveLegacy = false } = {}) {
+function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide, { preserveLegacy = false, stateRoot = null } = {}) {
   const srcPath = path.join(HOOKS_SRC, target.sourceConfig);
   const settingsPath = path.isAbsolute(target.settingsFile)
     ? target.settingsFile
@@ -1406,7 +1426,7 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide, {
   // can later remove only ours on uninstall.
   const incomingHooks = parsed.hooks || {};
   const runtimePath = path.join(resolvedRoot, IDE_TARGETS[ide].skillsRoot, "trtc", "runtime", "telemetry.cjs");
-  const promptCommand = buildPromptHookCommand({ ide, runtimePath, cwd: resolvedRoot });
+  const promptCommand = buildPromptHookCommand({ ide, runtimePath, cwd: resolvedRoot, stateRoot });
   const promptEvent = ide === "cursor" ? "beforeSubmitPrompt" : "UserPromptSubmit";
   incomingHooks[promptEvent] = ide === "cursor"
     ? [{ command: promptCommand.command }]
@@ -1418,11 +1438,12 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide, {
 
   // If the host skipped the model-issued foreground invoke, recover at the
   // post-answer lifecycle boundary. This is deliberately not attached to the
-  // Prompt hook: the host-stop command runs only after the answer and is the
-  // only automatic path allowed to promote/flush or surface the C20 notice.
+  // Prompt hook for network work: Host Stop may promote/flush, while the
+  // Prompt hook remains disk-only except for replaying an already-ACKed local
+  // C20 notice through its host-visible systemMessage channel.
   if (["cursor", "codebuddy", "claude", "codex"].includes(ide)) {
     const stopEvent = ide === "cursor" ? "stop" : "Stop";
-    const stopCommand = buildHostStopCommand({ ide, runtimePath, cwd: resolvedRoot });
+    const stopCommand = buildHostStopCommand({ ide, runtimePath, cwd: resolvedRoot, stateRoot });
     if (ide === "cursor") {
       const existingStop = Array.isArray(incomingHooks[stopEvent]) ? incomingHooks[stopEvent] : [];
       incomingHooks[stopEvent] = existingStop.concat({ command: stopCommand.command });
@@ -1468,6 +1489,23 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide, {
           }],
         };
         incomingHooks[postToolEvent] = existingPostTool.concat(postToolFallback);
+
+        // A foreground reporting command can return a notice marker to the
+        // model, but CodeBuddy may finish an empty/error turn without copying
+        // that marker into the visible conversation.  Use a lightweight,
+        // local-only PostToolUse fallback for the common file/shell tools. It
+        // reads the already-ACKed notice receipt and returns only a documented
+        // systemMessage; unlike host-stop it never promotes or flushes a
+        // Prompt, so it cannot add latency or create a second event in the
+        // normal path.
+        const postToolNoticeFallback = {
+          matcher: "Bash|Read|Write|Edit|Grep|Glob|ask_followup_question|ask_user_question|AskUserQuestion",
+          hooks: [{
+            type: "command",
+            command: `${stopCommand.command} --notice-only`,
+          }],
+        };
+        incomingHooks[postToolEvent] = incomingHooks[postToolEvent].concat(postToolNoticeFallback);
       }
     }
   }
@@ -1544,7 +1582,7 @@ function mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDestAbs, ide, {
   return { settingsPath, eventCount: Object.keys(incomingHooks).length };
 }
 
-function installHooks(ideList, resolvedRoot, { preserveLegacyIdes = [] } = {}) {
+function installHooks(ideList, resolvedRoot, { preserveLegacyIdes = [], stateRootByIde = {} } = {}) {
   const results = {};
   for (const ide of ideList) {
     const target = HOOKS_TARGETS[ide];
@@ -1560,6 +1598,7 @@ function installHooks(ideList, resolvedRoot, { preserveLegacyIdes = [] } = {}) {
 
       const merged = mergeHooksConfig(target, resolvedRoot, ideAbsRoot, hooksDest, ide, {
         preserveLegacy: preserveLegacyIdes.includes(ide),
+        stateRoot: stateRootByIde?.[ide] || null,
       });
       if (!merged || merged.error) {
         results[ide] = { installed: false, activated: false, reason: merged?.error || "config_merge_failed" };
@@ -2717,6 +2756,7 @@ async function mainUnlocked() {
   const promptReportingFlagPresent = args.includes("--prompt-reporting");
   const promptReportingArg = getFlag(args, "--prompt-reporting");
   const ideArg    = getFlag(args, "--ide");
+  const explicitStateRootArg = getFlag(args, "--state-root");
   if (promptReportingFlagPresent && promptReportingArg === undefined) {
     throw new Error("--prompt-reporting requires on or off");
   }
@@ -2802,6 +2842,23 @@ async function mainUnlocked() {
     // a later install from reclassifying the untouched project.
     writeInstallMarker(resolvedRoot, reportingMode, { installerVersion: PKG_VERSION, ides: ideList });
     return;
+  }
+  // Codex is the only host whose foreground process can be launched from a
+  // different task cwd than its Hook. Resolve one canonical root before any
+  // Hook/config writes so all three entries can embed the same value. A
+  // corrupt marker is fail-closed; silently switching to an inherited env
+  // root would revive the cross-project queue split this binding fixes.
+  let codexStateRoot = null;
+  if (ideList.includes("codex")) {
+    const resolvedStateRoot = resolveCodexStateRoot(resolvedRoot, {
+      explicitStateRoot: explicitStateRootArg,
+      env: process.env,
+    });
+    if (resolvedStateRoot.status !== "valid") {
+      const reason = resolvedStateRoot.reason || resolvedStateRoot.status || "state_root_unavailable";
+      throw new Error(`state_root_unavailable:${reason}`);
+    }
+    codexStateRoot = resolvedStateRoot.stateRoot;
   }
   const home = process.env.HOME || os.homedir();
   const legacyUpgradeIdes = reportingModeResult.reason === "explicit_upgrade"
@@ -2927,7 +2984,10 @@ async function mainUnlocked() {
 
   // 3. Install hooks (per-IDE: copy hooks dir + merge settings.json hooks).
   console.log(`\n  ${c.bold("HOOKS")}`);
-  const hookResults = installHooks(ideList, resolvedRoot, { preserveLegacyIdes: legacyUpgradeIdes });
+  const hookResults = installHooks(ideList, resolvedRoot, {
+    preserveLegacyIdes: legacyUpgradeIdes,
+    stateRootByIde: codexStateRoot ? { codex: codexStateRoot } : {},
+  });
   let installHealthStatus = Object.values(hookResults || {}).some((result) => result?.installed !== true)
     ? "partial" : "completed";
   writeInstallStage(resolvedRoot, reportingMode, "hooks", {
@@ -3132,7 +3192,71 @@ async function mainUnlocked() {
     ides: committedNodeIdes,
     installGeneration: stage.ownerToken,
     installIdes: currentInstallIdes,
+    runtimeBindingRequiredIdes: committedNodeIdes,
   });
+
+  // Bind the foreground Python shim only after the Node marker is committed.
+  // This keeps an interrupted legacy migration from leaving a stale binding
+  // that could make the restored legacy project try to start Node V2. Hooks
+  // already embed process.execPath directly; this manifest closes the PATH
+  // version gap for prompt/context/invoke calls. A failed binding is reported
+  // as a partial install, but does not disable the local Hook or fallback.
+  const runtimeBindingIdes = ideList.filter((ide) => committedNodeIdes.includes(ide));
+  const runtimeBindingBundles = Object.fromEntries(runtimeBindingIdes.map((ide) => [
+    ide,
+    path.join(resolvedRoot, IDE_TARGETS[ide].skillsRoot, "trtc", "runtime", "telemetry.cjs"),
+  ]));
+  if (runtimeBindingIdes.length > 0) {
+    try {
+      const bindingResult = writeRuntimeBinding(resolvedRoot, {
+        ides: runtimeBindingIdes,
+        bundlePaths: runtimeBindingBundles,
+        installerVersion: PKG_VERSION,
+        generation: stage.ownerToken,
+        nodePath: process.execPath,
+      });
+      const failedBindings = bindingResult?.failed || [];
+      if (failedBindings.length > 0) {
+        installHealthStatus = "partial";
+        console.warn(c.yellow(`  ⚠ runtime binding partial (${failedBindings.map((entry) => `${entry.ide}:${entry.code.toLowerCase()}`).join(", ")}); repair is required.`));
+      }
+      console.log(c.green("    ✓ ") + `runtime binding → ${(bindingResult?.succeeded || []).join(", ")}`);
+    } catch (error) {
+      installHealthStatus = "partial";
+      const reason = typeof error?.code === "string" && /^[A-Z0-9_]{2,48}$/.test(error.code)
+        ? error.code.toLowerCase()
+        : "runtime_binding_failed";
+      console.warn(c.yellow(`  ⚠ runtime binding unavailable (${reason}); foreground reporting will require repair.`));
+    }
+  }
+
+  // Commit the Codex project binding only after its runtime binding has been
+  // written. A non-ready marker is still durable diagnostic state: Runtime
+  // returns state_root_unavailable instead of falling back to another project
+  // or manufacturing an ephemeral identity.
+  if (codexStateRoot && committedNodeIdes.includes("codex")) {
+    const codexBindingReady = runtimeBindingIdes.includes("codex")
+      && (() => {
+        try {
+          const binding = readRuntimeBinding(resolvedRoot);
+          return binding.status === "valid" && binding.value.bindings?.codex?.generation === stage.ownerToken;
+        } catch { return false; }
+      })();
+    try {
+      writeHostStateRootBinding(resolvedRoot, {
+        stateRoot: codexStateRoot,
+        generation: stage.ownerToken,
+        status: codexBindingReady ? "ready" : "unavailable",
+        installerVersion: PKG_VERSION,
+      });
+      if (!codexBindingReady) installHealthStatus = "partial";
+    } catch (error) {
+      installHealthStatus = "partial";
+      const reason = typeof error?.code === "string" && /^[A-Z0-9_]{2,48}$/.test(error.code)
+        ? error.code.toLowerCase() : "state_root_unavailable";
+      console.warn(c.yellow(`  ⚠ Codex state-root binding unavailable (${reason}); repair is required.`));
+    }
+  }
 
   // Anonymous install reporting happens only after the local Node marker is
   // committed. A fully failed explicit legacy migration has no committed
@@ -3151,6 +3275,7 @@ async function mainUnlocked() {
       installStatus: installHealthStatus,
       eventId: installEventId,
       installStageToken: stage.ownerToken,
+      stateRoot: codexStateRoot && committedNodeIdes.includes("codex") ? codexStateRoot : undefined,
     });
     const telemetry = installReport.telemetry;
     if (!installReport.ok || telemetry?.acknowledged !== true) {
@@ -3276,6 +3401,8 @@ module.exports = {
   parsePromptReportingValue,
   copyRecursive,
   buildPromptHookCommand,
+  resolveCodexStateRoot,
+  writeHostStateRootBinding,
   stripOwnedHookEntries,
   stripOwnedMarkerBlocks,
   injectMarkered,

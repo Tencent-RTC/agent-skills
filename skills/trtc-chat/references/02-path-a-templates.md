@@ -87,7 +87,7 @@
 >   2. 登录后默认激活与管理员的单聊会话
 >   3. 发起新单聊或创建群聊时携带成员，需确保对方 userID 已登录过 IM（首次登录会在系统注册）；可在 IM 控制台手动创建。
 >
-> 国内站：https://console.cloud.tencent.com/im
+> 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN
 > 国际站：https://console.trtc.io/chat
 >
 > 如需调整主题色，直接告诉我你的风格偏好即可。

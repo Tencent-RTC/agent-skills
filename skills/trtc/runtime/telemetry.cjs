@@ -36,17 +36,17 @@ var init_continuation_notice = __esm({
   "skills/trtc/runtime/continuation-notice.js"() {
     continuation_notice_default = {
       "version": 1,
-      "body": "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。",
+      "body": "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。\n如果跳过此问题，则默认会收集您在使用过程中的提示词。",
       "allow_label": "同意继续体验数据上报",
       "deny_label": "停止后续体验数据上报",
       "locales": {
         "zh-CN": {
-          "body": "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。",
+          "body": "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。\n如果跳过此问题，则默认会收集您在使用过程中的提示词。",
           "allow_label": "同意继续体验数据上报",
           "deny_label": "停止后续体验数据上报"
         },
         "en-US": {
-          "body": "To help us understand how the Skill is used and improve it, do you agree to let us collect de-identified prompts and any identifiable TRTC SDKAppID in your project?\nWe do not proactively collect or upload SecretKey, UserSig, Token, passwords, private keys, or source code. Prompts are redacted before upload.",
+          "body": "To help us understand how the Skill is used and improve it, do you agree to let us collect de-identified prompts and any identifiable TRTC SDKAppID in your project?\nWe do not proactively collect or upload SecretKey, UserSig, Token, passwords, private keys, or source code. Prompts are redacted before upload.\nIf you skip this question, prompt collection remains enabled by default.",
           "allow_label": "Agree and continue experience data collection",
           "deny_label": "Stop future experience data collection"
         }
@@ -89,6 +89,24 @@ function detectNoticeLocale(text, env = process.env, explicit = null) {
       return "en-US";
   }
   return localeFromEnvironment(env) || DEFAULT_NOTICE_LOCALE;
+}
+function foregroundNoticeLocale(text, previousLocale, explicit = null) {
+  const requested = normalizeNoticeLocale(explicit);
+  if (requested)
+    return requested;
+  const previous = normalizeNoticeLocale(previousLocale) || DEFAULT_NOTICE_LOCALE;
+  if (typeof text !== "string")
+    return previous;
+  const prose = text.replace(/```[\s\S]*?```|`[^`]*`/g, " ").replace(/https?:\/\/\S+/gi, " ").replace(/\b[A-Za-z0-9]*[-_./\\][A-Za-z0-9_./\\-]*\b/g, " ").replace(/\b(?:SDKAppID|SecretKey|UserSig|TRTC|TUIKit|TIMPush|APNs|FCM|NodeJS|TypeScript|JavaScript)\b/gi, " ").replace(/\b[a-z]+(?:[A-Z][A-Za-z0-9]*)+\b/g, " ");
+  if (/\p{Script=Han}/u.test(prose))
+    return "zh-CN";
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Cyrillic}]/u.test(prose))
+    return previous;
+  const words = prose.match(/\b[a-z]+(?:'[a-z]+)?\b/gi) || [];
+  if (words.length >= 2 || /^(?:yes|no|ok|okay|hello|hi|thanks|continue|agree|stop|allow|deny)$/i.test(prose.trim())) {
+    return "en-US";
+  }
+  return previous;
 }
 function noticeForLocale(locale) {
   var _a;
@@ -511,6 +529,11 @@ function getOrCreate(opts = {}) {
   } catch (err) {
     if (!isRecoverableRootError(err))
       throw err;
+    if (opts.allowEphemeral === false) {
+      const unavailable = new Error("identity: bound state root is unavailable");
+      unavailable.code = "STATE_ROOT_UNAVAILABLE";
+      throw unavailable;
+    }
   }
   const ephemeral = opts.ephemeralRoot || resolveEphemeralRoot(platform);
   return finalize(tryWriteAt(ephemeral, "ephemeral", opts, platform));
@@ -684,10 +707,13 @@ function paths(stateRoot, projectKey2) {
   return {
     dir,
     notice: (0, import_node_path2.join)(dir, "notice-v1.json"),
+    obligation: (0, import_node_path2.join)(dir, NOTICE_OBLIGATION_FILE),
     tombstone: (0, import_node_path2.join)(dir, "deny-v1.tombstone"),
     lock: (0, import_node_path2.join)(dir, OWNER_FILE2),
     sendLock: (0, import_node_path2.join)(dir, SEND_OWNER_FILE),
+    admissionLock: (0, import_node_path2.join)(dir, ADMISSION_OWNER_FILE),
     producerDir: (0, import_node_path2.join)(dir, PRODUCER_DIR),
+    eventAckDir: (0, import_node_path2.join)(dir, EVENT_ACK_DIR),
     turns: (0, import_node_path2.join)(dir, "control-turns")
   };
 }
@@ -762,6 +788,16 @@ function atomicWrite(path2, value, opts = {}) {
     }
     return false;
   }
+}
+function atomicNoticeWrite(path2, value, opts = {}) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      if (atomicWrite(path2, value, opts))
+        return true;
+    } catch {
+    }
+  }
+  return false;
 }
 function readJson(path2) {
   try {
@@ -877,7 +913,40 @@ function validateNotice(value, projectKey2) {
     return null;
   if (value.notice_locale !== void 0 && !normalizeNoticeLocale(value.notice_locale))
     return null;
-  return { ...value, notice_locale: normalizeNoticeLocale(value.notice_locale) || "zh-CN" };
+  if (value.choice_retry_count !== void 0 && (!Number.isInteger(value.choice_retry_count) || value.choice_retry_count < 0))
+    return null;
+  if (value.choice_next_retry_at !== void 0 && !Number.isFinite(value.choice_next_retry_at))
+    return null;
+  if (value.choice_last_error !== void 0 && typeof value.choice_last_error !== "string")
+    return null;
+  if (value.foreground_attempts !== void 0 && (!Number.isInteger(value.foreground_attempts) || value.foreground_attempts < 0))
+    return null;
+  if (value.foreground_last_ide !== void 0 && typeof value.foreground_last_ide !== "string")
+    return null;
+  return {
+    ...value,
+    status: value.status === "ignored" ? "defaulted" : value.status,
+    notice_locale: normalizeNoticeLocale(value.notice_locale) || "zh-CN"
+  };
+}
+function validateNoticeObligation(value, projectKey2) {
+  if (!value || typeof value !== "object" || !validProjectKey(projectKey2))
+    return null;
+  if (value.version !== NOTICE_VERSION || value.project_key !== projectKey2 || typeof value.first_event_id !== "string" || !SAFE_EVENT_ID_RE.test(value.first_event_id) || typeof value.acknowledged !== "boolean" || !Number.isFinite(value.created_at))
+    return null;
+  if (value.acknowledged && !Number.isFinite(value.acknowledged_at))
+    return null;
+  if (value.notice_status !== void 0 && !["pending", "allowed", "denied", "defaulted", "expired"].includes(value.notice_status))
+    return null;
+  if (value.first_event_expired === true && !Number.isFinite(value.expired_at))
+    return null;
+  if (value.notice_locale !== void 0 && !normalizeNoticeLocale(value.notice_locale))
+    return null;
+  return {
+    ...value,
+    notice_status: value.notice_status || "pending",
+    ...value.notice_locale ? { notice_locale: normalizeNoticeLocale(value.notice_locale) } : {}
+  };
 }
 function validateTurn(value, projectKey2, expectedKey) {
   if (!value || typeof value !== "object" || value.version !== NOTICE_VERSION || value.project_key !== projectKey2 || !validControlKey(value.control_key) || value.control_key !== expectedKey || !CONTROL_STATES.includes(value.control_status) || !["allowed", "denied"].includes(value.control_kind) || value.notice_version !== NOTICE_VERSION || !Number.isFinite(value.created_at))
@@ -896,6 +965,210 @@ function readNoticeReceipt(stateRoot, projectKey2) {
   const value = validateNotice(readJson(p.notice), projectKey2);
   return value ? { status: "valid", value } : { status: "corrupt" };
 }
+function readNoticeObligation(stateRoot, projectKey2) {
+  const p = paths(stateRoot, projectKey2);
+  if (!p)
+    return { status: "invalid" };
+  const file = lstatRegularFile(p.obligation);
+  if (file.status === "missing")
+    return { status: "missing" };
+  if (file.status !== "regular")
+    return { status: "corrupt" };
+  const value = validateNoticeObligation(readJson(p.obligation), projectKey2);
+  return value ? { status: "valid", value } : { status: "corrupt" };
+}
+function writeNoticeObligationLocked(p, value, opts = {}) {
+  return atomicWrite(p.obligation, value, opts);
+}
+function ensureNoticeObligation(stateRoot, projectKey2, eventId, opts = {}) {
+  const p = paths(stateRoot, projectKey2);
+  if (!p || !SAFE_EVENT_ID_RE.test(String(eventId || "")))
+    return { status: "error", reason: "invalid_event_id" };
+  const lock = acquireControlReservation(stateRoot, projectKey2, { timeoutMs: opts.timeoutMs ?? 100 });
+  if (!lock)
+    return { status: "retry", reason: "control_busy" };
+  try {
+    const current = readNoticeObligation(stateRoot, projectKey2);
+    if (current.status === "valid") {
+      return current.value.first_event_id === eventId ? { status: "already_present", value: current.value } : { status: "conflict", value: current.value };
+    }
+    if (current.status === "corrupt") {
+      if (opts.allowCorruptReplacement !== true)
+        return { status: "error", reason: "obligation_corrupt" };
+      const entry = lstatRegularFile(p.obligation);
+      if (entry.status !== "regular")
+        return { status: "error", reason: "obligation_corrupt" };
+    }
+    const value = {
+      version: NOTICE_VERSION,
+      project_key: projectKey2,
+      first_event_id: eventId,
+      acknowledged: false,
+      notice_status: "pending",
+      created_at: Number.isFinite(opts.createdAt) ? opts.createdAt : Date.now(),
+      ...normalizeNoticeLocale(opts.noticeLocale) ? { notice_locale: normalizeNoticeLocale(opts.noticeLocale) } : {}
+    };
+    return writeNoticeObligationLocked(p, value, opts) ? { status: "created", value } : { status: "error", reason: "obligation_write_failed" };
+  } finally {
+    releaseControlReservation(lock);
+  }
+}
+function acknowledgeNoticeObligation(stateRoot, projectKey2, eventId, opts = {}) {
+  const p = paths(stateRoot, projectKey2);
+  if (!p || !SAFE_EVENT_ID_RE.test(String(eventId || "")))
+    return { status: "error", reason: "invalid_event_id" };
+  const lock = acquireControlReservation(stateRoot, projectKey2, { timeoutMs: opts.timeoutMs ?? 100 });
+  if (!lock)
+    return { status: "retry", reason: "control_busy" };
+  try {
+    const current = readNoticeObligation(stateRoot, projectKey2);
+    if (current.status !== "valid")
+      return { status: current.status === "missing" ? "not_found" : "error", reason: current.status };
+    if (current.value.first_event_id !== eventId)
+      return { status: "conflict", value: current.value };
+    if (current.value.acknowledged)
+      return { status: "already_present", value: current.value };
+    const value = {
+      ...current.value,
+      acknowledged: true,
+      acknowledged_at: Number.isFinite(opts.acknowledgedAt) ? opts.acknowledgedAt : Date.now(),
+      ...normalizeNoticeLocale(opts.noticeLocale) ? { notice_locale: normalizeNoticeLocale(opts.noticeLocale) } : {}
+    };
+    return writeNoticeObligationLocked(p, value, opts) ? { status: "updated", value } : { status: "error", reason: "obligation_write_failed" };
+  } finally {
+    releaseControlReservation(lock);
+  }
+}
+function eventAckPath(p, eventId) {
+  if (!p || !SAFE_EVENT_ID_RE.test(String(eventId || "")))
+    return null;
+  return (0, import_node_path2.join)(p.eventAckDir, `${eventId}.json`);
+}
+function validateEventAck(value, projectKey2, eventId) {
+  return value && typeof value === "object" && !Array.isArray(value) && value.version === NOTICE_VERSION && value.project_key === projectKey2 && value.event_id === eventId && value.acknowledged === true && Number.isFinite(value.acknowledged_at);
+}
+function readDirectoryNamesBounded(dirPath, maxEntries, deadlineMono) {
+  let dir;
+  try {
+    dir = (0, import_node_fs2.opendirSync)(dirPath);
+  } catch (err) {
+    return (err == null ? void 0 : err.code) === "ENOENT" ? { status: "ok", names: [], truncated: false } : { status: "error", names: [], truncated: false, reason: (err == null ? void 0 : err.code) || "directory_open_failed" };
+  }
+  const names = [];
+  let truncated = false;
+  try {
+    while (names.length < maxEntries) {
+      if (Number.isFinite(deadlineMono) && performanceNow() >= deadlineMono) {
+        truncated = true;
+        break;
+      }
+      const entry = dir.readSync();
+      if (!entry)
+        break;
+      names.push(entry.name);
+    }
+    if (names.length >= maxEntries)
+      truncated = true;
+  } catch (err) {
+    return { status: "error", names, truncated: true, reason: (err == null ? void 0 : err.code) || "directory_read_failed" };
+  } finally {
+    try {
+      dir.closeSync();
+    } catch {
+    }
+  }
+  return { status: "ok", names, truncated };
+}
+function acknowledgeEvent(stateRoot, projectKey2, eventId, opts = {}) {
+  const p = paths(stateRoot, projectKey2);
+  const path2 = eventAckPath(p, eventId);
+  if (!p || !path2)
+    return { status: "error", reason: "invalid_event_id" };
+  const existing = readEventAcknowledgement(stateRoot, projectKey2, eventId);
+  if (existing.status === "valid") {
+    return durabilizeFile(path2, p.eventAckDir, opts) ? { status: "already_present", value: existing.value } : { status: "error", reason: "ack_receipt_durability_failed" };
+  }
+  if (!["missing", "invalid", "corrupt"].includes(existing.status)) {
+    return { status: "error", reason: "ack_receipt_unavailable" };
+  }
+  const value = {
+    version: NOTICE_VERSION,
+    project_key: projectKey2,
+    event_id: eventId,
+    acknowledged: true,
+    acknowledged_at: Number.isFinite(opts.acknowledgedAt) ? opts.acknowledgedAt : Date.now()
+  };
+  return atomicWrite(path2, value, opts) ? { status: "created", value } : { status: "error", reason: "ack_receipt_write_failed" };
+}
+function gcEventAcknowledgements(stateRoot, projectKey2, opts = {}) {
+  const p = paths(stateRoot, projectKey2);
+  if (!p)
+    return { status: "invalid", removed: 0 };
+  const protectedIds = new Set(Array.isArray(opts.protectedEventIds) ? opts.protectedEventIds : []);
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+  const maxAgeMs = Number.isFinite(opts.maxAgeMs) ? Math.max(0, opts.maxAgeMs) : 7 * 24 * 60 * 60 * 1e3;
+  const maxFiles = Number.isFinite(opts.maxFiles) ? Math.max(1, Math.floor(opts.maxFiles)) : 5e3;
+  const maxEntries = Number.isFinite(opts.maxEntries) ? Math.max(1, Math.floor(opts.maxEntries)) : 128;
+  const scan = readDirectoryNamesBounded(p.eventAckDir, maxEntries, opts.deadlineMono);
+  if (scan.status !== "ok")
+    return { status: "error", removed: 0, scanned: scan.names.length, truncated: scan.truncated, reason: scan.reason };
+  const entries = [];
+  for (const name of scan.names) {
+    if (Number.isFinite(opts.deadlineMono) && performanceNow() >= opts.deadlineMono)
+      break;
+    if (!name.endsWith(".json"))
+      continue;
+    const eventId = (0, import_node_path2.basename)(name, ".json");
+    if (!SAFE_EVENT_ID_RE.test(eventId))
+      continue;
+    const path2 = (0, import_node_path2.join)(p.eventAckDir, name);
+    const file = lstatRegularFile(path2);
+    if (file.status !== "regular")
+      continue;
+    let mtimeMs;
+    try {
+      mtimeMs = (0, import_node_fs2.statSync)(path2).mtimeMs;
+    } catch {
+      continue;
+    }
+    entries.push({ path: path2, eventId, mtimeMs });
+  }
+  const removable = entries.filter((entry) => !protectedIds.has(entry.eventId) && now - entry.mtimeMs >= maxAgeMs).sort((a, b) => a.mtimeMs - b.mtimeMs);
+  if (!scan.truncated && entries.length - removable.length > maxFiles) {
+    for (const entry of [...entries].sort((a, b) => a.mtimeMs - b.mtimeMs)) {
+      if (entries.length - removable.length <= maxFiles)
+        break;
+      if (!protectedIds.has(entry.eventId) && !removable.includes(entry))
+        removable.push(entry);
+    }
+  }
+  let removed = 0;
+  for (const entry of removable) {
+    try {
+      (0, import_node_fs2.unlinkSync)(entry.path);
+      removed += 1;
+    } catch (err) {
+      if ((err == null ? void 0 : err.code) !== "ENOENT")
+        continue;
+    }
+  }
+  if (removed > 0)
+    fsyncDirBestEffort2(p.eventAckDir, opts);
+  return { status: "ok", removed, scanned: entries.length, truncated: scan.truncated };
+}
+function readEventAcknowledgement(stateRoot, projectKey2, eventId) {
+  const p = paths(stateRoot, projectKey2);
+  const path2 = eventAckPath(p, eventId);
+  if (!p || !path2)
+    return { status: "invalid" };
+  const entry = lstatRegularFile(path2);
+  if (entry.status === "missing")
+    return { status: "missing" };
+  if (entry.status !== "regular")
+    return { status: entry.status };
+  const value = readJson(path2);
+  return validateEventAck(value, projectKey2, eventId) ? { status: "valid", value } : { status: "corrupt" };
+}
 function writeNoticeReceipt(stateRoot, projectKey2, receipt) {
   const p = paths(stateRoot, projectKey2);
   if (!p || !validAttempt(receipt == null ? void 0 : receipt.notice_attempt_id))
@@ -904,6 +1177,13 @@ function writeNoticeReceipt(stateRoot, projectKey2, receipt) {
   if (!lock)
     return { status: "error", reason: "control_busy" };
   try {
+    const obligation = readNoticeObligation(stateRoot, projectKey2);
+    if (obligation.status === "valid" && (receipt == null ? void 0 : receipt.legacy) !== true && (obligation.value.first_event_id !== receipt.event_id || obligation.value.acknowledged !== true)) {
+      return { status: "not_ready", reason: "first_prompt_not_acknowledged", obligation: obligation.value };
+    }
+    if (obligation.status === "valid" && (obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status))) {
+      return { status: "terminal", obligation: obligation.value };
+    }
     const existing = readNoticeReceipt(stateRoot, projectKey2);
     if (existing.status === "valid")
       return { status: "already_present", receipt: existing.value };
@@ -927,7 +1207,7 @@ function writeNoticeReceipt(stateRoot, projectKey2, receipt) {
     releaseControlReservation(lock);
   }
 }
-function noticeStatus(stateRoot, projectKey2, attemptId, sessionid = null) {
+function noticeStatus(stateRoot, projectKey2, attemptId, sessionid = null, opts = {}) {
   const p = paths(stateRoot, projectKey2);
   if (!p || !validAttempt(attemptId))
     return { status: "not_found" };
@@ -941,10 +1221,42 @@ function noticeStatus(stateRoot, projectKey2, attemptId, sessionid = null) {
     const value = receipt.value;
     if (value.notice_attempt_id !== attemptId || value.sessionid !== null && sessionid !== null && value.sessionid !== sessionid)
       return { status: "not_found" };
+    if (["pending_output", "awaiting_choice"].includes(value.status) && Date.now() - value.created_at > NOTICE_ATTEMPT_MAX_AGE_MS) {
+      try {
+        (0, import_node_fs2.unlinkSync)(p.notice);
+      } catch (err) {
+        if ((err == null ? void 0 : err.code) !== "ENOENT")
+          return { status: "retry", marker: CONTROL_RETRY };
+      }
+      return { status: "expired", notice_status: "expired" };
+    }
+    if ((opts == null ? void 0 : opts.renderer) === "codebuddy-foreground" && ["pending_output", "awaiting_choice"].includes(value.status)) {
+      const maxAttempts = Number.isInteger(opts.maxAttempts) && opts.maxAttempts > 0 ? opts.maxAttempts : 2;
+      const attempts = Number.isInteger(value.foreground_attempts) ? value.foreground_attempts : 0;
+      if (attempts >= maxAttempts) {
+        return { status: "exhausted", notice_status: value.status, attempts };
+      }
+      const next = {
+        ...value,
+        status: "awaiting_choice",
+        foreground_attempts: attempts + 1,
+        notice_locale: normalizeNoticeLocale(opts.noticeLocale) || value.notice_locale,
+        ...typeof opts.ide === "string" ? { foreground_last_ide: opts.ide } : {}
+      };
+      if (!atomicNoticeWrite(p.notice, next))
+        return { status: "retry", marker: CONTROL_RETRY, persisted: false };
+      return {
+        status: "required",
+        notice_version: NOTICE_VERSION,
+        attempts: attempts + 1,
+        notice_attempt_id: next.notice_attempt_id,
+        notice_locale: next.notice_locale
+      };
+    }
     if (value.status === "pending_output") {
       const next = { ...value, status: "awaiting_choice" };
       if (!atomicWrite(p.notice, next))
-        return { status: "retry", marker: CONTROL_RETRY };
+        return { status: "retry", marker: CONTROL_RETRY, persisted: false };
       return { status: "required", notice_version: NOTICE_VERSION };
     }
     if (value.status === "awaiting_choice")
@@ -969,7 +1281,52 @@ function updateNoticeStatus(stateRoot, projectKey2, expected, status) {
       return { status: "conflict", value: current.value };
     }
     const next = { ...current.value, status };
-    return atomicWrite(p.notice, next) ? { status: "updated", value: next } : { status: "error", reason: "notice_write_failed" };
+    delete next.choice_retry_count;
+    delete next.choice_last_error;
+    delete next.choice_next_retry_at;
+    if (!atomicWrite(p.notice, next))
+      return { status: "error", reason: "notice_write_failed" };
+    if (["allowed", "denied", "defaulted"].includes(status)) {
+      const obligation = readNoticeObligation(stateRoot, projectKey2);
+      if (obligation.status === "valid" && obligation.value.first_event_id === next.event_id) {
+        const terminal = { ...obligation.value, notice_status: status };
+        if (!writeNoticeObligationLocked(p, terminal)) {
+          return { status: "retry", reason: "obligation_write_failed", value: next };
+        }
+      }
+    }
+    return { status: "updated", value: next };
+  } finally {
+    releaseControlReservation(lock);
+  }
+}
+function recordNoticeRetry(stateRoot, projectKey2, expected, reason, opts = {}) {
+  const p = paths(stateRoot, projectKey2);
+  if (!p)
+    return { status: "error", reason: "invalid_project_key" };
+  const lock = acquireControlReservation(stateRoot, projectKey2, { timeoutMs: opts.timeoutMs ?? 100 });
+  if (!lock)
+    return { status: "retry", reason: "control_busy" };
+  try {
+    const current = readNoticeReceipt(stateRoot, projectKey2);
+    if (current.status !== "valid")
+      return { status: "retry", reason: current.status };
+    if (expected && current.value.status !== expected) {
+      return { status: "conflict", value: current.value };
+    }
+    const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+    const count = Number.isInteger(current.value.choice_retry_count) ? current.value.choice_retry_count + 1 : 1;
+    const delays = [60 * 1e3, 5 * 60 * 1e3, 30 * 60 * 1e3];
+    const delay = delays[Math.min(count - 1, delays.length - 1)] || 24 * 60 * 60 * 1e3;
+    const next = {
+      ...current.value,
+      choice_retry_count: count,
+      choice_last_error: typeof reason === "string" ? reason.slice(0, 128) : "state_write_failed",
+      choice_next_retry_at: now + delay
+    };
+    if (!atomicWrite(p.notice, next))
+      return { status: "error", reason: "notice_write_failed" };
+    return { status: "updated", value: next };
   } finally {
     releaseControlReservation(lock);
   }
@@ -1150,11 +1507,32 @@ function acquireProjectSendReservation(stateRoot, projectKey2, opts = {}) {
 function releaseProjectSendReservation(lock) {
   releaseFileReservation(lock);
 }
+function acquireProjectAdmissionReservation(stateRoot, projectKey2, opts = {}) {
+  const p = paths(stateRoot, projectKey2);
+  return p ? acquireFileReservation(p.admissionLock, { project_key: projectKey2, kind: "admission" }, {
+    ...opts,
+    _hookMode: opts._hookMode === true
+  }) : null;
+}
+function releaseProjectAdmissionReservation(lock) {
+  releaseFileReservation(lock);
+}
 function beginProducerLease(stateRoot, projectKey2, opts = {}) {
   const p = paths(stateRoot, projectKey2);
   if (!p)
     return { blocked: true, retryable: false, reason: "invalid_project_key" };
-  if (opts._hookMode === true) {
+  const timeoutMs = opts._hookMode === true ? Math.min(25, opts.timeoutMs ?? 25) : opts.timeoutMs ?? 120;
+  const admission = acquireProjectAdmissionReservation(stateRoot, projectKey2, {
+    ...opts,
+    timeoutMs,
+    _hookMode: opts._hookMode === true
+  });
+  if (!admission)
+    return { blocked: true, retryable: true, reason: "admission_busy" };
+  try {
+    const gate = readProjectDenyGate(stateRoot, projectKey2);
+    if (!gate.allowed)
+      return { blocked: true, retryable: gate.status !== "valid", reason: `deny_${gate.status}` };
     try {
       if (!READY_PRODUCER_DIRS.has(p.producerDir)) {
         ensureDir2(p.producerDir);
@@ -1166,29 +1544,17 @@ function beginProducerLease(stateRoot, projectKey2, opts = {}) {
     const lease = acquireFileReservation((0, import_node_path2.join)(p.producerDir, `${process.pid}-${ownerToken()}.json`), {
       project_key: projectKey2,
       kind: "producer"
-    }, { timeoutMs: Math.min(25, opts.timeoutMs ?? 25), staleGraceMs: opts.staleGraceMs, _hookMode: true, _dirReady: true });
-    return lease ? { lease, blocked: false } : { blocked: true, retryable: true, reason: "lease_busy" };
-  }
-  const gate = readProjectDenyGate(stateRoot, projectKey2);
-  if (!gate.allowed)
-    return { blocked: true, retryable: gate.status !== "valid", reason: `deny_${gate.status}` };
-  const sendLock = acquireProjectSendReservation(stateRoot, projectKey2, opts);
-  if (!sendLock)
-    return { blocked: true, retryable: true, reason: "send_busy" };
-  try {
-    const recheck = readProjectDenyGate(stateRoot, projectKey2);
-    if (!recheck.allowed)
-      return { blocked: true, retryable: recheck.status !== "valid", reason: `deny_${recheck.status}` };
-    ensureDir2(p.producerDir);
-    const lease = acquireFileReservation((0, import_node_path2.join)(p.producerDir, `${process.pid}-${ownerToken()}.json`), {
-      project_key: projectKey2,
-      kind: "producer"
-    }, { timeoutMs: opts.leaseTimeoutMs ?? opts.timeoutMs ?? 25, staleGraceMs: opts.staleGraceMs, _hookMode: opts._hookMode === true });
+    }, {
+      timeoutMs: opts.leaseTimeoutMs ?? timeoutMs,
+      staleGraceMs: opts.staleGraceMs,
+      _hookMode: opts._hookMode === true,
+      _dirReady: true
+    });
     if (!lease)
       return { blocked: true, retryable: true, reason: "lease_busy" };
     return { lease, blocked: false };
   } finally {
-    releaseProjectSendReservation(sendLock);
+    releaseProjectAdmissionReservation(admission);
   }
 }
 function endProducerLease(lease) {
@@ -1359,7 +1725,11 @@ function writeControlTurn(stateRoot, projectKey2, key, value, opts = {}) {
   const p = paths(stateRoot, projectKey2);
   if (!p || !validControlKey(key))
     return { status: "error", reason: "invalid_control_key" };
-  ensureDir2(p.turns);
+  try {
+    ensureDir2(p.turns);
+  } catch (err) {
+    return { status: "error", reason: (err == null ? void 0 : err.code) || "control_dir_unavailable" };
+  }
   const path2 = turnPath(p, key);
   const next = {
     version: NOTICE_VERSION,
@@ -1396,7 +1766,7 @@ function writeControlTurn(stateRoot, projectKey2, key, value, opts = {}) {
     return { status: "error", reason: "control_write_failed" };
   return { status: "updated", value: next };
 }
-var import_node_crypto2, import_node_fs2, import_node_path2, NOTICE_VERSION, NOTICE_STATES, CONTROL_STATES, ALLOW_LABEL, DENY_LABEL, ALLOWED, CONTROL_RETRY, ALLOW_RETRY, DISABLED, DISABLE_RETRY, NOTICE_REQUIRED, PROJECT_KEY_RE, CONTROL_KEY_RE, ATTEMPT_RE, OWNER_FILE2, SEND_OWNER_FILE, PRODUCER_DIR, LOCK_GRACE_MS, UNSUPPORTED_DIR_FSYNC, READY_PRODUCER_DIRS;
+var import_node_crypto2, import_node_fs2, import_node_path2, NOTICE_VERSION, NOTICE_STATES, CONTROL_STATES, ALLOW_LABEL, DENY_LABEL, ALLOWED, CONTROL_RETRY, ALLOW_RETRY, DISABLED, DISABLE_RETRY, NOTICE_REQUIRED, PROJECT_KEY_RE, CONTROL_KEY_RE, ATTEMPT_RE, OWNER_FILE2, SEND_OWNER_FILE, ADMISSION_OWNER_FILE, NOTICE_OBLIGATION_FILE, EVENT_ACK_DIR, PRODUCER_DIR, LOCK_GRACE_MS, UNSUPPORTED_DIR_FSYNC, READY_PRODUCER_DIRS, SAFE_EVENT_ID_RE, NOTICE_ATTEMPT_MAX_AGE_MS;
 var init_control = __esm({
   "skills/trtc/runtime/control.js"() {
     import_node_crypto2 = require("node:crypto");
@@ -1412,6 +1782,7 @@ var init_control = __esm({
       "deny_pending",
       "allowed",
       "denied",
+      "defaulted",
       "ignored"
     ]);
     CONTROL_STATES = Object.freeze([
@@ -1434,10 +1805,15 @@ var init_control = __esm({
     ATTEMPT_RE = /^[a-f0-9]{32}$/;
     OWNER_FILE2 = ".control-owner";
     SEND_OWNER_FILE = ".send-owner";
+    ADMISSION_OWNER_FILE = ".admission-owner";
+    NOTICE_OBLIGATION_FILE = "notice-obligation.json";
+    EVENT_ACK_DIR = "event-acks";
     PRODUCER_DIR = "producer-leases";
     LOCK_GRACE_MS = 5e3;
     UNSUPPORTED_DIR_FSYNC = /* @__PURE__ */ new Set(["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT"]);
     READY_PRODUCER_DIRS = /* @__PURE__ */ new Set();
+    SAFE_EVENT_ID_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
+    NOTICE_ATTEMPT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1e3;
   }
 });
 
@@ -2178,6 +2554,133 @@ function updateOutboxMetadata(root, eventId, meta, opts = {}) {
       releaseReservation(lock);
   }
 }
+function validAttributionValue(value) {
+  if (value === void 0 || value === null || value === "" || value === "unknown")
+    return null;
+  if (typeof value === "number")
+    return Number.isSafeInteger(value) ? String(value) : null;
+  if (typeof value !== "string" || value.length > 128 || /[\u0000-\u001f\u007f]/u.test(value))
+    return null;
+  return value;
+}
+function concreteAttribution(value) {
+  const normalized = validAttributionValue(value);
+  return normalized && normalized !== "unknown" ? normalized : null;
+}
+function updateAttributionInBucket(root, eventId, attribution, opts = {}, bucket = "outbox") {
+  if (!isSafeEventId(eventId)) {
+    throw new TypeError(`updateAttributionInBucket: unsafe eventId ${JSON.stringify(eventId)}`);
+  }
+  if (!attribution || typeof attribution !== "object") {
+    throw new TypeError("updateAttributionInBucket: attribution must be an object");
+  }
+  for (const key of Object.keys(attribution)) {
+    if (!OUTBOX_ATTRIBUTION_KEYS.has(key)) {
+      throw new TypeError(`updateAttributionInBucket: key "${key}" is not allowed`);
+    }
+  }
+  const d = ensureLayout(root);
+  const targetDir = bucket === "pending" ? d.pending : d.outbox;
+  let lock = null;
+  if (!opts._locked) {
+    lock = acquireReservation(root, eventId, opts);
+    if (!lock)
+      return { ok: false, error: "reservation_timeout" };
+  }
+  try {
+    const filePath = (0, import_node_path3.join)(targetDir, payloadFilename(eventId));
+    const event = readEvent(filePath);
+    if (!event)
+      return { ok: false, error: "event_not_found" };
+    if (event.method !== "prompt")
+      return { ok: false, error: "not_prompt" };
+    if (opts.projectKey && event.__project_key !== opts.projectKey) {
+      return { ok: false, error: "project_mismatch" };
+    }
+    const requestedOwner = concreteAttribution(attribution.skillname);
+    const existingOwner = concreteAttribution(event.skillname);
+    const ackProjectKey = typeof opts.projectKey === "string" ? opts.projectKey : typeof event.__project_key === "string" ? event.__project_key : null;
+    const ackReceipt = ackProjectKey ? readEventAcknowledgement(root, ackProjectKey, eventId) : { status: "missing" };
+    const ownerFrozen = bucket === "outbox" && event.ide === "codex" || event.__sender_acknowledged === true || Number.isFinite(event.__sender_acknowledged_at) || ackReceipt.status === "valid";
+    if (ownerFrozen)
+      return { ok: true, updated: false, event };
+    const replaceableRootFallback = opts.allowRootFallbackReplace === true && existingOwner === "trtc" && event.__first_prompt_candidate === true && !ownerFrozen;
+    if (existingOwner && requestedOwner && existingOwner !== requestedOwner && !replaceableRootFallback) {
+      return {
+        ok: false,
+        error: "owner_mismatch",
+        existing_skillname: existingOwner,
+        requested_skillname: requestedOwner
+      };
+    }
+    const updates = {};
+    const fill = (key) => {
+      const requested = concreteAttribution(attribution[key]);
+      const existing = concreteAttribution(event[key]);
+      if (requested && !existing)
+        updates[key] = requested;
+    };
+    if (replaceableRootFallback && requestedOwner)
+      updates.skillname = requestedOwner;
+    else
+      fill("skillname");
+    for (const key of ["product", "framework", "flow_id", "turn_id", "sdkappid"])
+      fill(key);
+    for (const key of ["__route_hint", "__route_product", "__route_framework"])
+      fill(key);
+    if (Object.keys(updates).length === 0)
+      return { ok: true, updated: false, event };
+    const updated = { ...event, ...updates };
+    const body = JSON.stringify(updated);
+    const tmp = (0, import_node_path3.join)(targetDir, `.${(0, import_node_crypto3.randomBytes)(4).toString("hex")}.${eventId}.attribution.tmp`);
+    let fd;
+    try {
+      fd = (0, import_node_fs3.openSync)(tmp, "wx", 384);
+      writeAll2(fd, body);
+      (0, import_node_fs3.fsyncSync)(fd);
+    } catch (err) {
+      try {
+        if (fd !== void 0)
+          (0, import_node_fs3.closeSync)(fd);
+      } catch {
+      }
+      try {
+        (0, import_node_fs3.unlinkSync)(tmp);
+      } catch {
+      }
+      return { ok: false, error: `write: ${(err == null ? void 0 : err.code) || "unknown"}` };
+    }
+    try {
+      (0, import_node_fs3.closeSync)(fd);
+    } catch (err) {
+      try {
+        (0, import_node_fs3.unlinkSync)(tmp);
+      } catch {
+      }
+      return { ok: false, error: `close: ${(err == null ? void 0 : err.code) || "unknown"}` };
+    }
+    try {
+      (0, import_node_fs3.renameSync)(tmp, filePath);
+      fsyncDirBestEffort3(targetDir);
+    } catch (err) {
+      try {
+        (0, import_node_fs3.unlinkSync)(tmp);
+      } catch {
+      }
+      return { ok: false, error: `rename: ${(err == null ? void 0 : err.code) || "unknown"}` };
+    }
+    return { ok: true, updated: true, event: updated };
+  } finally {
+    if (lock)
+      releaseReservation(lock);
+  }
+}
+function updateOutboxAttribution(root, eventId, attribution, opts = {}) {
+  return updateAttributionInBucket(root, eventId, attribution, opts, "outbox");
+}
+function updatePendingAttribution(root, eventId, attribution, opts = {}) {
+  return updateAttributionInBucket(root, eventId, attribution, opts, "pending");
+}
 function sanitizeEnrichment(enrichment) {
   const out = {};
   if (!enrichment || typeof enrichment !== "object")
@@ -2241,7 +2744,7 @@ function moveToRejected(root, srcPath, reason, opts = {}) {
 function num(v, fallback) {
   return Number.isFinite(v) ? v : fallback;
 }
-var import_node_crypto3, import_node_fs3, import_node_path3, import_node_perf_hooks3, TELEMETRY_DIR, PENDING, OUTBOX, REJECTED, DROPPED, LEGACY_UNATTRIBUTED, DEFAULT_MAX_AGE_MS, DEFAULT_MAX_BYTES2, DEFAULT_REJECTED_MAX, DEFAULT_ORPHAN_TMP_MAX_AGE_MS, DEFAULT_CORRUPT_GRACE_MS, EVENT_ID_RE, WINDOWS_RESERVED_RE, FINAL_FILENAME_RE, ALLOWED_ENRICHMENT_KEYS, RESERVATION_PREFIX, DEFAULT_RESERVATION_TIMEOUT_MS, HOOK_RESERVATION_TIMEOUT_MS, DEFAULT_RESERVATION_ORPHAN_GRACE_MS, RESERVATION_BACKOFF_START_MS, RESERVATION_BACKOFF_MAX_MS, _syncSleepBuf, LINK_UNSUPPORTED_CODES, SENDER_METADATA_WHITELIST;
+var import_node_crypto3, import_node_fs3, import_node_path3, import_node_perf_hooks3, TELEMETRY_DIR, PENDING, OUTBOX, REJECTED, DROPPED, LEGACY_UNATTRIBUTED, DEFAULT_MAX_AGE_MS, DEFAULT_MAX_BYTES2, DEFAULT_REJECTED_MAX, DEFAULT_ORPHAN_TMP_MAX_AGE_MS, DEFAULT_CORRUPT_GRACE_MS, EVENT_ID_RE, WINDOWS_RESERVED_RE, FINAL_FILENAME_RE, ALLOWED_ENRICHMENT_KEYS, RESERVATION_PREFIX, DEFAULT_RESERVATION_TIMEOUT_MS, HOOK_RESERVATION_TIMEOUT_MS, DEFAULT_RESERVATION_ORPHAN_GRACE_MS, RESERVATION_BACKOFF_START_MS, RESERVATION_BACKOFF_MAX_MS, _syncSleepBuf, LINK_UNSUPPORTED_CODES, SENDER_METADATA_WHITELIST, OUTBOX_ATTRIBUTION_KEYS;
 var init_outbox = __esm({
   "skills/trtc/runtime/outbox.js"() {
     import_node_crypto3 = require("node:crypto");
@@ -2286,7 +2789,22 @@ var init_outbox = __esm({
     LINK_UNSUPPORTED_CODES = /* @__PURE__ */ new Set(["ENOTSUP", "EOPNOTSUPP", "EPERM", "EXDEV"]);
     SENDER_METADATA_WHITELIST = /* @__PURE__ */ new Set([
       "__sender_retry_count",
-      "__sender_retry_after"
+      "__sender_retry_after",
+      "__sender_last_error",
+      "__sender_last_attempt_at",
+      "__sender_acknowledged",
+      "__sender_acknowledged_at"
+    ]);
+    OUTBOX_ATTRIBUTION_KEYS = /* @__PURE__ */ new Set([
+      "skillname",
+      "product",
+      "framework",
+      "flow_id",
+      "turn_id",
+      "sdkappid",
+      "__route_hint",
+      "__route_product",
+      "__route_framework"
     ]);
   }
 });
@@ -2357,7 +2875,7 @@ function deriveActivationEventId(deviceSeed, projectKey2, ide, version) {
   return `ha_${digest2}`;
 }
 function activationAckPath(stateRoot, eventId) {
-  if (!SAFE_EVENT_ID_RE.test(String(eventId)))
+  if (!SAFE_EVENT_ID_RE2.test(String(eventId)))
     throw new TypeError("invalid activation event id");
   return (0, import_node_path4.join)(activationRoot(stateRoot), ACK_DIR, `${eventId}.ack`);
 }
@@ -2369,7 +2887,7 @@ function isHookActivationAcked(stateRoot, eventId) {
   }
 }
 function acknowledgeHookActivation(stateRoot, event) {
-  if ((event == null ? void 0 : event.text) !== "hook_activated" || !SAFE_EVENT_ID_RE.test(String(event.event_id)) || event.__activation_key !== event.event_id) {
+  if ((event == null ? void 0 : event.text) !== "hook_activated" || !SAFE_EVENT_ID_RE2.test(String(event.event_id)) || event.__activation_key !== event.event_id) {
     return { applicable: false, acked: false };
   }
   const path2 = activationAckPath(stateRoot, event.event_id);
@@ -2416,7 +2934,7 @@ function acknowledgeHookActivation(stateRoot, event) {
     throw err;
   }
 }
-var import_node_crypto4, import_node_fs4, import_node_path4, import_node_perf_hooks4, ACTIVATION_DIR, DEVICE_SEED_FILE, ACK_DIR, SAFE_EVENT_ID_RE;
+var import_node_crypto4, import_node_fs4, import_node_path4, import_node_perf_hooks4, ACTIVATION_DIR, DEVICE_SEED_FILE, ACK_DIR, SAFE_EVENT_ID_RE2;
 var init_hook_activation = __esm({
   "skills/trtc/runtime/hook-activation.js"() {
     import_node_crypto4 = require("node:crypto");
@@ -2426,7 +2944,7 @@ var init_hook_activation = __esm({
     ACTIVATION_DIR = "hook-activation";
     DEVICE_SEED_FILE = "device-seed";
     ACK_DIR = "acked";
-    SAFE_EVENT_ID_RE = /^ha_[a-f0-9]{40}$/;
+    SAFE_EVENT_ID_RE2 = /^ha_[a-f0-9]{40}$/;
   }
 });
 
@@ -2662,6 +3180,7 @@ function toCLSContents(event) {
       `event contains wire-side field(s) ${conflicting.map((k) => `"${k}"`).join(", ")} — use the internal name (version/skillname/product/sessionid) instead`
     );
   }
+  const anonymousSession = event.__anonymous_session === true;
   const out = {};
   for (const [key, value] of Object.entries(event)) {
     if (value === void 0 || value === null)
@@ -2669,6 +3188,8 @@ function toCLSContents(event) {
     if (key.startsWith("__"))
       continue;
     if (WIRE_STRIPPED_INTERNAL_KEYS.has(key))
+      continue;
+    if (anonymousSession && key === "sessionid")
       continue;
     const wireKey = INTERNAL_TO_WIRE[key] ?? key;
     if (typeof value === "string") {
@@ -3002,6 +3523,38 @@ __export(sender_exports, {
   flushOutbox: () => flushOutbox,
   nextRetryMs: () => nextRetryMs
 });
+function gcProjectEventAcknowledgements(root, projectKey2, currentEventId, opts = {}) {
+  var _a;
+  if (!projectKey2 || !/^[a-f0-9]{32}$/.test(projectKey2))
+    return;
+  if ((_a = opts.gcState) == null ? void 0 : _a.ran)
+    return;
+  if (opts.gcState)
+    opts.gcState.ran = true;
+  if (Number.isFinite(opts.deadlineMono) && opts.deadlineMono - import_node_perf_hooks8.performance.now() < 50)
+    return;
+  try {
+    const protectedEventIds = /* @__PURE__ */ new Set();
+    if (typeof currentEventId === "string")
+      protectedEventIds.add(currentEventId);
+    if (!Array.isArray(opts.queuedEventIds))
+      return;
+    for (const id of opts.queuedEventIds) {
+      if (typeof id === "string" && id)
+        protectedEventIds.add(id);
+    }
+    const obligation = readNoticeObligation(root, projectKey2);
+    if (obligation.status === "valid" && typeof obligation.value.first_event_id === "string") {
+      protectedEventIds.add(obligation.value.first_event_id);
+    }
+    gcEventAcknowledgements(root, projectKey2, {
+      protectedEventIds,
+      maxEntries: 128,
+      deadlineMono: opts.deadlineMono
+    });
+  } catch {
+  }
+}
 function _httpsPost(url, body, opts = {}) {
   return new Promise((resolve5, reject) => {
     const parsed = new import_node_url.URL(url);
@@ -3066,6 +3619,15 @@ function nextRetryMs(retryCount, random) {
   const jitter = base * 0.2 * ((random || Math.random)() - 0.5);
   return Math.round(base + jitter);
 }
+function recordSenderDiagnostic(root, eventId, code, nowFn, locked = false) {
+  try {
+    updateOutboxMetadata(root, eventId, {
+      __sender_last_error: String(code || "send_error").slice(0, 64),
+      __sender_last_attempt_at: nowFn()
+    }, { reservationTimeoutMs: 0, _locked: locked });
+  } catch {
+  }
+}
 async function flushOutbox(root, opts = {}) {
   var _a;
   const env = opts.env || process.env;
@@ -3088,6 +3650,7 @@ async function flushOutbox(root, opts = {}) {
   const url = `${endpoint}/tracklog?topic_id=${topicId}`;
   const deadlineMono = import_node_perf_hooks8.performance.now() + maxDurationMs;
   let paths2 = listOutbox(root);
+  const queuedEventIds = paths2.map((path2) => (0, import_node_path11.basename)(path2).replace(/\.json$/, "")).filter((id) => typeof id === "string" && id.length > 0);
   if (eventIds) {
     paths2 = paths2.filter((path2) => eventIds.has((0, import_node_path11.basename)(path2).replace(/\.json$/, "")));
   }
@@ -3099,6 +3662,7 @@ async function flushOutbox(root, opts = {}) {
     });
   }
   const result = { sent: 0, sent_event_ids: [], retried: 0, rejected: 0, skipped: 0, errors: [] };
+  const gcState = { ran: false };
   let processed = 0;
   for (const path2 of paths2) {
     if (processed >= maxCount)
@@ -3130,7 +3694,9 @@ async function flushOutbox(root, opts = {}) {
         timeoutMs: Math.min(reservationTimeoutMs, remaining2)
       });
       if (!projectLock) {
+        recordSenderDiagnostic(root, eid, "send_busy", nowFn);
         result.skipped++;
+        result.errors.push({ event_id: eid, code: "send_busy", retryable: true });
         continue;
       }
     }
@@ -3141,7 +3707,9 @@ async function flushOutbox(root, opts = {}) {
     if (!lock) {
       if (projectLock)
         releaseProjectSendReservation(projectLock);
+      recordSenderDiagnostic(root, eid, "send_busy", nowFn);
       result.skipped++;
+      result.errors.push({ event_id: eid, code: "send_busy", retryable: true });
       continue;
     }
     try {
@@ -3175,6 +3743,79 @@ async function flushOutbox(root, opts = {}) {
       }
       if (!enabled) {
         result.skipped++;
+        continue;
+      }
+      const localNoticeObligation = event.method === "prompt" && projectKey2 ? readNoticeObligation(root, projectKey2) : null;
+      const localEventAck = event.method === "prompt" && projectKey2 ? readEventAcknowledgement(root, projectKey2, eid) : null;
+      const locallyAcknowledged = event.__sender_acknowledged === true || (localEventAck == null ? void 0 : localEventAck.status) === "valid" || (localNoticeObligation == null ? void 0 : localNoticeObligation.status) === "valid" && localNoticeObligation.value.first_event_id === eid && localNoticeObligation.value.acknowledged === true;
+      if (locallyAcknowledged) {
+        const isFirstCandidate = event.method === "prompt" && /^[a-f0-9]{32}$/.test(projectKey2 || "") && (event.__first_prompt_candidate === true || (localNoticeObligation == null ? void 0 : localNoticeObligation.status) === "valid" && localNoticeObligation.value.first_event_id === eid);
+        if (isFirstCandidate) {
+          let obligation = localNoticeObligation || readNoticeObligation(root, projectKey2);
+          if (obligation.status === "missing" || obligation.status === "corrupt" && event.__first_prompt_candidate === true) {
+            const ensured = ensureNoticeObligation(root, projectKey2, eid, {
+              acknowledgedAt: nowFn(),
+              noticeLocale: event.notice_locale,
+              timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now())),
+              allowCorruptReplacement: event.__first_prompt_candidate === true
+            });
+            if (["created", "already_present"].includes(ensured.status)) {
+              obligation = readNoticeObligation(root, projectKey2);
+            }
+          }
+          if (obligation.status !== "valid" || obligation.value.first_event_id !== eid) {
+            recordSenderDiagnostic(root, eid, "ack_failed", nowFn, true);
+            result.retried++;
+            result.errors.push({ event_id: eid, code: "ack_failed", reason: "obligation_repair_failed" });
+            processed++;
+            continue;
+          }
+          if (obligation.value.acknowledged !== true) {
+            try {
+              const ackFn = opts._acknowledgePrompt || ((ackRoot, ackEvent, ackKey, ackOpts) => acknowledgeNoticeObligation(
+                ackRoot,
+                ackKey,
+                ackEvent.event_id,
+                ackOpts
+              ));
+              const ack = await ackFn(root, event, projectKey2, {
+                acknowledgedAt: nowFn(),
+                noticeLocale: event.notice_locale,
+                timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now()))
+              });
+              if (!ack || !["updated", "already_present"].includes(ack.status)) {
+                throw new Error((ack == null ? void 0 : ack.reason) || "prompt_ack_not_persisted");
+              }
+            } catch (ackErr) {
+              recordSenderDiagnostic(root, eid, "ack_failed", nowFn, true);
+              result.retried++;
+              result.errors.push({ event_id: eid, code: "ack_failed", reason: (ackErr == null ? void 0 : ackErr.code) || (ackErr == null ? void 0 : ackErr.message) || "prompt_ack_not_persisted" });
+              processed++;
+              continue;
+            }
+          }
+        }
+        if (event.method === "prompt" && /^[a-f0-9]{32}$/.test(projectKey2 || "")) {
+          const receiptFn = opts._acknowledgeEvent || acknowledgeEvent;
+          const receipt = receiptFn(root, projectKey2, eid, { acknowledgedAt: nowFn() });
+          if (!receipt || !["created", "already_present"].includes(receipt.status)) {
+            recordSenderDiagnostic(root, eid, "ack_failed", nowFn, true);
+            result.retried++;
+            result.errors.push({ event_id: eid, code: "ack_failed", reason: (receipt == null ? void 0 : receipt.reason) || "ack_receipt_write_failed" });
+            processed++;
+            continue;
+          }
+        }
+        try {
+          removeEvent(path2);
+        } catch (removeErr) {
+          recordSenderDiagnostic(root, eid, "remove_failed", nowFn, true);
+          result.errors.push({ event_id: eid, code: "remove_failed", statusCode: 200 });
+        }
+        result.sent++;
+        result.sent_event_ids.push(eid);
+        gcProjectEventAcknowledgements(root, projectKey2, eid, { gcState, deadlineMono, queuedEventIds });
+        processed++;
         continue;
       }
       (_a = opts.finalGateReached) == null ? void 0 : _a.call(opts, { event_id: eid, project_key: projectKey2, event });
@@ -3245,12 +3886,15 @@ async function flushOutbox(root, opts = {}) {
         }
         response = await transportPromise;
       } catch (netErr) {
+        recordSenderDiagnostic(root, eid, netErr.code || "network", nowFn, true);
         const retryCount = event.__sender_retry_count || 0;
         const retryMs = nextRetryMs(retryCount, randomFn);
         try {
           const metaRes = updateOutboxMetadata(root, eid, {
             __sender_retry_count: retryCount + 1,
-            __sender_retry_after: nowFn() + retryMs
+            __sender_retry_after: nowFn() + retryMs,
+            __sender_last_error: String(netErr.code || "network").slice(0, 64),
+            __sender_last_attempt_at: nowFn()
           }, { _locked: true });
           if (!metaRes.ok) {
             result.errors.push({ event_id: eid, code: "metadata_update_failed" });
@@ -3272,9 +3916,93 @@ async function flushOutbox(root, opts = {}) {
           } catch {
             result.retried++;
             result.errors.push({ event_id: eid, code: "ack_failed", statusCode: 200 });
+            recordSenderDiagnostic(root, eid, "ack_failed", nowFn, true);
             processed++;
             continue;
           }
+        }
+        if (event.method === "prompt" && /^[a-f0-9]{32}$/.test(projectKey2 || "") && (event.__first_prompt_candidate === true || (localNoticeObligation == null ? void 0 : localNoticeObligation.status) === "valid" && localNoticeObligation.value.first_event_id === eid)) {
+          let obligation = readNoticeObligation(root, projectKey2);
+          if (obligation.status === "corrupt" && event.__first_prompt_candidate !== true) {
+            result.retried++;
+            result.errors.push({ event_id: eid, code: "ack_failed", reason: "obligation_corrupt", statusCode: response.statusCode });
+            processed++;
+            continue;
+          }
+          if (obligation.status === "missing" || obligation.status === "corrupt" && event.__first_prompt_candidate === true) {
+            const ensured = ensureNoticeObligation(root, projectKey2, eid, {
+              acknowledgedAt: nowFn(),
+              timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now())),
+              allowCorruptReplacement: event.__first_prompt_candidate === true
+            });
+            if (["created", "already_present"].includes(ensured.status)) {
+              obligation = readNoticeObligation(root, projectKey2);
+            } else if (ensured.status !== "conflict") {
+              result.retried++;
+              result.errors.push({ event_id: eid, code: "ack_failed", reason: "obligation_write_failed", statusCode: response.statusCode });
+              processed++;
+              continue;
+            }
+          }
+          if (obligation.status === "valid" && obligation.value.first_event_id === eid && obligation.value.acknowledged !== true) {
+            try {
+              const ackFn = opts._acknowledgePrompt || ((ackRoot, ackEvent, ackKey) => acknowledgeNoticeObligation(
+                ackRoot,
+                ackKey,
+                ackEvent.event_id,
+                {
+                  acknowledgedAt: nowFn(),
+                  noticeLocale: opts.noticeLocale,
+                  timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now()))
+                }
+              ));
+              const ack = await ackFn(root, event, projectKey2);
+              if (!ack || !["updated", "already_present"].includes(ack.status)) {
+                throw new Error((ack == null ? void 0 : ack.reason) || "prompt_ack_not_persisted");
+              }
+            } catch (ackErr) {
+              result.retried++;
+              result.errors.push({
+                event_id: eid,
+                code: "ack_failed",
+                reason: (ackErr == null ? void 0 : ackErr.code) || (ackErr == null ? void 0 : ackErr.message) || "prompt_ack_not_persisted",
+                statusCode: response.statusCode
+              });
+              processed++;
+              continue;
+            }
+          }
+        }
+        try {
+          if (event.method === "prompt" && /^[a-f0-9]{32}$/.test(projectKey2 || "")) {
+            const receiptFn = opts._acknowledgeEvent || acknowledgeEvent;
+            const eventAck = receiptFn(root, projectKey2, eid, {
+              acknowledgedAt: nowFn()
+            });
+            if (!eventAck || !["created", "already_present"].includes(eventAck.status)) {
+              throw new Error((eventAck == null ? void 0 : eventAck.reason) || "ack_receipt_write_failed");
+            }
+          }
+          const ackMeta = updateOutboxMetadata(root, eid, {
+            __sender_acknowledged: true,
+            __sender_acknowledged_at: nowFn()
+          }, { _locked: true });
+          if (!(ackMeta == null ? void 0 : ackMeta.ok)) {
+            if (ackMeta.error === "event_not_found") {
+              result.sent++;
+              result.sent_event_ids.push(eid);
+              gcProjectEventAcknowledgements(root, projectKey2, eid, { gcState, deadlineMono, queuedEventIds });
+              processed++;
+              continue;
+            }
+            throw new Error("ack_metadata_write_failed");
+          }
+        } catch (ackErr) {
+          result.retried++;
+          result.errors.push({ event_id: eid, code: "ack_failed", reason: "ack_metadata_write_failed", statusCode: response.statusCode });
+          recordSenderDiagnostic(root, eid, "ack_failed", nowFn, true);
+          processed++;
+          continue;
         }
         try {
           removeEvent(path2);
@@ -3283,13 +4011,17 @@ async function flushOutbox(root, opts = {}) {
         }
         result.sent++;
         result.sent_event_ids.push(eid);
+        gcProjectEventAcknowledgements(root, projectKey2, eid, { gcState, deadlineMono, queuedEventIds });
       } else {
+        recordSenderDiagnostic(root, eid, `http_${response.statusCode}`, nowFn, true);
         const retryCount = event.__sender_retry_count || 0;
         const retryMs = nextRetryMs(retryCount, randomFn);
         try {
           const metaRes = updateOutboxMetadata(root, eid, {
             __sender_retry_count: retryCount + 1,
-            __sender_retry_after: nowFn() + retryMs
+            __sender_retry_after: nowFn() + retryMs,
+            __sender_last_error: `http_${response.statusCode}`.slice(0, 64),
+            __sender_last_attempt_at: nowFn()
           }, { _locked: true });
           if (!metaRes.ok) {
             result.errors.push({ event_id: eid, code: "metadata_update_failed" });
@@ -3370,11 +4102,47 @@ init_identity();
 // skills/trtc/runtime/normalize-hook.js
 var import_node_perf_hooks2 = require("node:perf_hooks");
 
+// skills/trtc/runtime/adapters/metadata.js
+var STRING_KEYS = Object.freeze([
+  "host_source",
+  "event_source",
+  "host_kind",
+  "route_hint",
+  "product",
+  "framework",
+  "raw_session_id",
+  "conversation_id",
+  "thread_id",
+  "locale",
+  "language"
+]);
+var BOOLEAN_KEYS = Object.freeze(["internal", "is_internal", "user_initiated"]);
+function hostMetadata(input) {
+  const out = {};
+  for (const key of STRING_KEYS) {
+    const value = input == null ? void 0 : input[key];
+    if (typeof value === "string" && value.length > 0 && value.length <= 512)
+      out[key] = value;
+  }
+  if (!out.host_source && typeof (input == null ? void 0 : input.source) === "string" && input.source.length <= 128) {
+    out.host_source = input.source;
+  }
+  if (!out.host_kind && typeof (input == null ? void 0 : input.kind) === "string" && input.kind.length <= 128) {
+    out.host_kind = input.kind;
+  }
+  for (const key of BOOLEAN_KEYS) {
+    if ((input == null ? void 0 : input[key]) === true)
+      out[key] = true;
+  }
+  return out;
+}
+
 // skills/trtc/runtime/adapters/claude.js
 function parse(input) {
   if (typeof input.prompt !== "string")
     return null;
   return {
+    ...hostMetadata(input),
     prompt: input.prompt,
     session_id: typeof input.session_id === "string" && input.session_id ? input.session_id : null,
     turn_id: null,
@@ -3424,6 +4192,7 @@ function parse2(input) {
   if (!prompt)
     return null;
   return {
+    ...hostMetadata(input),
     prompt,
     session_id: typeof input.session_id === "string" && input.session_id ? input.session_id : typeof extra.session_id === "string" && extra.session_id ? extra.session_id : typeof extra.conversation_id === "string" && extra.conversation_id ? extra.conversation_id : null,
     turn_id: null,
@@ -3439,6 +4208,7 @@ function parse3(input) {
   if (typeof input.prompt !== "string")
     return null;
   return {
+    ...hostMetadata(input),
     prompt: input.prompt,
     session_id: typeof input.session_id === "string" && input.session_id ? input.session_id : null,
     turn_id: typeof input.turn_id === "string" ? input.turn_id : null,
@@ -3455,6 +4225,7 @@ function parse4(input) {
     return null;
   const roots = Array.isArray(input.workspace_roots) ? input.workspace_roots.filter((r) => typeof r === "string") : [];
   return {
+    ...hostMetadata(input),
     prompt: input.prompt,
     session_id: typeof input.conversation_id === "string" && input.conversation_id ? input.conversation_id : null,
     turn_id: typeof input.generation_id === "string" ? input.generation_id : null,
@@ -3623,6 +4394,50 @@ var LEGACY_STATE_FILE = "state.json";
 var LOCK_FILE = ".pref-owner.json";
 var LOCK_GRACE_FOREGROUND_MS = 5e3;
 var VALID_CONTINUATION_CHOICES = /* @__PURE__ */ new Set(["unanswered", "allowed", "denied"]);
+function noticeCapabilityFresh(receipt) {
+  var _a;
+  if ((receipt == null ? void 0 : receipt.status) !== "valid")
+    return false;
+  const state = (_a = receipt.value) == null ? void 0 : _a.status;
+  if (["allow_pending", "deny_pending"].includes(state))
+    return true;
+  if (!["pending_output", "awaiting_choice"].includes(state))
+    return true;
+  return Number.isFinite(receipt.value.created_at) && Date.now() - receipt.value.created_at <= NOTICE_ATTEMPT_MAX_AGE_MS;
+}
+function controlTurnAccepted(turn, choice) {
+  var _a;
+  if ((turn == null ? void 0 : turn.status) !== "valid" || ((_a = turn.value) == null ? void 0 : _a.control_kind) !== choice)
+    return false;
+  return choice === "allowed" ? ["allowed_pending", "allowed", "retryable"].includes(turn.value.control_status) : ["deny_pending", "denied", "retryable"].includes(turn.value.control_status);
+}
+function acceptedControlFact(stateRoot, key, choice, turn = null, tombstone = null) {
+  if (controlTurnAccepted(turn || readControlTurn(stateRoot, key, controlKey(key, choice)), choice))
+    return true;
+  return choice === "denied" && (tombstone || readDenyTombstone(stateRoot, key)).status === "valid";
+}
+function writeDenyWithAdmission(stateRoot, key, controlKeyValue, opts = {}) {
+  const hook = opts.source === "hook";
+  const requested = Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : hook ? 25 : 120;
+  const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks5.performance.now() + requested;
+  const lock = acquireProjectAdmissionReservation(stateRoot, key, {
+    timeoutMs: Math.min(requested, Math.max(0, deadlineMono - import_node_perf_hooks5.performance.now())),
+    deadlineMono,
+    _hookMode: hook
+  });
+  if (!lock)
+    return { status: hook ? "retryable" : "error", reason: "admission_busy" };
+  try {
+    const writerOpts = {
+      ...opts,
+      timeoutMs: Math.min(requested, Math.max(0, deadlineMono - import_node_perf_hooks5.performance.now())),
+      deadlineMono
+    };
+    return hook ? writeDenyTombstoneFromHook(stateRoot, key, controlKeyValue, writerOpts) : writeDenyTombstone(stateRoot, key, controlKeyValue, writerOpts);
+  } finally {
+    releaseProjectAdmissionReservation(lock);
+  }
+}
 var OFF_TEXTS = /* @__PURE__ */ new Set([
   "关闭体验上报",
   "停止体验上报",
@@ -4018,6 +4833,9 @@ function setReportingPreference(projectRoot, enabled, opts = {}) {
     _releasePreferenceLock(lock.lockPath, lock.token);
   }
 }
+function readPreferenceState(projectRoot) {
+  return readPreferenceSourceAt(canonicalRoot(projectRoot), "preferred");
+}
 function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
   var _a;
   if (!VALID_CONTINUATION_CHOICES.has(choice))
@@ -4077,14 +4895,49 @@ function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
   }
 }
 async function consumeContinuationChoice(projectRoot, text, opts = {}) {
-  const choice = isCanonicalOption(text);
+  var _a, _b;
+  const explicit = opts.controlChoice ?? opts.control_choice;
+  const choice = explicit === "allow" ? "allowed" : explicit === "deny" ? "denied" : explicit === "ambiguous" ? "ambiguous" : isCanonicalOption(text);
   if (!choice)
     return null;
   if (!opts.stateRoot)
     return { status: "control_retry", control: true, marker: CONTROL_RETRY };
   const key = projectKey(projectRoot);
+  if (choice === "ambiguous") {
+    const notice = readNoticeReceipt(opts.stateRoot, key);
+    if (notice.status === "missing")
+      return null;
+    if (notice.status === "corrupt")
+      return { status: "control_continue", control: true, defaulted: false, notice_error: "notice_corrupt" };
+    if (!["pending_output", "awaiting_choice"].includes(notice.value.status)) {
+      return { status: "control_continue", control: true, defaulted: notice.value.status === "defaulted" };
+    }
+    if (Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > Date.now()) {
+      return { status: "control_continue", control: true, defaulted: false, retry_suppressed: true };
+    }
+    const writeNotice2 = typeof opts._updateNoticeStatus === "function" ? opts._updateNoticeStatus : updateNoticeStatus;
+    const persisted = writeNotice2(opts.stateRoot, key, notice.value.status, "defaulted");
+    if (["updated", "conflict"].includes(persisted.status)) {
+      return { status: "control_continue", control: true, defaulted: true };
+    }
+    const retry2 = recordNoticeRetry(
+      opts.stateRoot,
+      key,
+      notice.value.status,
+      persisted.reason || "notice_defaulted_write_failed",
+      opts
+    );
+    return {
+      status: "control_continue",
+      control: true,
+      defaulted: false,
+      defaulted_retry: retry2.status,
+      notice_error: persisted.reason || "notice_defaulted_write_failed"
+    };
+  }
   const ckey = controlKey(key, choice);
   const writeTurn = typeof opts._writeControlTurn === "function" ? opts._writeControlTurn : writeControlTurn;
+  const writeNotice = typeof opts._updateNoticeStatus === "function" ? opts._updateNoticeStatus : updateNoticeStatus;
   const retry = (marker = CONTROL_RETRY) => ({
     status: "control_retry",
     control: true,
@@ -4093,12 +4946,21 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
   if (choice === "denied" && opts.source === "hook") {
     const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks5.performance.now() + (opts.timeoutMs ?? 25);
     const notice = readNoticeReceipt(opts.stateRoot, key);
+    const turn2 = readControlTurn(opts.stateRoot, key, ckey);
+    const tombstone2 = readDenyTombstone(opts.stateRoot, key);
     if (import_node_perf_hooks5.performance.now() > deadlineMono)
       return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-    if (notice.status !== "valid" || !["awaiting_choice", "deny_pending"].includes(notice.value.status))
+    if (tombstone2.status === "valid")
+      return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
+    if (!noticeCapabilityFresh(notice) && !acceptedControlFact(opts.stateRoot, key, choice, turn2, tombstone2))
       return null;
-    const tomb2 = writeDenyTombstoneFromHook(opts.stateRoot, key, ckey, {
-      timeoutMs: Math.max(0, Math.min(25, deadlineMono - import_node_perf_hooks5.performance.now()))
+    if (notice.status !== "valid" || !["pending_output", "awaiting_choice", "deny_pending"].includes((_a = notice.value) == null ? void 0 : _a.status))
+      return null;
+    const tomb2 = writeDenyWithAdmission(opts.stateRoot, key, ckey, {
+      ...opts,
+      source: "hook",
+      timeoutMs: Math.max(0, Math.min(25, deadlineMono - import_node_perf_hooks5.performance.now())),
+      deadlineMono
     });
     if (["pending", "already_present"].includes(tomb2.status)) {
       return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
@@ -4108,31 +4970,49 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
   if (choice === "allowed" && opts.source === "hook") {
     const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks5.performance.now() + (opts.timeoutMs ?? 25);
     const notice = readNoticeReceipt(opts.stateRoot, key);
+    const turn2 = readControlTurn(opts.stateRoot, key, ckey);
+    const tombstone2 = readDenyTombstone(opts.stateRoot, key);
     if (import_node_perf_hooks5.performance.now() > deadlineMono)
       return { status: "control_retry", control: true, marker: ALLOW_RETRY };
-    if (notice.status === "corrupt")
+    const accepted = acceptedControlFact(opts.stateRoot, key, choice, turn2, tombstone2);
+    if (notice.status === "corrupt" && !accepted)
       return { status: "control_retry", control: true, marker: ALLOW_RETRY };
-    if (notice.status !== "valid")
+    if (!noticeCapabilityFresh(notice) && !accepted)
       return null;
-    if (!["awaiting_choice", "allow_pending"].includes(notice.value.status))
+    if (tombstone2.status === "valid")
+      return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
+    if (!["pending_output", "awaiting_choice", "allow_pending"].includes((_b = notice.value) == null ? void 0 : _b.status) && !accepted)
       return null;
     return { status: "control_in_progress", control: true, marker: ALLOW_RETRY };
   }
   const preNotice = readNoticeReceipt(opts.stateRoot, key);
   const preTurn = readControlTurn(opts.stateRoot, key, ckey);
-  if (preNotice.status === "missing" && preTurn.status === "missing")
+  const preTombstone = readDenyTombstone(opts.stateRoot, key);
+  if (preNotice.status === "missing" && preTurn.status === "missing" && !(choice === "denied" && preTombstone.status === "valid"))
     return null;
   if (preNotice.status === "corrupt" || preTurn.status === "corrupt")
     return retry();
-  if (preTurn.status === "missing" && preNotice.status === "valid" && !["awaiting_choice", "allow_pending", "deny_pending"].includes(preNotice.value.status))
+  if (preNotice.status === "valid" && !noticeCapabilityFresh(preNotice) && !acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone)) {
+    if (choice === "allowed" && preTombstone.status === "valid")
+      return retry(DISABLE_RETRY);
+    return null;
+  }
+  if (preTurn.status === "missing" && preNotice.status === "valid" && !["pending_output", "awaiting_choice", "allow_pending", "deny_pending"].includes(preNotice.value.status))
     return null;
   const finishAllowed = () => {
     const persisted = setContinuationChoiceLocked(projectRoot, "allowed", opts);
     if (persisted.action !== "updated")
       return retry(ALLOW_RETRY);
     const finalLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-    if (!finalLock)
-      return retry(ALLOW_RETRY);
+    if (!finalLock) {
+      return {
+        status: "control_in_progress",
+        control: true,
+        marker: ALLOWED,
+        control_turn_persisted: false,
+        control_turn_error: "control_busy"
+      };
+    }
     let committed = false;
     try {
       const final = writeTurn(opts.stateRoot, key, ckey, {
@@ -4143,23 +5023,35 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     } finally {
       releaseControlReservation(finalLock);
     }
-    if (!committed)
-      return retry(ALLOW_RETRY);
+    const result = {
+      status: "control_in_progress",
+      control: true,
+      marker: ALLOWED,
+      control_turn_persisted: committed,
+      ...committed ? {} : { control_turn_error: "control_write_failed" }
+    };
     const currentNotice = readNoticeReceipt(opts.stateRoot, key);
     const expected = currentNotice.status === "valid" ? currentNotice.value.status : null;
-    if (expected && !["awaiting_choice", "allow_pending", "allowed"].includes(expected)) {
-      return retry(ALLOW_RETRY);
+    if (expected && !["pending_output", "awaiting_choice", "allow_pending", "allowed"].includes(expected)) {
+      return {
+        ...result,
+        notice_persisted: false,
+        notice_error: "notice_state_conflict"
+      };
     }
     if (expected && expected !== "allowed") {
-      const done = updateNoticeStatus(opts.stateRoot, key, expected, "allowed");
-      if (!["updated", "conflict"].includes(done.status))
-        return retry(ALLOW_RETRY);
+      const done = writeNotice(opts.stateRoot, key, expected, "allowed");
+      return {
+        ...result,
+        notice_persisted: ["updated", "conflict"].includes(done.status),
+        ...["updated", "conflict"].includes(done.status) ? {} : { notice_error: done.reason || "notice_write_failed" }
+      };
     }
-    return { status: "control_in_progress", control: true, marker: ALLOWED };
+    return { ...result, notice_persisted: true };
   };
   const completeDenied = () => {
-    var _a;
-    const durableTombstone = writeDenyTombstone(opts.stateRoot, key, ckey);
+    var _a2;
+    const durableTombstone = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
     if (!["created", "already_present"].includes(durableTombstone.status)) {
       return { status: "control_retry", control: true, marker: DISABLE_RETRY };
     }
@@ -4175,7 +5067,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
       }
     }
     const finalLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-    if (!finalLock || (purge == null ? void 0 : purge.busy) > 0 || ((_a = purge == null ? void 0 : purge.errors) == null ? void 0 : _a.length) > 0 || (purge == null ? void 0 : purge.active_leases) > 0 || (purge == null ? void 0 : purge.lease_busy) > 0) {
+    if (!finalLock || (purge == null ? void 0 : purge.busy) > 0 || ((_a2 = purge == null ? void 0 : purge.errors) == null ? void 0 : _a2.length) > 0 || (purge == null ? void 0 : purge.active_leases) > 0 || (purge == null ? void 0 : purge.lease_busy) > 0) {
       if (finalLock)
         releaseControlReservation(finalLock);
       return { status: "control_retry", control: true, marker: DISABLE_RETRY };
@@ -4188,14 +5080,31 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     if (!["updated", "created", "already_present"].includes(final.status)) {
       return { status: "control_retry", control: true, marker: DISABLE_RETRY };
     }
-    const done = updateNoticeStatus(opts.stateRoot, key, "deny_pending", "denied");
+    const done = writeNotice(opts.stateRoot, key, "deny_pending", "denied");
     if (!["updated", "conflict"].includes(done.status))
       return { status: "control_retry", control: true, marker: DISABLE_RETRY };
     return { status: "control_in_progress", control: true, marker: DISABLED };
   };
   let lock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-  if (!lock)
-    return retry();
+  if (!lock) {
+    const allowable = choice === "allowed" && opts.source !== "hook" && preNotice.status === "valid" && (noticeCapabilityFresh(preNotice) || acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone)) && preTombstone.status !== "valid" && preTombstone.status !== "corrupt";
+    if (!allowable)
+      return retry();
+    const persisted = setContinuationChoiceLocked(projectRoot, "allowed", opts);
+    if (persisted.action !== "updated")
+      return retry(ALLOW_RETRY);
+    const expected = preNotice.value.status;
+    const done = expected === "allowed" ? { status: "conflict" } : writeNotice(opts.stateRoot, key, expected, "allowed");
+    return {
+      status: "control_in_progress",
+      control: true,
+      marker: ALLOWED,
+      control_turn_persisted: false,
+      notice_persisted: ["updated", "conflict"].includes(done.status),
+      ...done.status === "updated" || done.status === "conflict" ? {} : { notice_error: done.reason || "notice_write_failed" },
+      control_turn_error: "control_busy"
+    };
+  }
   let receipt;
   let turn;
   let tombstone;
@@ -4204,6 +5113,12 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     receipt = notice.status === "valid" ? notice.value : null;
     tombstone = readDenyTombstone(opts.stateRoot, key);
     turn = readControlTurn(opts.stateRoot, key, ckey);
+    if (notice.status === "valid" && !noticeCapabilityFresh(notice) && !acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone)) {
+      if (choice === "allowed" && tombstone.status === "valid") {
+        return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
+      }
+      return null;
+    }
     if (tombstone.status === "valid" || tombstone.status === "corrupt") {
       if (choice === "denied") {
         if (tombstone.status === "corrupt") {
@@ -4216,7 +5131,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
           if (!["quarantined", "missing"].includes(quarantined.status)) {
             return { status: "control_retry", control: true, marker: DISABLE_RETRY };
           }
-          const recreated = writeDenyTombstone(opts.stateRoot, key, ckey);
+          const recreated = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
           if (!["created", "already_present"].includes(recreated.status)) {
             return { status: "control_retry", control: true, marker: DISABLE_RETRY };
           }
@@ -4249,7 +5164,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
             return { status: "control_retry", control: true, marker: DISABLE_RETRY };
           const currentNotice = readNoticeReceipt(opts.stateRoot, key);
           if (currentNotice.status === "valid" && currentNotice.value.status === "awaiting_choice") {
-            const advanced = updateNoticeStatus(opts.stateRoot, key, "awaiting_choice", "deny_pending");
+            const advanced = writeNotice(opts.stateRoot, key, "awaiting_choice", "deny_pending");
             if (!["updated", "conflict"].includes(advanced.status))
               return { status: "control_retry", control: true, marker: DISABLE_RETRY };
           }
@@ -4280,16 +5195,13 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     if (!receipt) {
       return null;
     }
-    if (receipt.status === "pending_output") {
+    if (!["pending_output", "awaiting_choice", "allow_pending", "deny_pending"].includes(receipt.status)) {
       return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
     }
-    if (!["awaiting_choice", "allow_pending", "deny_pending"].includes(receipt.status)) {
+    if (choice === "allowed" && !["pending_output", "awaiting_choice"].includes(receipt.status)) {
       return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
     }
-    if (choice === "allowed" && receipt.status !== "awaiting_choice") {
-      return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === "denied" && receipt.status !== "awaiting_choice") {
+    if (choice === "denied" && !["pending_output", "awaiting_choice"].includes(receipt.status)) {
       return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
     }
     if (choice === "allowed") {
@@ -4298,18 +5210,39 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
         control_status: "allowed_pending"
       }, { firstWriter: true });
       if (!["created", "already_present"].includes(created.status)) {
-        return { status: "control_retry", control: true, marker: CONTROL_RETRY };
+        releaseControlReservation(lock);
+        lock = null;
+        const persisted = setContinuationChoiceLocked(projectRoot, "allowed", opts);
+        if (persisted.action !== "updated")
+          return retry(ALLOW_RETRY);
+        const currentNotice = readNoticeReceipt(opts.stateRoot, key);
+        const expected = currentNotice.status === "valid" ? currentNotice.value.status : null;
+        if (expected && expected !== "allowed") {
+          const done = writeNotice(opts.stateRoot, key, expected, "allowed");
+          return {
+            status: "control_in_progress",
+            control: true,
+            marker: ALLOWED,
+            control_turn_persisted: false,
+            notice_persisted: ["updated", "conflict"].includes(done.status),
+            notice_error: ["updated", "conflict"].includes(done.status) ? void 0 : done.reason || "notice_write_failed",
+            control_turn_error: created.reason || "control_turn_unavailable"
+          };
+        }
+        return {
+          status: "control_in_progress",
+          control: true,
+          marker: ALLOWED,
+          control_turn_persisted: false,
+          control_turn_error: created.reason || "control_turn_unavailable"
+        };
       }
       releaseControlReservation(lock);
       lock = null;
-      const advanced = updateNoticeStatus(opts.stateRoot, key, receipt.status, "allow_pending");
-      if (!["updated", "conflict"].includes(advanced.status)) {
-        return { status: "control_retry", control: true, marker: CONTROL_RETRY };
-      }
     } else {
       releaseControlReservation(lock);
       lock = null;
-      const tomb2 = opts.source === "hook" ? writeDenyTombstoneFromHook(opts.stateRoot, key, ckey, { timeoutMs: opts.timeoutMs ?? 25 }) : writeDenyTombstone(opts.stateRoot, key, ckey);
+      const tomb2 = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
       if (!(opts.source === "hook" ? ["pending", "already_present"].includes(tomb2.status) : ["created", "already_present"].includes(tomb2.status))) {
         return { status: "control_retry", control: true, marker: DISABLE_RETRY };
       }
@@ -4329,7 +5262,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
       } finally {
         releaseControlReservation(controlLock);
       }
-      const advanced = updateNoticeStatus(opts.stateRoot, key, receipt.status, "deny_pending");
+      const advanced = writeNotice(opts.stateRoot, key, receipt.status, "deny_pending");
       if (!["updated", "conflict"].includes(advanced.status)) {
         return { status: "control_retry", control: true, marker: DISABLE_RETRY };
       }
@@ -4342,7 +5275,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
   }
   if (opts.source === "hook")
     return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-  const tomb = writeDenyTombstone(opts.stateRoot, key, ckey);
+  const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
   if (!["created", "already_present"].includes(tomb.status)) {
     return { status: "control_retry", control: true, marker: DISABLE_RETRY };
   }
@@ -4383,6 +5316,8 @@ var LOCK_DIR2 = "locks";
 var BINDING_DIR = "bindings";
 var CONTEXT_DIR = "contexts";
 var STAGE_DIR = "stages";
+var TURN_RECEIPT_DIR = "turn-receipts";
+var TURN_RECEIPT_VERSION = 1;
 function digest(...parts) {
   const hash = (0, import_node_crypto6.createHash)("sha256");
   for (const part of parts)
@@ -4455,6 +5390,55 @@ function writeJsonAtomic(path2, value, opts = {}) {
     }
   }
 }
+function writeJsonNoClobberAtomic(path2, value, opts = {}) {
+  const dir = (0, import_node_path7.dirname)(path2);
+  ensurePrivateDir(dir);
+  const tmp = (0, import_node_path7.join)(dir, `.${(0, import_node_crypto6.randomBytes)(8).toString("hex")}.receipt.tmp`);
+  let fd;
+  try {
+    fd = (0, import_node_fs7.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
+    writeAll3(fd, `${JSON.stringify(value)}
+`);
+    if (opts.durable !== false)
+      (0, import_node_fs7.fsyncSync)(fd);
+    (0, import_node_fs7.closeSync)(fd);
+    fd = void 0;
+    try {
+      (0, import_node_fs7.linkSync)(tmp, path2);
+      if (opts.durable !== false) {
+        try {
+          const dirFd = (0, import_node_fs7.openSync)(dir, "r");
+          try {
+            (0, import_node_fs7.fsyncSync)(dirFd);
+          } finally {
+            (0, import_node_fs7.closeSync)(dirFd);
+          }
+        } catch (err) {
+          if (!["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT", "EISDIR", "EBADF", "ENOTDIR", "ENOTSUP", "EOPNOTSUPP"].includes(err == null ? void 0 : err.code))
+            throw err;
+        }
+      }
+      return { status: "created" };
+    } catch (err) {
+      if ((err == null ? void 0 : err.code) === "EEXIST")
+        return { status: "exists" };
+      if (["ENOTSUP", "EOPNOTSUPP", "EPERM", "EXDEV"].includes(err == null ? void 0 : err.code)) {
+        return { status: "unsupported" };
+      }
+      throw err;
+    }
+  } finally {
+    if (fd !== void 0)
+      try {
+        (0, import_node_fs7.closeSync)(fd);
+      } catch {
+      }
+    try {
+      (0, import_node_fs7.unlinkSync)(tmp);
+    } catch {
+    }
+  }
+}
 function bindingPath(projectRoot, sessionid) {
   return (0, import_node_path7.join)(coordinationRoot(projectRoot), BINDING_DIR, `${sessionid}.json`);
 }
@@ -4463,6 +5447,15 @@ function contextPath(projectRoot, sessionid) {
 }
 function stagePath(projectRoot, sessionid, stageKey) {
   return (0, import_node_path7.join)(coordinationRoot(projectRoot), STAGE_DIR, `${digest(sessionid, stageKey)}.json`);
+}
+function turnReceiptKey(ide, turnId) {
+  if (typeof ide !== "string" || ide.length === 0 || typeof turnId !== "string" || turnId.length === 0 || turnId.length > 1024)
+    return null;
+  return digest("turn-receipt", ide, turnId);
+}
+function turnReceiptPath(projectRoot, ide, turnId) {
+  const key = turnReceiptKey(ide, turnId);
+  return key ? (0, import_node_path7.join)(coordinationRoot(projectRoot), TURN_RECEIPT_DIR, `${key}.json`) : null;
 }
 function listJson(dir) {
   try {
@@ -4601,20 +5594,87 @@ function markContextConsumed(projectRoot, sessionid, eventId, expectedCreatedAt)
   writeJsonAtomic(path2, { ...value, consumed_by_event_id: eventId });
   return true;
 }
-function readStageReceipt(projectRoot, sessionid, stageKey) {
-  const value = readJson2(stagePath(projectRoot, sessionid, stageKey));
-  return value && value.sessionid === sessionid ? value : null;
+function readStageReceipt(projectRoot, sessionid, stageKey, opts = {}) {
+  const path2 = stagePath(projectRoot, sessionid, stageKey);
+  const value = readJson2(path2);
+  if (value && value.sessionid === sessionid)
+    return value;
+  return opts.reportInvalid && (0, import_node_fs7.existsSync)(path2) ? { status: "corrupt" } : null;
 }
 function writeStageReceipt(projectRoot, sessionid, stageKey, value, opts = {}) {
   if (!safeSessionId(sessionid))
     throw new TypeError("invalid anonymous sessionid");
+  const previous = readStageReceipt(projectRoot, sessionid, stageKey);
+  const attribution = (previous == null ? void 0 : previous.event_id) === value.event_id ? { ...previous, ...value } : value;
   writeJsonAtomic(stagePath(projectRoot, sessionid, stageKey), {
     sessionid,
     event_id: value.event_id,
     source: value.source,
     claimed_sources: Array.isArray(value.claimed_sources) ? [...new Set(value.claimed_sources.filter((v) => typeof v === "string"))].slice(0, 8) : [],
-    time: value.time
+    time: value.time,
+    ...Object.fromEntries(["route_hint", "product", "framework"].filter((field) => typeof attribution[field] === "string" && attribution[field].length > 0).map((field) => [field, attribution[field]]))
   }, { durable: opts.durable !== false });
+}
+function readTurnReceipt(projectRoot, ide, turnId) {
+  const path2 = turnReceiptPath(projectRoot, ide, turnId);
+  if (!path2)
+    return null;
+  const value = readJson2(path2);
+  if (!value)
+    return (0, import_node_fs7.existsSync)(path2) ? { status: "corrupt" } : null;
+  if (!value || value.version !== TURN_RECEIPT_VERSION || value.turn_key !== turnReceiptKey(ide, turnId) || value.ide !== ide || !safeSessionId(value.sessionid) || typeof value.event_id !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(value.event_id) || !Number.isFinite(value.time))
+    return { status: "corrupt" };
+  return value;
+}
+function writeTurnReceipt(projectRoot, ide, turnId, value, opts = {}) {
+  const key = turnReceiptKey(ide, turnId);
+  const path2 = turnReceiptPath(projectRoot, ide, turnId);
+  if (!key || !path2 || !safeSessionId(value == null ? void 0 : value.sessionid) || typeof (value == null ? void 0 : value.event_id) !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(value.event_id) || !Number.isFinite(value.time))
+    return { status: "invalid" };
+  const next = {
+    version: TURN_RECEIPT_VERSION,
+    turn_key: key,
+    ide,
+    sessionid: value.sessionid,
+    event_id: value.event_id,
+    time: value.time
+  };
+  let publication;
+  try {
+    publication = writeJsonNoClobberAtomic(path2, next, { durable: opts.durable !== false });
+  } catch (err) {
+    return { status: "error", reason: (err == null ? void 0 : err.code) || "turn_receipt_write_failed" };
+  }
+  if (publication.status === "created")
+    return { status: "created", value: next };
+  const existing = readTurnReceipt(projectRoot, ide, turnId);
+  if ((existing == null ? void 0 : existing.status) === "corrupt")
+    return { status: "conflict", reason: "turn_receipt_corrupt" };
+  if (existing) {
+    return existing.sessionid === value.sessionid && existing.event_id === value.event_id ? { status: "already_present", value: existing } : { status: "conflict", value: existing };
+  }
+  if (publication.status === "unsupported") {
+    const lock = acquireCoordinationReservation(projectRoot, "turn-receipt", key, opts);
+    if (!lock)
+      return { status: "retry", reason: "turn_receipt_busy" };
+    try {
+      const lockedExisting = readTurnReceipt(projectRoot, ide, turnId);
+      if ((lockedExisting == null ? void 0 : lockedExisting.status) === "corrupt")
+        return { status: "conflict", reason: "turn_receipt_corrupt" };
+      if (lockedExisting) {
+        return lockedExisting.sessionid === value.sessionid && lockedExisting.event_id === value.event_id ? { status: "already_present", value: lockedExisting } : { status: "conflict", value: lockedExisting };
+      }
+      try {
+        writeJsonAtomic(path2, next, { durable: opts.durable !== false });
+        return { status: "created", value: next };
+      } catch (err) {
+        return { status: "error", reason: (err == null ? void 0 : err.code) || "turn_receipt_write_failed" };
+      }
+    } finally {
+      releaseCoordinationReservation(lock);
+    }
+  }
+  return { status: "retry", reason: "turn_receipt_unavailable" };
 }
 function sleepSync3(ms) {
   if (ms > 0)
@@ -6409,43 +7469,51 @@ var PYTHON_HOOK_DEDUPE_MS = 6e4;
 var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
 var FOREGROUND_TOTAL_BUDGET_MS = 2200;
+var FOREGROUND_FLUSH_BUDGET_MS = 1800;
 var RUNTIME_VERSION = "1.1.0";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
+  // Docs is an answer-layer owner rather than a product.  Keep it in the
+  // validated route-hint set so a dispatcher can explicitly pair
+  // `skillname=trtc-docs` with a product such as `chat` without Host Stop
+  // falling back to text-based attribution.
+  "trtc-docs": "unknown",
   "trtc-conference": "conference",
   "trtc-chat": "chat",
+  "trtc-chat-android": "chat",
   "trtc-chat-docs": "chat",
   "trtc-call": "call",
   "trtc-live": "live",
   "trtc-rtc-engine": "rtc-engine",
   "trtc-push": "tim-push",
-  "trtc-ai-service": "ai-service",
-  "trtc-ai-oral-coach": "ai-service",
-  "trtc-ai-realtime-interpreter": "ai-service"
+  // These keys must match the installed Skill frontmatter names, not their
+  // directory names or the product labels used by the Root router.
+  "trtc-ai-customer-service-skill": "ai-service",
+  "ai-oral-coach-skill": "oral-coach",
+  "trtc-ai-realtime-interpreter": "realtime-interpreter",
+  "trtc-sdk-log-analysis": "unknown"
 });
+var ROUTE_HINT_ALIASES = Object.freeze({
+  "trtc-ai-service": "trtc-ai-customer-service-skill",
+  "trtc-ai-oral-coach": "ai-oral-coach-skill"
+});
+function isCodexInternalPrompt(prompt, input, flags) {
+  const ide = safeName((flags == null ? void 0 : flags.ide) || (input == null ? void 0 : input.ide), "unknown");
+  if (ide !== "codex" || (input == null ? void 0 : input.user_initiated) === true)
+    return false;
+  if ((input == null ? void 0 : input.internal) === true || (input == null ? void 0 : input.is_internal) === true)
+    return true;
+  const hostSource = typeof (input == null ? void 0 : input.host_source) === "string" ? input.host_source.toLowerCase() : "";
+  const hostKind = typeof (input == null ? void 0 : input.host_kind) === "string" ? input.host_kind.toLowerCase() : "";
+  if (["internal", "background", "suggestion", "suggestions", "codex_suggestions", "host_internal"].includes(hostSource) || ["internal", "background", "suggestion", "suggestions", "codex_suggestions"].includes(hostKind))
+    return true;
+  return false;
+}
 function codebuddyNoticeFeedback(locale) {
   const instruction = locale === "en-US" ? "In your next reply, show the following fixed notice to the user verbatim. Do not rewrite, summarize, or continue the integration steps:" : "请在下一条回复中，向用户原样展示下面的固定提示，不要改写、总结或继续执行集成步骤：";
   return `${instruction}
 
 ${noticeTextForLocale(locale)}`;
-}
-function inferHostAttribution(text) {
-  const value = typeof text === "string" ? text.toLowerCase() : "";
-  const rules = [
-    [/chat|即时通信|聊天|tuikit|\bim\b/, "trtc-chat", "chat"],
-    [/conference|tuiroom|roomkit|会议|语音房/, "trtc-conference", "conference"],
-    [/call|tuicall|通话|视频通话/, "trtc-call", "call"],
-    [/live|tuilive|直播|直播间/, "trtc-live", "live"],
-    [/timpush|offline push|离线推送|推送/, "trtc-push", "tim-push"],
-    [/oral coach|口语陪练|speaking coach/, "trtc-ai-oral-coach", "ai-service"],
-    [/customer service|智能客服|ai 客服|对话式 ai/, "trtc-ai-service", "ai-service"],
-    [/rtc engine|trtc engine|音视频|实时音视频|\brtc\b/, "trtc-rtc-engine", "rtc-engine"]
-  ];
-  for (const [pattern, skillname, product] of rules) {
-    if (pattern.test(value))
-      return { skillname, product };
-  }
-  return { skillname: "unknown", product: "unknown" };
 }
 function inferHostFramework(text) {
   const value = typeof text === "string" ? text.toLowerCase() : "";
@@ -6517,6 +7585,158 @@ function parseArgs(argv) {
     }
   }
   return { command, flags };
+}
+var HOST_STATE_ROOT_MARKERS = Object.freeze([
+  [".trtc-skill-state", "host-state-root.json"],
+  [".trtc-reporting", "host-state-root.json"]
+]);
+function validateCodexStateRoot(value, { create = false } = {}) {
+  if (typeof value !== "string" || !value || !(0, import_node_path12.isAbsolute)(value)) {
+    return { status: "invalid", error: "relative_path" };
+  }
+  const candidate = (0, import_node_path12.resolve)(value);
+  try {
+    let stat;
+    try {
+      stat = (0, import_node_fs11.lstatSync)(candidate);
+    } catch (err) {
+      if (!create || (err == null ? void 0 : err.code) !== "ENOENT")
+        throw err;
+      const parent = (0, import_node_path12.dirname)(candidate);
+      const parentStat = (0, import_node_fs11.lstatSync)(parent);
+      if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
+        return { status: "unavailable", error: "state_root_unavailable" };
+      }
+      (0, import_node_fs11.mkdirSync)(candidate, { recursive: true, mode: 448 });
+      stat = (0, import_node_fs11.lstatSync)(candidate);
+    }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      return { status: "unavailable", error: "state_root_unavailable" };
+    }
+    return { status: "valid", stateRoot: (0, import_node_fs11.realpathSync)(candidate) };
+  } catch {
+    return { status: "unavailable", error: "state_root_unavailable" };
+  }
+}
+function validStateRootGeneration(value) {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
+}
+function readCodexStateRootBinding(projectRoot) {
+  var _a, _b, _c;
+  for (const [dir, file] of HOST_STATE_ROOT_MARKERS) {
+    const markerPath = (0, import_node_path12.join)(projectRoot, dir, file);
+    if (!(0, import_node_fs11.existsSync)(markerPath))
+      continue;
+    try {
+      if ((0, import_node_fs11.lstatSync)(markerPath).isSymbolicLink() || (0, import_node_fs11.lstatSync)((0, import_node_path12.join)(projectRoot, dir)).isSymbolicLink()) {
+        return { status: "invalid", error: "symlink_path" };
+      }
+      const value = JSON.parse((0, import_node_fs11.readFileSync)(markerPath, "utf8"));
+      let entry;
+      if ((value == null ? void 0 : value.schema_version) === 1)
+        entry = value;
+      else if ((value == null ? void 0 : value.schema_version) === 2)
+        entry = (_a = value.bindings) == null ? void 0 : _a.codex;
+      else
+        return { status: "invalid", error: "unsupported_schema" };
+      if (!entry || typeof entry !== "object" || Array.isArray(entry) || (entry.status || "ready") !== "ready" || typeof entry.state_root !== "string" || !entry.state_root || entry.generation !== void 0 && !validStateRootGeneration(entry.generation)) {
+        return { status: "invalid", error: "malformed_binding" };
+      }
+      const candidate = (0, import_node_path12.resolve)(entry.state_root);
+      if (!candidate.startsWith("/") && process.platform !== "win32")
+        return { status: "invalid", error: "relative_path" };
+      const checked = validateCodexStateRoot(entry.state_root);
+      if (checked.status !== "valid")
+        return checked;
+      const generation = entry.generation || null;
+      for (const [stateDir, filename, key] of [
+        [".trtc-skill-state", "install-mode.json", "install_generation"],
+        [".trtc-skill-state", "runtime-binding.json", "codex"],
+        [".trtc-reporting", "install-mode.json", "install_generation"],
+        [".trtc-reporting", "runtime-binding.json", "codex"]
+      ]) {
+        const sibling = (0, import_node_path12.join)(projectRoot, stateDir, filename);
+        if (!(0, import_node_fs11.existsSync)(sibling))
+          continue;
+        try {
+          const parsed = JSON.parse((0, import_node_fs11.readFileSync)(sibling, "utf8"));
+          const expected = key === "codex" ? (_c = (_b = parsed == null ? void 0 : parsed.bindings) == null ? void 0 : _b.codex) == null ? void 0 : _c.generation : parsed == null ? void 0 : parsed[key];
+          if (generation && typeof expected === "string" && expected !== generation) {
+            return { status: "invalid", error: "generation_mismatch" };
+          }
+        } catch {
+          return { status: "invalid", error: "generation_mismatch" };
+        }
+      }
+      return { status: "valid", stateRoot: checked.stateRoot, generation, markerPath };
+    } catch (err) {
+      return { status: "invalid", error: (err == null ? void 0 : err.code) === "ENOENT" ? "state_root_unavailable" : "malformed_binding" };
+    }
+  }
+  return { status: "missing" };
+}
+function stateRootContainsProjectData(stateRoot, projectRoot) {
+  const key = projectKey(projectRoot);
+  for (const bucket of ["pending", "outbox", "ack", "acknowledgements"]) {
+    const directory = (0, import_node_path12.join)(stateRoot, "telemetry", bucket);
+    let entries;
+    try {
+      entries = (0, import_node_fs11.readdirSync)(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries.slice(0, 256)) {
+      if (!entry.isFile() || !entry.name.endsWith(".json"))
+        continue;
+      try {
+        const value = JSON.parse((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(directory, entry.name), "utf8"));
+        if (value && value.__project_key === key)
+          return true;
+      } catch {
+      }
+    }
+  }
+  return false;
+}
+function resolveLegacyCodexStateRoot(env, projectRoot) {
+  const configured = resolveStateRoot(env);
+  const defaultEnv = { ...env };
+  delete defaultEnv.TRTC_TELEMETRY_STATE_ROOT;
+  const platformDefault = resolveStateRoot(defaultEnv);
+  const configuredCheck = validateCodexStateRoot(configured);
+  if (configured !== platformDefault && configuredCheck.status === "valid" && stateRootContainsProjectData(configuredCheck.stateRoot, projectRoot)) {
+    return { stateRoot: configuredCheck.stateRoot, source: "legacy_default" };
+  }
+  return { stateRoot: platformDefault, source: "default" };
+}
+function isCodexInvocation(flags = {}) {
+  if ((flags == null ? void 0 : flags.ide) === "codex")
+    return true;
+  return String((flags == null ? void 0 : flags["installed-ides"]) || "").split(",").map((value) => value.trim().toLowerCase()).includes("codex");
+}
+function resolveRuntimeStateRoot({ flags, opts, cwd, env }) {
+  const codexInvocation = isCodexInvocation(flags);
+  const explicit = opts.stateRoot || flags["state-root"];
+  if (explicit) {
+    if (typeof explicit !== "string" || !(0, import_node_path12.isAbsolute)(explicit)) {
+      return { status: "invalid", error: "relative_path" };
+    }
+    if (codexInvocation) {
+      const checked = validateCodexStateRoot(explicit, { create: true });
+      return { ...checked, source: "explicit", bound: true };
+    }
+    return { status: "valid", stateRoot: explicit, source: "explicit", bound: false };
+  }
+  if (!codexInvocation) {
+    return { status: "valid", stateRoot: resolveStateRoot(env), source: "default", bound: false };
+  }
+  const projectRoot = findProjectRoot(flags.cwd || cwd);
+  const binding = readCodexStateRootBinding(projectRoot);
+  if (binding.status === "valid")
+    return { ...binding, bound: true, source: "marker" };
+  if (binding.status === "invalid" || binding.status === "unavailable")
+    return binding;
+  return { status: "valid", ...resolveLegacyCodexStateRoot(env, projectRoot), bound: false };
 }
 function canonicalize(path2) {
   const absolute = (0, import_node_path12.resolve)(path2 || process.cwd());
@@ -6835,6 +8055,11 @@ function deriveSessionId2(normalized, projectRoot) {
 function safeName(value, fallback = "unknown") {
   return typeof value === "string" && SAFE_NAME_RE.test(value) ? value : fallback;
 }
+function validRouteHint(value) {
+  const hint = safeName(value, "");
+  const canonical = ROUTE_HINT_ALIASES[hint] || hint;
+  return Object.prototype.hasOwnProperty.call(PRODUCT_BY_SKILL, canonical) ? canonical : "";
+}
 function remaining(deadlineMono) {
   return Math.max(0, deadlineMono - import_node_perf_hooks9.performance.now());
 }
@@ -6896,6 +8121,581 @@ function pendingEventForProject(stateRoot, eventId, key) {
   }
   return null;
 }
+function codexStageLocator(event) {
+  const sessionid = eventCorrelationKey(event);
+  if ((event == null ? void 0 : event.ide) !== "codex" || !sessionid || !event.__prompt_fingerprint)
+    return null;
+  const stageKey = event.turn_id ? `turn:${event.turn_id}` : `fingerprint:${event.__prompt_fingerprint}`;
+  return { sessionid, stageKey, lockKey: `${sessionid}:${stageKey}` };
+}
+function codexSnapshotFrozen(ctx, key, event) {
+  return event.__sender_acknowledged === true || readEventAcknowledgement(ctx.stateRoot, key, event.event_id).status === "valid" || listOutbox(ctx.stateRoot).some((path2) => (0, import_node_path12.basename)(path2) === `${event.event_id}.json`);
+}
+function codexReceiptAttribution(projectRoot, event, input = {}) {
+  const locator = codexStageLocator(event);
+  if (!locator)
+    return { event };
+  const stored = readStageReceipt(projectRoot, locator.sessionid, locator.stageKey, { reportInvalid: true });
+  if (stored && stored.event_id !== event.event_id)
+    return { event, error: "stage_receipt_mismatch" };
+  const receipt = stored || {
+    event_id: event.event_id,
+    sessionid: locator.sessionid,
+    source: event.__stage_source,
+    claimed_sources: [event.__stage_source],
+    time: event.time
+  };
+  const previous = validRouteHint(receipt.route_hint || event.__route_hint);
+  const requested = validRouteHint(input.route_hint);
+  if (previous && requested && previous !== requested)
+    return { event, error: "owner_mismatch" };
+  const owner = requested || previous;
+  if (!owner)
+    return { event };
+  const known = (value) => {
+    const name = safeName(value, "");
+    return name && name !== "unknown" ? name : null;
+  };
+  const product = known(input.product) || known(receipt.product) || known(event.__route_product) || PRODUCT_BY_SKILL[owner];
+  const framework = known(input.framework) || known(receipt.framework) || known(event.__route_framework);
+  if (!stored || receipt.route_hint !== owner || receipt.product !== product || receipt.framework !== framework) {
+    writeStageReceipt(projectRoot, locator.sessionid, locator.stageKey, {
+      ...receipt,
+      route_hint: owner,
+      ...product ? { product } : {},
+      ...framework ? { framework } : {}
+    });
+  }
+  return { event: {
+    ...event,
+    __route_hint: owner,
+    ...product ? { __route_product: product } : {},
+    ...framework ? { __route_framework: framework } : {}
+  } };
+}
+function preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) {
+  if (safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown") !== "codex")
+    return null;
+  const text = (input == null ? void 0 : input.text) ?? (input == null ? void 0 : input.prompt);
+  if (typeof text !== "string" || !text || isCodexInternalPrompt(text, input, flags) || input.control_choice || isNoticeReplayText(text) || preferenceFromText(text) !== null || isCanonicalOption(text) !== null)
+    return null;
+  const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd || input.cwd, normalized: input, processCwd: ctx.cwd });
+  const key = projectKey(projectRoot);
+  if (!nodeReportingAllowed(projectRoot, ctx.env, "codex") || !isReportingEnabled(projectRoot, ctx.env) || promptDenyReason(ctx.stateRoot, key))
+    return null;
+  const fingerprint = promptFingerprint(sanitizeReportText(text).trim());
+  const turn = typeof input.turn_id === "string" && input.turn_id ? input.turn_id : null;
+  const raw = ["raw_session_id", "session_id", "conversation_id", "thread_id"].map((field) => input[field]).find((value) => typeof value === "string" && value.length > 0);
+  const hint = raw || (typeof input.host_thread_hint === "string" ? input.host_thread_hint : null);
+  const session = hint ? deriveSessionId(projectRoot, "codex", hint) : null;
+  const mapped = turn ? readTurnReceipt(projectRoot, "codex", turn) : null;
+  if ((mapped == null ? void 0 : mapped.status) === "corrupt")
+    return { status: "retryable", error: "turn_receipt_corrupt", durable: false };
+  const candidates = [...listPending(ctx.stateRoot), ...listOutbox(ctx.stateRoot)].map(readEvent).filter((event2) => (event2 == null ? void 0 : event2.method) === METHOD.PROMPT && event2.ide === "codex" && event2.__project_key === key && event2.__prompt_fingerprint === fingerprint && (!mapped || event2.event_id === mapped.event_id) && (!turn || event2.turn_id === turn) && (!session || eventCorrelationKey(event2) === session) && (turn || event2.__stage_source === "hook") && ctx.now() - event2.time <= (turn || session ? INVOKE_FRESHNESS_MS : PYTHON_HOOK_DEDUPE_MS));
+  const unique = [...new Map(candidates.map((event2) => [event2.event_id, event2])).values()];
+  if (unique.length > 1)
+    return { status: "ambiguous", error: "hook_session_ambiguous", durable: true };
+  if (unique.length === 0)
+    return null;
+  const event = unique[0];
+  const locator = codexStageLocator(event);
+  if (!locator)
+    return null;
+  const result = { status: "deduped", event_id: event.event_id, sessionid: locator.sessionid };
+  const lock = acquireCoordinationReservation(projectRoot, "stage", locator.lockKey, { deadlineMono });
+  if (!lock)
+    return { ...result, status: "retryable", error: "stage_busy", durable: true };
+  try {
+    if (codexSnapshotFrozen(ctx, key, event))
+      return result;
+    const saved = codexReceiptAttribution(projectRoot, event, input);
+    if (!saved.error && event.__first_prompt_candidate === true && readNoticeObligation(ctx.stateRoot, key).status === "missing") {
+      try {
+        ensureNoticeObligation(ctx.stateRoot, key, event.event_id, {
+          timeoutMs: Math.min(30, Math.max(0, remaining(deadlineMono))),
+          createdAt: event.time
+        });
+      } catch {
+      }
+    }
+    return saved.error ? { ...result, status: saved.error === "owner_mismatch" ? "owner_mismatch" : "retryable", error: saved.error, durable: true } : result;
+  } catch (err) {
+    return { ...result, status: "retryable", error: `route_receipt_${(err == null ? void 0 : err.code) || "write_failed"}`, durable: true };
+  } finally {
+    releaseCoordinationReservation(lock);
+  }
+}
+function updateStagedRouteAttribution(ctx, projectKeyValue, eventId, routeHint, routeProduct, routeFramework, deadlineMono) {
+  const owner = validRouteHint(routeHint);
+  if (!owner || typeof eventId !== "string")
+    return { ok: true, updated: false };
+  const mappedProduct = PRODUCT_BY_SKILL[owner] || "unknown";
+  const product = routeProduct && routeProduct !== "unknown" ? routeProduct : mappedProduct;
+  const framework = routeFramework && routeFramework !== "unknown" ? routeFramework : null;
+  const attribution = {
+    skillname: owner,
+    __route_hint: owner,
+    ...product && product !== "unknown" ? { product, __route_product: product } : {},
+    ...framework ? { framework, __route_framework: framework } : {}
+  };
+  const opts = {
+    projectKey: projectKeyValue,
+    reservationTimeoutMs: Math.min(120, Math.max(1, remaining(deadlineMono)))
+  };
+  const outbox = updateOutboxAttribution(ctx.stateRoot, eventId, attribution, opts);
+  if (outbox.ok || outbox.error !== "event_not_found")
+    return outbox;
+  return updatePendingAttribution(ctx.stateRoot, eventId, attribution, opts);
+}
+function routeAttributionFailure(result, eventId, sessionid) {
+  if ((result == null ? void 0 : result.ok) !== false)
+    return null;
+  if (result.error === "owner_mismatch") {
+    return {
+      status: "owner_mismatch",
+      event_id: eventId,
+      expected_skillname: result.existing_skillname,
+      requested_skillname: result.requested_skillname
+    };
+  }
+  if (result.error === "event_not_found")
+    return null;
+  return {
+    status: "retryable",
+    error: `route_attribution_${result.error || "failed"}`,
+    durable: true,
+    event_id: eventId,
+    ...sessionid ? { sessionid } : {}
+  };
+}
+function turnRecoveryIndexPath(stateRoot, key, ide) {
+  const safeIde = safeName(ide, "unknown");
+  return (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "turn-index", `${key}-${safeIde}.json`);
+}
+function turnRecoveryHash(turnId) {
+  return (0, import_node_crypto11.createHash)("sha256").update(String(turnId)).digest("hex");
+}
+function turnRecoveryQueueSignature(paths2) {
+  return (0, import_node_crypto11.createHash)("sha256").update(paths2.join("\n")).digest("hex");
+}
+function readTurnRecoveryIndex(stateRoot, key, ide) {
+  const path2 = turnRecoveryIndexPath(stateRoot, key, ide);
+  try {
+    const value = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+    if (!value || value.version !== 1 || value.project_key !== key || value.ide !== ide || value.cursor !== null && typeof value.cursor !== "string" || !Array.isArray(value.matches) || value.first_candidates !== void 0 && !Array.isArray(value.first_candidates) || value.queue_signature !== void 0 && value.queue_signature !== null && typeof value.queue_signature !== "string" || value.queue_paths !== void 0 && (!Array.isArray(value.queue_paths) || value.queue_paths.some((entry) => typeof entry !== "string")))
+      return { status: "invalid" };
+    return { status: "valid", value };
+  } catch (err) {
+    return (err == null ? void 0 : err.code) === "ENOENT" ? { status: "missing" } : { status: "invalid" };
+  }
+}
+function writeTurnRecoveryIndex(stateRoot, key, ide, value) {
+  const path2 = turnRecoveryIndexPath(stateRoot, key, ide);
+  const dir = (0, import_node_path12.dirname)(path2);
+  const tmp = (0, import_node_path12.join)(dir, `.${key}-${safeName(ide, "unknown")}.${process.pid}-${(0, import_node_crypto11.randomUUID)()}.tmp`);
+  try {
+    (0, import_node_fs11.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+    (0, import_node_fs11.writeFileSync)(tmp, `${JSON.stringify({
+      version: 1,
+      project_key: key,
+      ide,
+      cursor: value.cursor ?? null,
+      complete: value.complete === true,
+      queue_signature: typeof value.queue_signature === "string" ? value.queue_signature : null,
+      // Paths already inspected by this project-scoped cursor. Keeping this
+      // set lets a partial scan continue when new events are appended: the
+      // next invocation scans only unseen paths instead of restarting at the
+      // head and starving the current Prompt behind old backlog.
+      queue_paths: Array.isArray(value.queue_paths) ? value.queue_paths : [],
+      // Do not truncate these mappings.  A complete index is the evidence
+      // that permits a new receipt/first obligation; dropping old entries
+      // would turn a valid historical match into a false negative later.
+      matches: Array.isArray(value.matches) ? value.matches : [],
+      first_candidates: Array.isArray(value.first_candidates) ? value.first_candidates : [],
+      updated_at: Date.now()
+    })}
+`, { mode: process.platform === "win32" ? void 0 : 384 });
+    (0, import_node_fs11.renameSync)(tmp, path2);
+    return true;
+  } catch {
+    try {
+      (0, import_node_fs11.unlinkSync)(tmp);
+    } catch {
+    }
+    return false;
+  }
+}
+function advanceTurnRecoveryIndex(stateRoot, key, ide, opts = {}) {
+  const turnIndex = readTurnRecoveryIndex(stateRoot, key, ide);
+  const current = turnIndex.status === "valid" ? turnIndex.value : { cursor: null, complete: false, matches: [] };
+  const paths2 = [...listPending(stateRoot), ...listOutbox(stateRoot)].sort((a, b) => a.localeCompare(b));
+  const queueSignature = turnRecoveryQueueSignature(paths2);
+  if (current.complete === true && current.queue_signature === queueSignature) {
+    return {
+      status: "complete",
+      scanned: 0,
+      matches: Array.isArray(current.matches) ? current.matches : [],
+      first_candidates: Array.isArray(current.first_candidates) ? current.first_candidates : []
+    };
+  }
+  const hasPathIndex = Array.isArray(current.queue_paths);
+  const queueChanged = current.queue_signature !== null && current.queue_signature !== queueSignature;
+  const knownPaths = new Set(hasPathIndex ? current.queue_paths : []);
+  if (!hasPathIndex && !queueChanged && typeof current.cursor === "string") {
+    for (const path2 of paths2) {
+      if (path2 <= current.cursor)
+        knownPaths.add(path2);
+    }
+  }
+  const scanPaths = paths2.filter((path2) => !knownPaths.has(path2));
+  const maxFiles = Number.isInteger(opts.maxFiles) && opts.maxFiles > 0 ? opts.maxFiles : 64;
+  const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : Infinity;
+  const matches = Array.isArray(current.matches) ? [...current.matches] : [];
+  const firstCandidates = Array.isArray(current.first_candidates) ? [...current.first_candidates] : [];
+  let scanned = 0;
+  const scannedPaths = new Set(knownPaths);
+  let last = typeof current.cursor === "string" ? current.cursor : null;
+  for (; scanned < scanPaths.length && scanned < maxFiles; scanned += 1) {
+    if (import_node_perf_hooks9.performance.now() >= deadlineMono)
+      break;
+    const path2 = scanPaths[scanned];
+    last = path2;
+    scannedPaths.add(path2);
+    const event = readEvent(path2);
+    if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key || ide && ide !== "unknown" && ide !== "all" && event.ide !== ide || typeof event.event_id !== "string")
+      continue;
+    if (typeof event.turn_id === "string" && event.turn_id.length > 0) {
+      const item = { turn_hash: turnRecoveryHash(event.turn_id), event_id: event.event_id };
+      if (!matches.some((entry) => entry.turn_hash === item.turn_hash && entry.event_id === item.event_id)) {
+        matches.push(item);
+      }
+    }
+    if (event.__first_prompt_candidate === true && !firstCandidates.includes(event.event_id)) {
+      firstCandidates.push(event.event_id);
+    }
+  }
+  let complete = scanned >= scanPaths.length;
+  let savedQueueSignature = queueSignature;
+  const afterPaths = [...listPending(stateRoot), ...listOutbox(stateRoot)].sort((a, b) => a.localeCompare(b));
+  const afterSignature = turnRecoveryQueueSignature(afterPaths);
+  if (complete && afterSignature !== queueSignature) {
+    complete = false;
+    savedQueueSignature = afterSignature;
+  }
+  const saved = writeTurnRecoveryIndex(stateRoot, key, ide, {
+    cursor: complete ? null : last,
+    complete,
+    queue_signature: savedQueueSignature,
+    queue_paths: [...scannedPaths].sort(),
+    matches,
+    first_candidates: firstCandidates
+  });
+  if (!saved)
+    return { status: "pending", reason: "turn_index_write_failed", scanned };
+  return { status: complete ? "complete" : "pending", scanned, matches, first_candidates: firstCandidates };
+}
+function indexedPromptForTurn(stateRoot, key, ide, turnId) {
+  const index = readTurnRecoveryIndex(stateRoot, key, ide);
+  if (index.status !== "valid")
+    return { status: "pending" };
+  const turnHash = turnRecoveryHash(turnId);
+  const matches = index.value.matches.filter((entry) => entry.turn_hash === turnHash);
+  if (matches.length > 1)
+    return { status: "ambiguous" };
+  if (matches.length === 1) {
+    const event = pendingEventForProject(stateRoot, matches[0].event_id, key);
+    return event ? { status: "found", event } : { status: "stale" };
+  }
+  return index.value.complete ? { status: "none" } : { status: "pending" };
+}
+function indexedFirstPromptCandidate(stateRoot, key, ide) {
+  const index = readTurnRecoveryIndex(stateRoot, key, ide);
+  if (index.status !== "valid")
+    return { status: "pending" };
+  const candidates = index.value.first_candidates || [];
+  const events = candidates.map((eventId) => pendingEventForProject(stateRoot, eventId, key)).filter(Boolean);
+  if (events.length > 1)
+    return { status: "ambiguous" };
+  if (events.length === 1)
+    return { status: "found", event: events[0] };
+  return index.value.complete ? { status: "none" } : { status: "pending" };
+}
+function deferredTurnPath(stateRoot, key, ide, turnId) {
+  return (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "deferred-turns", `${key}-${safeName(ide, "unknown")}-${turnRecoveryHash(turnId)}.json`);
+}
+function readDeferredTurn(stateRoot, key, ide, turnId) {
+  const path2 = deferredTurnPath(stateRoot, key, ide, turnId);
+  try {
+    const value = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+    if (!value || value.version !== 1 || value.project_key !== key || value.ide !== ide || value.turn_hash !== turnRecoveryHash(turnId) || typeof value.event_id !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(value.event_id) || typeof value.prompt !== "string" || value.prompt.length === 0)
+      return null;
+    return { ...value, path: path2 };
+  } catch {
+    return null;
+  }
+}
+function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
+  if (!turnId || typeof (value == null ? void 0 : value.prompt) !== "string" || value.prompt.length === 0)
+    return null;
+  const path2 = deferredTurnPath(stateRoot, key, ide, turnId);
+  const dir = (0, import_node_path12.dirname)(path2);
+  const tmp = (0, import_node_path12.join)(dir, `.${key}-${safeName(ide, "unknown")}-${turnRecoveryHash(turnId)}.${process.pid}-${(0, import_node_crypto11.randomUUID)()}.tmp`);
+  let existing = null;
+  try {
+    const candidate = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+    if (candidate && candidate.version === 1 && candidate.project_key === key && candidate.ide === ide && candidate.turn_hash === turnRecoveryHash(turnId) && typeof candidate.event_id === "string" && /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(candidate.event_id)) {
+      existing = candidate;
+    }
+  } catch {
+  }
+  const next = {
+    version: 1,
+    project_key: key,
+    ide,
+    turn_hash: turnRecoveryHash(turnId),
+    turn_id: turnId,
+    // Once an intent exists its event identity is immutable.  A retry may
+    // update diagnostics, but it must never replace the ID after a process
+    // restart or a lost response.
+    event_id: (existing == null ? void 0 : existing.event_id) || value.event_id || (0, import_node_crypto11.randomUUID)(),
+    prompt: (existing == null ? void 0 : existing.prompt) || value.prompt,
+    source: safeName(value.source || (existing == null ? void 0 : existing.source), "python"),
+    sessionid: safeName(value.sessionid || (existing == null ? void 0 : existing.sessionid), ""),
+    created_at: Number.isFinite(existing == null ? void 0 : existing.created_at) ? existing.created_at : Date.now(),
+    updated_at: Date.now(),
+    phase: safeName(value.phase || (existing == null ? void 0 : existing.phase), "intent"),
+    last_error: safeName(value.last_error || (existing == null ? void 0 : existing.last_error), ""),
+    retry_count: Number.isInteger(existing == null ? void 0 : existing.retry_count) ? existing.retry_count + 1 : 0
+  };
+  const routeHint = validRouteHint(value.route_hint || (existing == null ? void 0 : existing.route_hint));
+  const routeProduct = safeName(value.product || (existing == null ? void 0 : existing.product), "");
+  const routeFramework = safeName(value.framework || (existing == null ? void 0 : existing.framework), "");
+  if (routeHint)
+    next.route_hint = routeHint;
+  if (routeProduct && routeProduct !== "unknown")
+    next.product = routeProduct;
+  if (routeFramework && routeFramework !== "unknown")
+    next.framework = routeFramework;
+  const hasDisambiguationFlag = Object.prototype.hasOwnProperty.call(value, "awaiting_disambiguation");
+  const awaitingDisambiguation = hasDisambiguationFlag ? value.awaiting_disambiguation === true : (existing == null ? void 0 : existing.awaiting_disambiguation) === true;
+  if (awaitingDisambiguation)
+    next.awaiting_disambiguation = true;
+  if (!next.sessionid)
+    delete next.sessionid;
+  if (!next.last_error)
+    delete next.last_error;
+  try {
+    (0, import_node_fs11.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+    if (existing) {
+      (0, import_node_fs11.writeFileSync)(tmp, `${JSON.stringify(next)}
+`, { mode: process.platform === "win32" ? void 0 : 384 });
+      try {
+        const syncFd = (0, import_node_fs11.openSync)(tmp, "r+");
+        try {
+          (0, import_node_fs11.fsyncSync)(syncFd);
+        } finally {
+          (0, import_node_fs11.closeSync)(syncFd);
+        }
+      } catch {
+      }
+      (0, import_node_fs11.renameSync)(tmp, path2);
+    } else {
+      let fd;
+      try {
+        fd = (0, import_node_fs11.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
+        const body = Buffer.from(`${JSON.stringify(next)}
+`);
+        let offset = 0;
+        while (offset < body.length)
+          offset += (0, import_node_fs11.writeSync)(fd, body, offset, body.length - offset);
+        try {
+          (0, import_node_fs11.fsyncSync)(fd);
+        } catch {
+        }
+        (0, import_node_fs11.closeSync)(fd);
+        fd = void 0;
+        try {
+          (0, import_node_fs11.linkSync)(tmp, path2);
+        } catch (err) {
+          if ((err == null ? void 0 : err.code) === "EEXIST") {
+            try {
+              (0, import_node_fs11.unlinkSync)(tmp);
+            } catch {
+            }
+            const winner = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+            if (winner == null ? void 0 : winner.event_id)
+              return { ...winner, path: path2 };
+            return null;
+          }
+          if (!["EPERM", "EACCES", "EXDEV", "ENOTSUP", "EOPNOTSUPP"].includes(err == null ? void 0 : err.code))
+            throw err;
+          let directFd;
+          try {
+            directFd = (0, import_node_fs11.openSync)(path2, "wx", process.platform === "win32" ? void 0 : 384);
+            let directOffset = 0;
+            while (directOffset < body.length)
+              directOffset += (0, import_node_fs11.writeSync)(directFd, body, directOffset, body.length - directOffset);
+            try {
+              (0, import_node_fs11.fsyncSync)(directFd);
+            } catch {
+            }
+            (0, import_node_fs11.closeSync)(directFd);
+            directFd = void 0;
+          } catch (directErr) {
+            if (directFd !== void 0)
+              try {
+                (0, import_node_fs11.closeSync)(directFd);
+              } catch {
+              }
+            if ((directErr == null ? void 0 : directErr.code) === "EEXIST") {
+              const winner = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+              if (winner == null ? void 0 : winner.event_id)
+                return { ...winner, path: path2 };
+              return null;
+            }
+            throw directErr;
+          }
+        }
+        try {
+          (0, import_node_fs11.unlinkSync)(tmp);
+        } catch (cleanupErr) {
+          if ((cleanupErr == null ? void 0 : cleanupErr.code) !== "ENOENT") {
+          }
+        }
+      } finally {
+        if (fd !== void 0)
+          try {
+            (0, import_node_fs11.closeSync)(fd);
+          } catch {
+          }
+      }
+    }
+    return { ...next, path: path2 };
+  } catch {
+    try {
+      (0, import_node_fs11.unlinkSync)(tmp);
+    } catch {
+    }
+    return null;
+  }
+}
+function clearDeferredTurn(record) {
+  if (!(record == null ? void 0 : record.path))
+    return;
+  try {
+    (0, import_node_fs11.unlinkSync)(record.path);
+  } catch (err) {
+    if ((err == null ? void 0 : err.code) !== "ENOENT")
+      return;
+  }
+}
+function promptDenyReason(stateRoot, key) {
+  try {
+    const gate = readProjectDenyGate(stateRoot, key);
+    return (gate == null ? void 0 : gate.allowed) === false ? `deny_${gate.status || "blocked"}` : null;
+  } catch {
+    return null;
+  }
+}
+function dropPromptIntentIfDenied(ctx, key, intent) {
+  const reason = promptDenyReason(ctx.stateRoot, key);
+  if (reason)
+    clearDeferredTurn(intent);
+  return reason;
+}
+function persistPromptIntent(ctx, projectRoot, key, ide, turnId, value, _deadlineMono) {
+  if (!turnId || !isReportingEnabled(projectRoot, ctx.env)) {
+    return { status: "disabled", reason: "reporting_disabled" };
+  }
+  const deniedBefore = promptDenyReason(ctx.stateRoot, key);
+  if (deniedBefore)
+    return { status: "disabled", reason: deniedBefore };
+  const saved = writeDeferredTurn(ctx.stateRoot, key, ide, turnId, value);
+  if (!saved)
+    return { status: "retryable", reason: "prompt_intent_write_failed", durable: false };
+  const deniedAfter = promptDenyReason(ctx.stateRoot, key);
+  if (deniedAfter) {
+    clearDeferredTurn(saved);
+    return { status: "disabled", reason: deniedAfter };
+  }
+  return { status: "saved", value: saved, durable: true };
+}
+function updatePromptIntent(ctx, intent, value) {
+  if (!(intent == null ? void 0 : intent.turn_id) || !(intent == null ? void 0 : intent.event_id))
+    return null;
+  if (promptDenyReason(ctx.stateRoot, intent.project_key)) {
+    clearDeferredTurn(intent);
+    return null;
+  }
+  const updated = writeDeferredTurn(ctx.stateRoot, intent.project_key, intent.ide, intent.turn_id, {
+    ...value,
+    event_id: intent.event_id,
+    prompt: intent.prompt
+  });
+  if (!updated)
+    return null;
+  if (promptDenyReason(ctx.stateRoot, intent.project_key)) {
+    clearDeferredTurn(updated);
+    return null;
+  }
+  return updated;
+}
+function listDeferredTurns(stateRoot, key, ide) {
+  const dir = (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "deferred-turns");
+  try {
+    return (0, import_node_fs11.readdirSync)(dir).filter((name) => name.endsWith(".json") && name.startsWith(`${key}-${safeName(ide, "unknown")}-`)).sort().map((name) => {
+      try {
+        const value = JSON.parse((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(dir, name), "utf8"));
+        if (!value || value.version !== 1 || value.project_key !== key || value.ide !== ide || typeof value.turn_id !== "string" || typeof value.event_id !== "string" || typeof value.prompt !== "string")
+          return null;
+        return { ...value, path: (0, import_node_path12.join)(dir, name) };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean).sort((a, b) => (a.updated_at || 0) - (b.updated_at || 0));
+  } catch {
+    return [];
+  }
+}
+function purgeDeferredTurns(stateRoot, key) {
+  const dir = (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "deferred-turns");
+  const prefix = `${key}-`;
+  const result = { removed: 0, busy: 0, errors: [] };
+  let names;
+  try {
+    names = (0, import_node_fs11.readdirSync)(dir);
+  } catch (err) {
+    if ((err == null ? void 0 : err.code) !== "ENOENT")
+      result.errors.push({ code: (err == null ? void 0 : err.code) || "deferred_scan_failed" });
+    return result;
+  }
+  for (const name of names) {
+    if (!name.startsWith(prefix) || !name.endsWith(".json"))
+      continue;
+    try {
+      (0, import_node_fs11.unlinkSync)((0, import_node_path12.join)(dir, name));
+      result.removed += 1;
+    } catch (err) {
+      if ((err == null ? void 0 : err.code) !== "ENOENT") {
+        result.busy += 1;
+        result.errors.push({ code: (err == null ? void 0 : err.code) || "deferred_remove_failed" });
+      }
+    }
+  }
+  return result;
+}
+function purgeWithDeferred(stateRoot, key, purgeFn) {
+  const purge = purgeFn(stateRoot, key);
+  const deferred = purgeDeferredTurns(stateRoot, key);
+  if (purge && typeof purge === "object") {
+    purge.removed = (purge.removed || 0) + deferred.removed;
+    purge.busy = (purge.busy || 0) + deferred.busy;
+    purge.errors = [...Array.isArray(purge.errors) ? purge.errors : [], ...deferred.errors];
+    purge.deferred = deferred;
+    return purge;
+  }
+  return { ...deferred, errors: deferred.errors, deferred };
+}
 function pendingOnlyEventForProject(stateRoot, eventId, key) {
   for (const path2 of listPending(stateRoot)) {
     if ((0, import_node_path12.basename)(path2) !== `${eventId}.json`)
@@ -6905,6 +8705,12 @@ function pendingOnlyEventForProject(stateRoot, eventId, key) {
       return event;
   }
   return null;
+}
+function eventCorrelationKey(event) {
+  if (typeof (event == null ? void 0 : event.__correlation_key) === "string" && event.__correlation_key.length > 0) {
+    return event.__correlation_key;
+  }
+  return typeof (event == null ? void 0 : event.sessionid) === "string" && event.sessionid.length > 0 ? event.sessionid : null;
 }
 function selectPending(stateRoot, key, now = Date.now(), ide = null) {
   const candidates = [];
@@ -6933,7 +8739,7 @@ function selectOutboxPrompt(stateRoot, key, now = Date.now(), ide = null, sessio
       continue;
     if (ide && ide !== "unknown" && event.ide !== ide)
       continue;
-    if (sessionid && event.sessionid !== sessionid)
+    if (sessionid && eventCorrelationKey(event) !== sessionid)
       continue;
     if (typeof event.time !== "number" || event.time > now || now - event.time > INVOKE_FRESHNESS_MS)
       continue;
@@ -6951,6 +8757,18 @@ function selectForegroundPrompt(stateRoot, key, now = Date.now(), ide = null, se
   if (pending.status !== "not_found")
     return pending;
   return selectOutboxPrompt(stateRoot, key, now, ide, sessionid);
+}
+function selectCodexStopPrompt(ctx, projectRoot, key, input) {
+  const raw = input.raw_session_id || input.session_id || input.conversation_id || input.thread_id || input.host_thread_hint;
+  const session = typeof raw === "string" && raw ? deriveSessionId(projectRoot, "codex", raw) : null;
+  if (typeof input.turn_id === "string" && input.turn_id) {
+    const receipt = readTurnReceipt(projectRoot, "codex", input.turn_id);
+    const candidates = [...listPending(ctx.stateRoot), ...listOutbox(ctx.stateRoot)].map(readEvent).filter((event) => (event == null ? void 0 : event.method) === METHOD.PROMPT && event.ide === "codex" && event.__project_key === key && event.turn_id === input.turn_id && (!session || eventCorrelationKey(event) === session) && (!receipt || event.event_id === receipt.event_id));
+    if (candidates.length === 1)
+      return { status: "selected", event: candidates[0] };
+    return { status: candidates.length > 1 ? "ambiguous" : "not_found" };
+  }
+  return selectForegroundPrompt(ctx.stateRoot, key, ctx.now(), "codex", session);
 }
 function historicalOutboxPromptIds(stateRoot, key, now = Date.now(), ide = null) {
   if (!ide || ide === "unknown")
@@ -6970,11 +8788,14 @@ function historicalOutboxPromptIds(stateRoot, key, now = Date.now(), ide = null)
   candidates.sort((a, b) => a.time - b.time || a.event_id.localeCompare(b.event_id));
   return candidates.slice(0, HISTORICAL_OUTBOX_MAX_COUNT).map((event) => event.event_id);
 }
-async function flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, now) {
+async function flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, now, opts = {}) {
   const eventIds = historicalOutboxPromptIds(ctx.stateRoot, key, now, ide);
   if (eventIds.length === 0)
     return null;
-  const maxDurationMs = Math.min(1800, Math.max(0, remaining(deadlineMono) - 100));
+  const maxDurationMs = Math.min(
+    Number.isFinite(opts.maxDurationMs) ? Math.max(0, opts.maxDurationMs) : 1800,
+    Math.max(0, remaining(deadlineMono) - 100)
+  );
   if (maxDurationMs <= 0)
     return { sent: 0, sent_event_ids: [], retried: 0, rejected: 0, skipped: 0, errors: [{ code: "deadline_exhausted" }] };
   try {
@@ -6998,7 +8819,7 @@ async function flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, n
     };
   }
 }
-function identityEnrichmentForEvent(event, stateRoot, maxWaitMs) {
+function identityEnrichmentForEvent(event, stateRoot, maxWaitMs, allowEphemeral = void 0) {
   if (isValidIdentityRecord(event)) {
     return {
       useragent: event.useragent,
@@ -7006,7 +8827,7 @@ function identityEnrichmentForEvent(event, stateRoot, maxWaitMs) {
       identity_pending: false
     };
   }
-  return identityFields({ stateRoot, maxWaitMs });
+  return identityFields({ stateRoot, maxWaitMs, ...allowEphemeral === void 0 ? {} : { allowEphemeral } });
 }
 function latestPendingPrompt(stateRoot, key, now = Date.now(), ide = null) {
   let latest = null;
@@ -7030,7 +8851,7 @@ function pendingForStage(stateRoot, key, sessionid, turnId, fingerprint, now = D
     const event = readEvent(path2);
     if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key)
       continue;
-    if (event.sessionid !== sessionid || typeof event.time !== "number")
+    if (eventCorrelationKey(event) !== sessionid || typeof event.time !== "number")
       continue;
     if (now - event.time > 1e4)
       continue;
@@ -7065,6 +8886,9 @@ function rawSessionFromInput(input) {
     if (typeof (input == null ? void 0 : input[key]) === "string" && input[key].length > 0)
       return input[key];
   }
+  if (!(input == null ? void 0 : input.turn_id) && safeName(input == null ? void 0 : input.ide, "unknown") === "codex" && typeof (input == null ? void 0 : input.host_thread_hint) === "string" && input.host_thread_hint.length > 0) {
+    return `codex-thread:${input.host_thread_hint}`;
+  }
   return null;
 }
 function deriveAndRefreshSession(projectRoot, input, opts = {}) {
@@ -7077,7 +8901,11 @@ function deriveAndRefreshSession(projectRoot, input, opts = {}) {
     const bound = refreshBinding(projectRoot, sessionid, ide, opts);
     return bound.status === "bound" ? { status: "resolved", sessionid, source: "host" } : bound;
   }
-  return resolveAnonymousSession(projectRoot, opts);
+  const resolveOpts = {
+    ...opts,
+    now: typeof opts.now === "function" ? opts.now() : opts.now
+  };
+  return resolveAnonymousSession(projectRoot, resolveOpts);
 }
 function applyControlPrompt(projectRoot, text) {
   const requested = preferenceFromText(text);
@@ -7087,10 +8915,13 @@ function applyControlPrompt(projectRoot, text) {
   return { status: requested ? "enabled" : "disabled", control: true };
 }
 async function stagePromptCore(input, flags, ctx, opts = {}) {
-  var _a, _b;
+  var _a, _b, _c, _d, _e, _f, _g;
   const prompt = typeof (input == null ? void 0 : input.prompt) === "string" ? input.prompt : input == null ? void 0 : input.text;
   if (typeof prompt !== "string" || prompt.length === 0)
     return { status: "invalid", error: "prompt_required" };
+  if (isCodexInternalPrompt(prompt, input, flags)) {
+    return { status: "skipped", reason: "codex_internal_overview" };
+  }
   const projectRoot = resolveProjectRoot({
     explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
     normalized: input,
@@ -7102,13 +8933,16 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   const continuationConsumed = await consumeContinuationChoice(projectRoot, prompt, {
     stateRoot: ctx.stateRoot,
     source: opts.source,
+    controlChoice: input == null ? void 0 : input.control_choice,
     _writeControlTurn: ctx.writeControlTurn,
-    purge: () => purgeProjectEvents(ctx.stateRoot, projectKey(projectRoot)),
+    _updateNoticeStatus: ctx.updateNoticeStatus,
+    purge: () => purgeWithDeferred(ctx.stateRoot, projectKey(projectRoot), purgeProjectEvents),
     timeoutMs: opts.hook ? Math.max(0, remaining(deadlineMono)) : 120,
     deadlineMono
   });
-  if (continuationConsumed !== null)
+  if (continuationConsumed !== null && continuationConsumed.status !== "control_continue") {
     return continuationConsumed;
+  }
   if (isNoticeReplayText(prompt))
     return { status: "skipped", reason: "host_notice_replay" };
   if ((input == null ? void 0 : input.control_choice) === "allow" || (input == null ? void 0 : input.control_choice) === "deny") {
@@ -7119,32 +8953,203 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     return control;
   if (!isReportingEnabled(projectRoot, ctx.env))
     return { status: "disabled" };
+  if (opts.hook !== true) {
+    const paired = preserveCodexForegroundRoute(input, flags, ctx, deadlineMono);
+    if (paired)
+      return paired;
+  }
   const sanitizedPrompt = sanitizeReportText(prompt);
   const fingerprint = promptFingerprint(sanitizedPrompt.trim());
   const key = projectKey(projectRoot);
-  if (opts.source === "python" && !rawSessionFromInput(input)) {
-    const hookMatch = recentHookPromptByFingerprint(ctx.stateRoot, key, fingerprint, ctx.now(), flags.ide || (input == null ? void 0 : input.ide), input == null ? void 0 : input.turn_id);
-    if (hookMatch == null ? void 0 : hookMatch.ambiguous)
-      return { status: "ambiguous" };
-    if (hookMatch) {
+  const ide = safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown");
+  const routeHint = validRouteHint(input == null ? void 0 : input.route_hint);
+  const routeProduct = safeName(input == null ? void 0 : input.product, "");
+  const routeFramework = safeName(input == null ? void 0 : input.framework, "");
+  const applyRouteToExisting = (eventId, sessionid2 = null) => routeAttributionFailure(
+    updateStagedRouteAttribution(
+      ctx,
+      key,
+      eventId,
+      routeHint,
+      routeProduct,
+      routeFramework,
+      deadlineMono
+    ),
+    eventId,
+    sessionid2
+  );
+  const hasTurnIdentity = typeof (input == null ? void 0 : input.turn_id) === "string" && input.turn_id.length > 0;
+  const rawSession = rawSessionFromInput(input);
+  const hasRawSession = Boolean(rawSession);
+  const hasExplicitRawSession = ["raw_session_id", "session_id", "conversation_id", "thread_id"].some((field) => typeof (input == null ? void 0 : input[field]) === "string" && input[field].length > 0);
+  const hostHintOnly = !hasExplicitRawSession && ide === "codex" && !hasTurnIdentity && typeof (input == null ? void 0 : input.host_thread_hint) === "string" && input.host_thread_hint.length > 0;
+  const rawSessionId = rawSession ? deriveSessionId(projectRoot, ide, rawSession) : null;
+  const deferredTurnId = hasTurnIdentity ? input.turn_id : `anonymous-${fingerprint}`;
+  let deferredTurn = readDeferredTurn(ctx.stateRoot, key, ide, deferredTurnId);
+  const deferredEventId = (deferredTurn == null ? void 0 : deferredTurn.event_id) || null;
+  let promptIntent = deferredTurn;
+  const deferCurrentPrompt = (error, eventId = null, phase = "defer") => {
+    if (opts.hook === true)
+      return { status: "retryable", error, durable: false };
+    if (!isReportingEnabled(projectRoot, ctx.env))
+      return { status: "disabled" };
+    const denied = dropPromptIntentIfDenied(ctx, key, promptIntent || deferredTurn);
+    if (denied) {
+      promptIntent = null;
+      deferredTurn = null;
+      return { status: "disabled", error: denied };
+    }
+    const desiredEventId = eventId || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
+    if (promptIntent) {
+      const updated = updatePromptIntent(ctx, promptIntent, {
+        phase,
+        last_error: error,
+        sessionid: promptIntent.sessionid,
+        awaiting_disambiguation: phase === "awaiting_disambiguation"
+      });
+      const deniedAfter = dropPromptIntentIfDenied(ctx, key, promptIntent);
+      if (deniedAfter) {
+        promptIntent = null;
+        deferredTurn = null;
+        return { status: "disabled", error: deniedAfter };
+      }
+      if (updated)
+        promptIntent = updated;
+      deferredTurn = promptIntent;
+      return { status: "retryable", error, durable: true, event_id: promptIntent.event_id, phase };
+    }
+    const saved = persistPromptIntent(ctx, projectRoot, key, ide, deferredTurnId, {
+      event_id: desiredEventId,
+      prompt: sanitizedPrompt,
+      source: opts.source,
+      phase,
+      last_error: error,
+      sessionid: promptIntent == null ? void 0 : promptIntent.sessionid,
+      awaiting_disambiguation: phase === "awaiting_disambiguation",
+      ...routeHint ? { route_hint: routeHint } : {},
+      ...routeProduct && routeProduct !== "unknown" ? { product: routeProduct } : {},
+      ...routeFramework && routeFramework !== "unknown" ? { framework: routeFramework } : {}
+    }, deadlineMono);
+    if (saved.status !== "saved") {
+      return {
+        status: saved.status === "disabled" ? "disabled" : "retryable",
+        error: saved.reason || error,
+        durable: false,
+        phase: "intent"
+      };
+    }
+    promptIntent = saved.value;
+    deferredTurn = promptIntent;
+    return { status: "retryable", error, durable: true, event_id: promptIntent.event_id, phase };
+  };
+  let turnReceipt = null;
+  let turnReceiptEventId = null;
+  let turnReceiptSessionid = null;
+  if (hasTurnIdentity) {
+    turnReceipt = readTurnReceipt(projectRoot, ide, input.turn_id);
+    if ((turnReceipt == null ? void 0 : turnReceipt.status) === "corrupt") {
+      return { status: "retryable", error: "turn_receipt_corrupt", durable: false };
+    }
+    if (turnReceipt) {
+      const mapped = pendingEventForProject(ctx.stateRoot, turnReceipt.event_id, key);
+      if (mapped) {
+        const attributionFailure = applyRouteToExisting(turnReceipt.event_id, turnReceipt.sessionid);
+        if (attributionFailure)
+          return attributionFailure;
+        clearDeferredTurn(deferredTurn);
+        return { status: "deduped", event_id: turnReceipt.event_id, sessionid: turnReceipt.sessionid };
+      }
+      const acknowledged = readEventAcknowledgement(ctx.stateRoot, key, turnReceipt.event_id);
+      if (acknowledged.status === "valid") {
+        clearDeferredTurn(deferredTurn);
+        return {
+          status: "deduped",
+          event_id: turnReceipt.event_id,
+          sessionid: turnReceipt.sessionid,
+          already_acked: true
+        };
+      }
+      turnReceiptEventId = turnReceipt.event_id;
+      turnReceiptSessionid = turnReceipt.sessionid;
+    }
+  }
+  if (opts.source === "python" && !rawSessionFromInput(input) && !hasTurnIdentity) {
+    const hookMatch = recentHookPromptByFingerprint(ctx.stateRoot, key, fingerprint, ctx.now(), ide, input == null ? void 0 : input.turn_id);
+    if (hookMatch == null ? void 0 : hookMatch.ambiguous) {
+      const deferred = deferCurrentPrompt(
+        "hook_session_ambiguous",
+        promptIntent == null ? void 0 : promptIntent.event_id,
+        "awaiting_disambiguation"
+      );
+      return {
+        ...deferred,
+        status: "ambiguous",
+        error: "hook_session_ambiguous",
+        durable: deferred.durable === true
+      };
+    }
+    if (hookMatch && !hookMatch.ambiguous) {
+      if (hasTurnIdentity && !hasRawSession) {
+        const mapping = writeTurnReceipt(projectRoot, ide, input.turn_id, {
+          sessionid: hookMatch.sessionid,
+          event_id: hookMatch.event_id,
+          time: hookMatch.time
+        }, { deadlineMono, durable: opts.hook !== true, hookMode: opts.hook === true });
+        if (mapping.status === "conflict") {
+          return { status: "retryable", error: "turn_receipt_conflict", durable: false };
+        }
+        if (!["created", "already_present"].includes(mapping.status)) {
+          return { status: "retryable", error: mapping.reason || "turn_receipt_write_failed", durable: false };
+        }
+      }
       const stageKey = hookMatch.turn_id ? `turn:${hookMatch.turn_id}` : `fingerprint:${fingerprint}`;
       const claim = acquireCoordinationReservation(projectRoot, "stage", `${hookMatch.sessionid}:${stageKey}`, { deadlineMono });
       if (!claim)
-        return { status: "skip", error: "stage_busy" };
+        return { status: "retryable", error: "stage_busy", durable: false };
       try {
         const receipt = readStageReceipt(projectRoot, hookMatch.sessionid, stageKey);
         const eventStillDurable = pendingEventForProject(ctx.stateRoot, hookMatch.event_id, key);
         if ((_a = receipt == null ? void 0 : receipt.claimed_sources) == null ? void 0 : _a.includes(opts.source)) {
           if (eventStillDurable) {
+            const earlyObligation = readNoticeObligation(ctx.stateRoot, key);
+            if (earlyObligation.status !== "valid") {
+              const earlyEvent = pendingEventForProject(ctx.stateRoot, hookMatch.event_id, key);
+              const repaired = ensureNoticeObligation(ctx.stateRoot, key, hookMatch.event_id, {
+                timeoutMs: opts.hook ? 30 : 120,
+                createdAt: hookMatch.time,
+                allowCorruptReplacement: (earlyEvent == null ? void 0 : earlyEvent.__first_prompt_candidate) === true
+              });
+              if (opts.hook !== true && ["error", "retry"].includes(repaired.status)) {
+                return { status: "retryable", error: repaired.reason || "first_obligation_unavailable", event_id: hookMatch.event_id };
+              }
+            }
+            const attributionFailure = applyRouteToExisting(hookMatch.event_id, hookMatch.sessionid);
+            if (attributionFailure)
+              return attributionFailure;
             return { status: "deduped", event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
           }
         } else {
+          const earlyObligation = readNoticeObligation(ctx.stateRoot, key);
+          if (earlyObligation.status !== "valid") {
+            const earlyEvent = pendingEventForProject(ctx.stateRoot, hookMatch.event_id, key);
+            const repaired = ensureNoticeObligation(ctx.stateRoot, key, hookMatch.event_id, {
+              timeoutMs: opts.hook ? 30 : 120,
+              createdAt: hookMatch.time,
+              allowCorruptReplacement: (earlyEvent == null ? void 0 : earlyEvent.__first_prompt_candidate) === true
+            });
+            if (opts.hook !== true && ["error", "retry"].includes(repaired.status)) {
+              return { status: "retryable", error: repaired.reason || "first_obligation_unavailable", event_id: hookMatch.event_id };
+            }
+          }
           writeStageReceipt(projectRoot, hookMatch.sessionid, stageKey, {
             event_id: hookMatch.event_id,
             source: "hook",
             claimed_sources: [...(receipt == null ? void 0 : receipt.claimed_sources) || [], opts.source],
             time: hookMatch.time
           }, { durable: true });
+          const attributionFailure = applyRouteToExisting(hookMatch.event_id, hookMatch.sessionid);
+          if (attributionFailure)
+            return attributionFailure;
           return { status: "deduped", event_id: hookMatch.event_id, sessionid: hookMatch.sessionid };
         }
       } finally {
@@ -7152,12 +9157,32 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
       }
     }
   }
-  let resolved = deriveAndRefreshSession(projectRoot, input, {
+  let turnScopedResolution = false;
+  const hasReliableConversationIdentity = hasTurnIdentity || hasExplicitRawSession;
+  let resolved = hasTurnIdentity && !hasRawSession ? {
+    status: "resolved",
+    sessionid: deriveSessionId(
+      projectRoot,
+      ide,
+      `turn:${input.turn_id}`
+    ),
+    source: "turn_scope"
+  } : !hasReliableConversationIdentity ? {
+    status: "resolved",
+    // A Codex host-thread hint is only a local correlation aid. Keep its
+    // stable bucket for same-host retries, but never treat it as a real
+    // session or use it to read Context. Without even that hint, use the
+    // project bucket so a lone unrelated binding cannot be borrowed.
+    sessionid: hostHintOnly ? deriveSessionId(projectRoot, ide, input.host_thread_hint) : deriveProjectFallbackSession(projectRoot),
+    source: hostHintOnly ? "fallback" : "anonymous_fallback"
+  } : deriveAndRefreshSession(projectRoot, input, {
     deadlineMono,
     now: ctx.now,
     allowFallback: opts.allowFallback !== false,
     hookMode: opts.hook === true
   });
+  if (resolved.source === "turn_scope")
+    turnScopedResolution = true;
   if (resolved.status === "ambiguous") {
     const matches = [];
     for (const binding of listFreshBindings(projectRoot, { now: ctx.now() })) {
@@ -7165,34 +9190,191 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
       if (match)
         matches.push(match);
     }
-    if (matches.length === 1)
+    if (matches.length === 1) {
+      const attributionFailure = applyRouteToExisting(matches[0].event_id, matches[0].sessionid);
+      if (attributionFailure)
+        return attributionFailure;
       return { status: "deduped", event_id: matches[0].event_id, sessionid: matches[0].sessionid };
-    return { status: "ambiguous" };
+    }
+    if (!hasRawSession && !hasTurnIdentity) {
+      resolved = {
+        status: "resolved",
+        sessionid: deriveProjectFallbackSession(projectRoot),
+        source: "anonymous_fallback"
+      };
+      turnScopedResolution = true;
+    } else {
+      return { status: "ambiguous", error: "session_binding_ambiguous", durable: false };
+    }
   }
   if (resolved.status !== "resolved")
-    return { status: "skip", error: resolved.status };
-  const sessionid = resolved.sessionid;
-  const needsContextLock = hasContext(projectRoot, sessionid);
+    return deferCurrentPrompt(resolved.status);
+  let sessionid = turnReceiptSessionid || resolved.sessionid;
+  const anonymousCorrelation = hostHintOnly || resolved.source === "fallback" || resolved.source === "anonymous_fallback" || resolved.source === "codex_anonymous_fallback";
+  if (anonymousCorrelation)
+    turnScopedResolution = true;
+  if (turnReceiptSessionid) {
+    turnScopedResolution = !hasRawSession || rawSessionId !== turnReceiptSessionid;
+  }
+  if (opts.hook !== true && !promptIntent) {
+    const intentEventId = turnReceiptEventId || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
+    const intent = persistPromptIntent(ctx, projectRoot, key, ide, deferredTurnId, {
+      event_id: intentEventId,
+      prompt: sanitizedPrompt,
+      source: opts.source,
+      phase: "intent",
+      sessionid,
+      ...routeHint ? { route_hint: routeHint } : {},
+      ...routeProduct && routeProduct !== "unknown" ? { product: routeProduct } : {},
+      ...routeFramework && routeFramework !== "unknown" ? { framework: routeFramework } : {}
+    }, deadlineMono);
+    if (intent.status !== "saved") {
+      return {
+        status: intent.status === "disabled" ? "disabled" : "retryable",
+        error: intent.reason || "prompt_intent_write_failed",
+        durable: false,
+        phase: "intent"
+      };
+    }
+    promptIntent = intent.value;
+    deferredTurn = promptIntent;
+  }
+  let turnEventId = turnReceiptEventId;
+  let existingTurnEvent = { status: "none" };
+  if (hasTurnIdentity && !turnEventId && opts.hook !== true && opts.source !== "hook" && opts.source !== "legacy_bind_hook") {
+    existingTurnEvent = indexedPromptForTurn(ctx.stateRoot, key, ide, input.turn_id);
+    if (!["found", "ambiguous"].includes(existingTurnEvent.status)) {
+      advanceTurnRecoveryIndex(ctx.stateRoot, key, ide, { deadlineMono, maxFiles: 64 });
+      existingTurnEvent = indexedPromptForTurn(ctx.stateRoot, key, ide, input.turn_id);
+    }
+    if (existingTurnEvent.status === "ambiguous") {
+      return { status: "retryable", error: "turn_event_ambiguous", durable: false };
+    }
+    if (existingTurnEvent.status === "pending") {
+      return deferCurrentPrompt("turn_recovery_pending");
+    }
+    if (existingTurnEvent.status === "stale") {
+      return deferCurrentPrompt("turn_recovery_stale");
+    }
+  }
+  if (hasTurnIdentity && !turnEventId) {
+    const stageKey = `turn:${input.turn_id}`;
+    const stageHint = readStageReceipt(projectRoot, sessionid, stageKey);
+    const hintedEvent = existingTurnEvent.status === "found" ? existingTurnEvent.event : stageHint && typeof stageHint.event_id === "string" && /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(stageHint.event_id) ? { event_id: stageHint.event_id, sessionid, time: stageHint.time } : null;
+    const proposedEventId = (hintedEvent == null ? void 0 : hintedEvent.event_id) || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
+    const proposedSessionid = (hintedEvent == null ? void 0 : hintedEvent.sessionid) || sessionid;
+    const claim = writeTurnReceipt(projectRoot, ide, input.turn_id, {
+      sessionid: proposedSessionid,
+      event_id: proposedEventId,
+      time: Number.isFinite(hintedEvent == null ? void 0 : hintedEvent.time) ? hintedEvent.time : ctx.now()
+    }, {
+      deadlineMono,
+      durable: opts.hook !== true,
+      hookMode: opts.hook === true
+    });
+    if (claim.status === "conflict" && ((_b = claim.value) == null ? void 0 : _b.event_id)) {
+      if (promptIntent && promptIntent.event_id !== claim.value.event_id) {
+        clearDeferredTurn(promptIntent);
+        promptIntent = null;
+        deferredTurn = null;
+      }
+      turnEventId = claim.value.event_id;
+      turnReceiptEventId = turnEventId;
+      sessionid = claim.value.sessionid;
+      turnScopedResolution = !hasRawSession || rawSessionId !== sessionid;
+      turnReceipt = claim.value;
+    } else if (["created", "already_present"].includes(claim.status)) {
+      turnEventId = ((_c = claim.value) == null ? void 0 : _c.event_id) || proposedEventId;
+      turnReceiptEventId = turnEventId;
+      sessionid = ((_d = claim.value) == null ? void 0 : _d.sessionid) || proposedSessionid;
+      turnScopedResolution = !hasRawSession || rawSessionId !== sessionid;
+      turnReceipt = claim.value || { event_id: turnEventId, sessionid };
+    } else {
+      return deferCurrentPrompt(claim.reason || "turn_receipt_write_failed", promptIntent == null ? void 0 : promptIntent.event_id, "turn_receipt");
+    }
+  } else if (turnEventId && turnReceiptSessionid) {
+    sessionid = turnReceiptSessionid;
+    turnScopedResolution = !hasRawSession || rawSessionId !== turnReceiptSessionid;
+  }
+  const needsContextLock = !turnScopedResolution && hasContext(projectRoot, sessionid);
   const contextLock = needsContextLock ? acquireCoordinationReservation(projectRoot, "context", sessionid, { deadlineMono }) : null;
   if (needsContextLock && !contextLock)
-    return { status: "skip", error: "context_busy" };
+    return deferCurrentPrompt("context_busy");
   try {
     const context = needsContextLock ? readContext(projectRoot, sessionid, { now: ctx.now() }) : null;
     const stageKey = (input == null ? void 0 : input.turn_id) ? `turn:${input.turn_id}` : `fingerprint:${fingerprint}`;
     const stageLock = acquireCoordinationReservation(projectRoot, "stage", `${sessionid}:${stageKey}`, { deadlineMono });
     if (!stageLock)
-      return { status: "skip", error: "stage_busy" };
+      return deferCurrentPrompt("stage_busy");
+    let existingObligation = readNoticeObligation(ctx.stateRoot, key);
+    const needsFirstPromptLock = existingObligation.status !== "valid";
+    const firstPromptLock = needsFirstPromptLock ? acquireCoordinationReservation(projectRoot, "first-prompt", key, { deadlineMono }) : null;
+    if (needsFirstPromptLock && !firstPromptLock) {
+      releaseCoordinationReservation(stageLock);
+      return deferCurrentPrompt("first_prompt_busy");
+    }
     try {
+      if (existingObligation.status !== "valid" && opts.hook !== true) {
+        const firstIndexIde = "all";
+        let candidate = indexedFirstPromptCandidate(ctx.stateRoot, key, firstIndexIde);
+        if (!["found", "ambiguous"].includes(candidate.status)) {
+          advanceTurnRecoveryIndex(ctx.stateRoot, key, firstIndexIde, { deadlineMono, maxFiles: 64 });
+          candidate = indexedFirstPromptCandidate(ctx.stateRoot, key, firstIndexIde);
+        }
+        if (candidate.status === "ambiguous") {
+          return deferCurrentPrompt("first_prompt_candidate_ambiguous");
+        }
+        if (candidate.status === "pending" || candidate.status === "stale") {
+          return deferCurrentPrompt(candidate.status === "pending" ? "first_prompt_recovery_pending" : "first_prompt_recovery_stale");
+        }
+        if (candidate.status === "found") {
+          const repaired = ensureNoticeObligation(ctx.stateRoot, key, candidate.event.event_id, {
+            timeoutMs: opts.hook ? Math.min(30, Math.max(1, remaining(deadlineMono))) : 120,
+            createdAt: candidate.event.time,
+            allowCorruptReplacement: candidate.event.__first_prompt_candidate === true
+          });
+          if (!["created", "already_present"].includes(repaired.status)) {
+            return deferCurrentPrompt(repaired.reason || "first_obligation_unavailable");
+          }
+          existingObligation = readNoticeObligation(ctx.stateRoot, key);
+        } else if (existingObligation.status === "corrupt") {
+          return deferCurrentPrompt("first_obligation_corrupt");
+        }
+      }
       const receipt = readStageReceipt(projectRoot, sessionid, stageKey);
       let existing = null;
-      const receiptEligible = receipt && ctx.now() - receipt.time <= 1e4 && ((input == null ? void 0 : input.turn_id) || receipt.source !== opts.source && !((_b = receipt.claimed_sources) == null ? void 0 : _b.includes(opts.source)));
+      const receiptAge = receipt && Number.isFinite(receipt.time) ? ctx.now() - receipt.time : Infinity;
+      const receiptEligible = receipt && (hasTurnIdentity ? Number.isFinite(receipt.time) : receiptAge <= 1e4) && (hasTurnIdentity || receipt.source !== opts.source && !((_e = receipt.claimed_sources) == null ? void 0 : _e.includes(opts.source))) && (!turnReceiptEventId || receipt.event_id === turnReceiptEventId);
       if (receiptEligible) {
         existing = (input == null ? void 0 : input.turn_id) ? pendingEventForProject(ctx.stateRoot, receipt.event_id, key) : pendingOnlyEventForProject(ctx.stateRoot, receipt.event_id, key);
+        if (!existing && (input == null ? void 0 : input.turn_id)) {
+          const acknowledged = readEventAcknowledgement(ctx.stateRoot, key, receipt.event_id);
+          if (acknowledged.status === "valid") {
+            writeStageReceipt(projectRoot, sessionid, stageKey, {
+              event_id: receipt.event_id,
+              source: receipt.source || opts.source,
+              claimed_sources: [...receipt.claimed_sources || [], opts.source],
+              time: receipt.time
+            }, { durable: opts.hook !== true });
+            return { status: "deduped", event_id: receipt.event_id, sessionid, already_acked: true };
+          }
+          return deferCurrentPrompt("stage_receipt_event_missing", receipt.event_id, "stage_receipt");
+        }
       }
       if (!existing && !receipt && opts.source !== "hook") {
         existing = pendingForStage(ctx.stateRoot, key, sessionid, input == null ? void 0 : input.turn_id, fingerprint, ctx.now(), opts.source);
       }
       if (existing) {
+        if (existingObligation.status !== "valid") {
+          const repaired = ensureNoticeObligation(ctx.stateRoot, key, existing.event_id, {
+            timeoutMs: opts.hook ? Math.min(30, Math.max(1, remaining(deadlineMono))) : 120,
+            createdAt: existing.time,
+            allowCorruptReplacement: existing.__first_prompt_candidate === true
+          });
+          if (opts.hook !== true && ["error", "retry"].includes(repaired.status)) {
+            return { status: "retryable", error: repaired.reason || "first_obligation_unavailable", event_id: existing.event_id };
+          }
+        }
         writeStageReceipt(projectRoot, sessionid, stageKey, {
           event_id: existing.event_id,
           source: (receipt == null ? void 0 : receipt.source) || existing.__stage_source,
@@ -7201,52 +9383,144 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
         }, { durable: opts.hook !== true });
         if (context && !context.consumed_by_event_id)
           markContextConsumed(projectRoot, sessionid, existing.event_id, context.created_at);
+        const attributionFailure = applyRouteToExisting(existing.event_id, sessionid);
+        if (attributionFailure)
+          return attributionFailure;
+        clearDeferredTurn(promptIntent || deferredTurn);
         return { status: "deduped", event_id: existing.event_id, sessionid };
       }
-      const eventId = typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)();
+      const eventId = turnEventId || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
       const question = context && !context.consumed_by_event_id ? context.question : null;
       const text = question ? `引导问题：${question}
 用户选择：${sanitizedPrompt}` : sanitizedPrompt;
       const identityBudget = opts.hook ? Math.max(0, Math.min(HOOK_IDENTITY_MAX_MS, remaining(deadlineMono) - HOOK_WRITE_HEADROOM_MS)) : void 0;
-      const identity = identityBudget === 0 ? { identity_pending: true } : identityFields({ stateRoot: ctx.stateRoot, maxWaitMs: identityBudget });
+      const identity = identityBudget === 0 ? { identity_pending: true } : identityFields({
+        stateRoot: ctx.stateRoot,
+        maxWaitMs: identityBudget,
+        ...ctx.noEphemeralIdentity ? { allowEphemeral: false } : {}
+      });
       const event = makeEnvelope({
         event_id: eventId,
         method: METHOD.PROMPT,
         text,
         ...identity,
-        sessionid,
+        // Keep the local correlation key private. schema.js strips the
+        // __-prefixed fields and omits null sessionid from the wire payload.
+        sessionid: anonymousCorrelation ? null : sessionid,
         turn_id: typeof (input == null ? void 0 : input.turn_id) === "string" ? input.turn_id : null,
-        ide: safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown"),
+        ide,
         skillname: "unknown",
         product: "unknown",
         framework: "unknown",
         version: safeName(flags.version),
         delivery_guarantee: "local_outbox",
         __project_key: key,
+        ...anonymousCorrelation ? {
+          __correlation_key: sessionid,
+          __anonymous_session: true
+        } : {},
+        // This marker is local-only and lets Sender distinguish the one
+        // first-Prompt obligation from ordinary synthetic/legacy Prompt
+        // fixtures that do not participate in the C20 notice flow.
+        __first_prompt_candidate: existingObligation.status !== "valid",
         __prompt_fingerprint: fingerprint,
-        __stage_source: safeName(opts.source, "unknown")
+        __stage_source: safeName(opts.source, "unknown"),
+        ...routeHint ? { __route_hint: routeHint } : {},
+        ...routeProduct && routeProduct !== "unknown" ? { __route_product: routeProduct } : {},
+        ...routeFramework && routeFramework !== "unknown" ? { __route_framework: routeFramework } : {}
       });
       const producer = startProducerLease(ctx, key, { hook: opts.hook, deadlineMono });
-      if (producer.blocked)
-        return { status: producer.retryable ? "retryable" : "disabled", error: producer.reason };
+      if (producer.blocked) {
+        const denied = ((_f = producer.reason) == null ? void 0 : _f.startsWith("deny_")) ? producer.reason : dropPromptIntentIfDenied(ctx, key, promptIntent || deferredTurn);
+        if (denied) {
+          promptIntent = null;
+          deferredTurn = null;
+          return { status: "disabled", error: denied };
+        }
+        if (opts.hook !== true && promptIntent) {
+          updatePromptIntent(ctx, promptIntent, {
+            phase: "pending",
+            last_error: producer.reason
+          });
+        }
+        return {
+          status: producer.retryable ? "retryable" : "disabled",
+          error: producer.reason,
+          ...promptIntent ? { durable: true, event_id: eventId, phase: "pending" } : {}
+        };
+      }
       let written;
       try {
-        written = opts.hook ? writePendingFromHook(ctx.stateRoot, event, { reservationTimeoutMs: Math.max(0, remaining(deadlineMono) - HOOK_WRITE_HEADROOM_MS) }) : writePending(ctx.stateRoot, event);
+        try {
+          written = opts.hook ? writePendingFromHook(ctx.stateRoot, event, { reservationTimeoutMs: Math.max(0, remaining(deadlineMono) - HOOK_WRITE_HEADROOM_MS) }) : writePending(ctx.stateRoot, event);
+        } catch (err) {
+          const denied = String((err == null ? void 0 : err.code) || "").startsWith("deny_") ? err.code : dropPromptIntentIfDenied(ctx, key, promptIntent || deferredTurn);
+          if (denied) {
+            promptIntent = null;
+            deferredTurn = null;
+            return { status: "disabled", error: denied };
+          }
+          if (opts.hook !== true && promptIntent) {
+            updatePromptIntent(ctx, promptIntent, { phase: "pending", last_error: (err == null ? void 0 : err.code) || "pending_write_failed" });
+          }
+          return {
+            status: "retryable",
+            error: (err == null ? void 0 : err.code) || "pending_write_failed",
+            durable: Boolean(promptIntent),
+            ...promptIntent ? { event_id: eventId, phase: "pending" } : {}
+          };
+        }
       } finally {
         stopProducerLease(producer);
       }
-      if ((written == null ? void 0 : written.status) === "blocked")
-        return { status: "disabled", error: written.reason };
+      if ((written == null ? void 0 : written.status) === "blocked") {
+        const denied = String(written.reason || "").startsWith("deny_") ? written.reason : dropPromptIntentIfDenied(ctx, key, promptIntent || deferredTurn);
+        if (denied) {
+          promptIntent = null;
+          deferredTurn = null;
+          return { status: "disabled", error: denied };
+        }
+        if (opts.hook !== true && promptIntent) {
+          updatePromptIntent(ctx, promptIntent, { phase: "pending", last_error: written.reason || "pending_blocked" });
+        }
+        return {
+          status: ((_g = written.reason) == null ? void 0 : _g.startsWith("deny_")) ? "disabled" : "retryable",
+          error: written.reason,
+          durable: Boolean(promptIntent),
+          ...promptIntent ? { event_id: eventId, phase: "pending" } : {}
+        };
+      }
+      const deniedAfterPending = dropPromptIntentIfDenied(ctx, key, promptIntent || deferredTurn);
+      if (deniedAfterPending) {
+        promptIntent = null;
+        deferredTurn = null;
+        return { status: "disabled", error: deniedAfterPending };
+      }
+      const firstObligation = existingObligation.status === "valid" ? existingObligation : ensureNoticeObligation(ctx.stateRoot, key, eventId, {
+        timeoutMs: opts.hook ? Math.min(30, Math.max(1, remaining(deadlineMono))) : 120,
+        createdAt: event.time
+      });
       writeStageReceipt(projectRoot, sessionid, stageKey, {
         event_id: eventId,
         source: opts.source,
         claimed_sources: [],
         time: event.time
       }, { durable: opts.hook !== true });
+      clearDeferredTurn(promptIntent || deferredTurn);
       if (question)
         markContextConsumed(projectRoot, sessionid, eventId, context.created_at);
-      return { status: written.deduped ? "deduped" : "staged", event_id: eventId, sessionid };
+      return {
+        status: written.deduped ? "deduped" : "staged",
+        event_id: eventId,
+        sessionid,
+        ...anonymousCorrelation ? {
+          session_strategy: hostHintOnly ? "host_hint_local" : "anonymous_fallback"
+        } : {},
+        ...firstObligation.status === "error" || firstObligation.status === "retry" ? { first_obligation: firstObligation.status, first_obligation_error: firstObligation.reason } : {}
+      };
     } finally {
+      if (firstPromptLock)
+        releaseCoordinationReservation(firstPromptLock);
       releaseCoordinationReservation(stageLock);
     }
   } finally {
@@ -7263,6 +9537,7 @@ function normalizeScope(value) {
   return value === "experience" || value === "runtime" ? value : null;
 }
 async function handleHook(flags, ctx) {
+  var _a;
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + HOOK_TOTAL_BUDGET_MS;
   const input = await readStdinJson({ stream: ctx.stdin, deadlineMono });
   const normalized = parseAdapter(String(flags.ide || ""), input);
@@ -7321,20 +9596,415 @@ async function handleHook(flags, ctx) {
     } catch {
     }
   }
+  if (safeName(normalized.ide, "unknown") === "codex") {
+    const promptText = normalized.prompt || normalized.text || "";
+    const isChoiceOrReplay = isNoticeReplayText(promptText) || isCanonicalOption(promptText) !== null || preferenceFromText(promptText) !== null;
+    if (!isChoiceOrReplay) {
+      try {
+        const projectRoot = resolveProjectRoot({
+          explicitCwd: typeof flags.cwd === "string" ? flags.cwd : normalized == null ? void 0 : normalized.cwd,
+          normalized,
+          processCwd: ctx.cwd
+        });
+        const recovered = recoverForegroundNotice(projectRoot, normalized, ctx, "codex");
+        if ((recovered == null ? void 0 : recovered.marker) === NOTICE_REQUIRED) {
+          return renderHostNotice("codex", (_a = recovered.notice) == null ? void 0 : _a.notice_locale);
+        }
+      } catch {
+      }
+    }
+  }
   return {};
 }
 async function readLocalInput(ctx, deadlineMono) {
   return readStdinJson({ stream: ctx.stdin, maxBytes: 1024 * 1024, deadlineMono });
 }
+async function recoverDeferredTurns(flags, ctx, input) {
+  const projectRoot = resolveProjectRoot({
+    explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
+    normalized: input,
+    processCwd: ctx.cwd
+  });
+  const key = projectKey(projectRoot);
+  const ide = safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown");
+  const denyGate = promptDenyReason(ctx.stateRoot, key);
+  if (denyGate) {
+    purgeDeferredTurns(ctx.stateRoot, key);
+    return { status: "disabled", error: denyGate };
+  }
+  const records = listDeferredTurns(ctx.stateRoot, key, ide);
+  if (records.length === 0 || remaining(ctx.deadlineMono) < 180)
+    return null;
+  const record = records[0];
+  if (record.awaiting_disambiguation === true) {
+    return {
+      status: "ambiguous",
+      error: "hook_session_ambiguous",
+      durable: true,
+      event_id: record.event_id
+    };
+  }
+  let match = indexedPromptForTurn(ctx.stateRoot, key, ide, record.turn_id);
+  if (!["found", "ambiguous"].includes(match.status)) {
+    advanceTurnRecoveryIndex(ctx.stateRoot, key, ide, {
+      deadlineMono: ctx.deadlineMono,
+      maxFiles: 64
+    });
+    match = indexedPromptForTurn(ctx.stateRoot, key, ide, record.turn_id);
+  }
+  if (match.status === "ambiguous" || match.status === "pending" || match.status === "stale")
+    return match;
+  let staged = null;
+  if (match.status === "found") {
+    const attributionFailure = routeAttributionFailure(
+      updateStagedRouteAttribution(
+        ctx,
+        key,
+        match.event.event_id,
+        record.route_hint,
+        record.product,
+        record.framework,
+        ctx.deadlineMono
+      ),
+      match.event.event_id,
+      match.event.sessionid
+    );
+    if (attributionFailure)
+      return attributionFailure;
+    clearDeferredTurn(record);
+    staged = { status: "deduped", event_id: match.event.event_id, sessionid: match.event.sessionid };
+  } else if (match.status === "none") {
+    staged = await stagePromptCore({
+      text: record.prompt,
+      source: "python",
+      ide,
+      turn_id: record.turn_id,
+      event_id: record.event_id,
+      cwd: projectRoot,
+      ...record.route_hint ? { route_hint: record.route_hint } : {},
+      ...record.product ? { product: record.product } : {},
+      ...record.framework ? { framework: record.framework } : {}
+    }, flags, ctx, { source: "python", deadlineMono: ctx.deadlineMono });
+  }
+  if (flags["foreground-send"] === true && ["staged", "deduped"].includes(staged == null ? void 0 : staged.status) && typeof staged.event_id === "string" && remaining(ctx.deadlineMono) >= 100) {
+    return handleInvoke({ ...flags, "event-id": staged.event_id, skillname: "unknown", product: "unknown", framework: "unknown" }, {
+      ...ctx,
+      inputOverride: {
+        text: record.prompt,
+        source: "python",
+        ide,
+        turn_id: record.turn_id,
+        cwd: projectRoot,
+        ...record.route_hint ? { route_hint: record.route_hint } : {},
+        ...record.product ? { product: record.product } : {},
+        ...record.framework ? { framework: record.framework } : {}
+      },
+      skipInstallRecovery: true
+    });
+  }
+  return staged;
+}
+function recoverForegroundNotice(projectRoot, input, ctx, ide = null) {
+  const key = projectKey(projectRoot);
+  if (!isReportingEnabled(projectRoot, ctx.env))
+    return null;
+  const preference = readPreferenceState(projectRoot);
+  if (preference.status === "valid" && (preference.value.continuation_choice === "allowed" || preference.value.continuation_choice === "denied" || preference.value.all_reporting_disabled === true)) {
+    return null;
+  }
+  let obligation = readNoticeObligation(ctx.stateRoot, key);
+  if (obligation.status !== "valid" || obligation.value.acknowledged !== true || obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status)) {
+    return null;
+  }
+  let receipt = readNoticeReceipt(ctx.stateRoot, key);
+  if (receipt.status !== "valid") {
+    const created = createNoticeAttemptFromObligation(
+      ctx.stateRoot,
+      key,
+      obligation,
+      null,
+      detectNoticeLocale((input == null ? void 0 : input.text) || (input == null ? void 0 : input.prompt) || "", ctx.env, (input == null ? void 0 : input.locale) || (input == null ? void 0 : input.language))
+    );
+    if (created.status === "created")
+      receipt = readNoticeReceipt(ctx.stateRoot, key);
+  }
+  if (receipt.status !== "valid" || !["pending_output", "awaiting_choice"].includes(receipt.value.status))
+    return null;
+  if (Number.isFinite(receipt.value.choice_next_retry_at) && receipt.value.choice_next_retry_at > Date.now())
+    return null;
+  const codebuddy = safeName(ide || (input == null ? void 0 : input.ide), "unknown") === "codebuddy";
+  const status = codebuddy ? { status: "required" } : noticeStatus(
+    ctx.stateRoot,
+    key,
+    receipt.value.notice_attempt_id,
+    null
+  );
+  if (status.status === "retry") {
+    return {
+      marker: NOTICE_REQUIRED,
+      notice: {
+        status: "created",
+        recovered: true,
+        control_retry: true,
+        notice_locale: receipt.value.notice_locale,
+        notice_attempt_id: receipt.value.notice_attempt_id
+      }
+    };
+  }
+  if (!["required", "already_awaiting"].includes(status.status))
+    return null;
+  return {
+    marker: NOTICE_REQUIRED,
+    notice: {
+      status: "created",
+      recovered: true,
+      notice_locale: receipt.value.notice_locale,
+      notice_attempt_id: receipt.value.notice_attempt_id
+    }
+  };
+}
+function finalizeForegroundNotice(result, projectRoot, ide, ctx, input = null) {
+  if (ide !== "codebuddy" || ctx.deferNoticeClaim === true)
+    return result;
+  const strip = (value) => {
+    if (!value || typeof value !== "object")
+      return value;
+    const copy = { ...value };
+    if (copy.marker === NOTICE_REQUIRED)
+      delete copy.marker;
+    for (const key of ["foreground", "maintenance", "notice"]) {
+      if (copy[key])
+        copy[key] = strip(copy[key]);
+    }
+    return copy;
+  };
+  const hasNotice = (value) => value && typeof value === "object" && (value.marker === NOTICE_REQUIRED || ["foreground", "maintenance", "notice"].some((key) => hasNotice(value[key])));
+  if (!hasNotice(result))
+    return result;
+  const output = strip(result);
+  try {
+    if (!isReportingEnabled(projectRoot, ctx.env))
+      return output;
+    const preference = readPreferenceState(projectRoot);
+    if (preference.status === "valid" && ["allowed", "denied"].includes(preference.value.continuation_choice))
+      return output;
+    const key = projectKey(projectRoot);
+    const obligation = readNoticeObligation(ctx.stateRoot, key);
+    if (obligation.status === "valid" && ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status))
+      return output;
+    const receipt = readNoticeReceipt(ctx.stateRoot, key);
+    if (receipt.status !== "valid")
+      return output;
+    if ((input == null ? void 0 : input.notice_emitted_attempt_id) === receipt.value.notice_attempt_id)
+      return output;
+    const claimed = noticeStatus(ctx.stateRoot, key, receipt.value.notice_attempt_id, null, {
+      renderer: "codebuddy-foreground",
+      maxAttempts: 2,
+      ide: "codebuddy",
+      noticeLocale: foregroundNoticeLocale((input == null ? void 0 : input.text) || (input == null ? void 0 : input.prompt), receipt.value.notice_locale, (input == null ? void 0 : input.locale) || (input == null ? void 0 : input.language))
+    });
+    if (claimed.status === "required") {
+      output.marker = NOTICE_REQUIRED;
+      output.notice = {
+        ...output.notice || {},
+        notice_attempt_id: claimed.notice_attempt_id,
+        notice_locale: claimed.notice_locale
+      };
+    }
+  } catch {
+  }
+  return output;
+}
 async function handleStagePrompt(flags, ctx) {
+  var _a, _b, _c;
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + 2e3;
   const input = await readLocalInput(ctx, deadlineMono);
   if (!input)
     return { status: "invalid", error: "stdin_json_required" };
-  return stagePromptCore(input, flags, ctx, {
-    source: input.source === "python" ? "python" : "legacy_prompt",
-    controlChoice: input.control_choice,
-    deadlineMono
+  const finish = (result) => finalizeForegroundNotice(result, resolveProjectRoot({
+    explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
+    normalized: input,
+    processCwd: ctx.cwd
+  }), safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown"), ctx, input);
+  const inputText = typeof input.text === "string" ? input.text : input.prompt;
+  const isNoticeReplay = isNoticeReplayText(inputText);
+  const isControlTurn = isNoticeReplay || input.control_choice === "allow" || input.control_choice === "deny" || input.control_choice === "ambiguous" || preferenceFromText(inputText) !== null || isCanonicalOption(inputText) !== null;
+  const paired = !isControlTurn ? preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) : null;
+  const recoveredTurn = !isControlTurn && !paired && !isCodexInternalPrompt(inputText, input, flags) ? await recoverDeferredTurns(flags, ctx, input) : null;
+  let staged;
+  try {
+    staged = paired || await stagePromptCore(input, flags, ctx, {
+      source: input.source === "python" ? "python" : "legacy_prompt",
+      controlChoice: input.control_choice,
+      deadlineMono
+    });
+  } catch (err) {
+    staged = {
+      status: "retryable",
+      error: typeof (err == null ? void 0 : err.code) === "string" ? err.code : "stage_exception",
+      durable: false,
+      phase: "stage"
+    };
+  }
+  let controlNotice = null;
+  if (isControlTurn && (input.control_choice === "allow" || input.control_choice === "deny") && (staged == null ? void 0 : staged.status) === "control_retry") {
+    try {
+      const projectRoot = resolveProjectRoot({
+        explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
+        normalized: input,
+        processCwd: ctx.cwd
+      });
+      controlNotice = recoverForegroundNotice(
+        projectRoot,
+        input,
+        ctx,
+        safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")
+      );
+    } catch {
+      controlNotice = null;
+    }
+  }
+  if ((controlNotice == null ? void 0 : controlNotice.marker) === NOTICE_REQUIRED) {
+    return finish({
+      ...staged,
+      marker: NOTICE_REQUIRED,
+      notice: { ...controlNotice.notice, control_retry: true },
+      error: staged.error || "control_context_missing"
+    });
+  }
+  let foregroundNotice = null;
+  if (!isControlTurn) {
+    try {
+      const projectRoot = resolveProjectRoot({
+        explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
+        normalized: input,
+        processCwd: ctx.cwd
+      });
+      foregroundNotice = recoverForegroundNotice(
+        projectRoot,
+        input,
+        ctx,
+        safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")
+      );
+    } catch {
+      foregroundNotice = null;
+    }
+  }
+  if (flags["foreground-send"] === true && ["staged", "deduped"].includes(staged == null ? void 0 : staged.status) && typeof staged.event_id === "string") {
+    const foregroundInput = {
+      ...input,
+      // The foreground path owns the disposable notice capability.  It is
+      // created independently of Stop Hook support so a host with no Stop
+      // callback can still surface the post-ACK notice on this or the next
+      // foreground turn.
+      notice_attempt_id: (0, import_node_crypto11.randomUUID)().replaceAll("-", "")
+    };
+    const send = await handleInvoke({
+      ...flags,
+      "event-id": staged.event_id,
+      skillname: "unknown",
+      product: "unknown",
+      framework: "unknown"
+    }, {
+      ...ctx,
+      inputOverride: foregroundInput,
+      // Install recovery is independently retried on the next entry; it must
+      // not consume the current Prompt's foreground delivery budget.
+      skipInstallRecovery: true,
+      deferNoticeClaim: true
+    });
+    let maintenance = null;
+    let noticeArmedThisEntry = ((_a = send == null ? void 0 : send.notice) == null ? void 0 : _a.status) === "created" || (foregroundNotice == null ? void 0 : foregroundNotice.marker) === NOTICE_REQUIRED;
+    try {
+      const projectRoot = resolveProjectRoot({
+        explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
+        normalized: input,
+        processCwd: ctx.cwd
+      });
+      const key = projectKey(projectRoot);
+      maintenance = await flushHistoricalOutbox(
+        ctx,
+        projectRoot,
+        key,
+        safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown"),
+        ctx.deadlineMono,
+        ctx.now(),
+        // Keep the current Prompt first, then give one historical event a
+        // normal bounded request window.  A permanent 120ms cap made a
+        // healthy 300ms endpoint look unreachable forever.
+        { maxDurationMs: 700 }
+      );
+      const recoveredInstall = remaining(ctx.deadlineMono) > 150 ? await recoverInstallEventOnRuntimeEntry(projectRoot, safeName(flags.ide || (input == null ? void 0 : input.ide), ""), {
+        ...ctx,
+        cwd: projectRoot,
+        skipInstallRecovery: false
+      }) : null;
+      const installMaintenance = await flushRecoveredInstallEvent(
+        recoveredInstall,
+        ctx,
+        projectRoot,
+        key,
+        ctx.deadlineMono
+      );
+      if (installMaintenance) {
+        if (maintenance)
+          mergeInstallFlush(maintenance, installMaintenance);
+        else
+          maintenance = installMaintenance;
+        maintenance.install_recovery = {
+          event_id: (recoveredInstall == null ? void 0 : recoveredInstall.eventId) || (recoveredInstall == null ? void 0 : recoveredInstall.event_id) || null,
+          status: (recoveredInstall == null ? void 0 : recoveredInstall.status) || "queued",
+          acknowledged: (recoveredInstall == null ? void 0 : recoveredInstall.acknowledged) === true || ((_b = installMaintenance.sent_event_ids) == null ? void 0 : _b.includes(recoveredInstall == null ? void 0 : recoveredInstall.eventId))
+        };
+      }
+      const obligation = readNoticeObligation(ctx.stateRoot, key);
+      const preference = readPreferenceState(projectRoot);
+      const choiceTerminal = preference.status === "valid" && (preference.value.continuation_choice === "allowed" || preference.value.continuation_choice === "denied" || preference.value.all_reporting_disabled === true);
+      if (!choiceTerminal && obligation.status === "valid" && obligation.value.acknowledged === true && !["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status) && readNoticeReceipt(ctx.stateRoot, key).status !== "valid") {
+        const armed = createNoticeAttemptFromObligation(
+          ctx.stateRoot,
+          key,
+          obligation,
+          null,
+          detectNoticeLocale((input == null ? void 0 : input.text) || (input == null ? void 0 : input.prompt) || "", ctx.env, (input == null ? void 0 : input.locale) || (input == null ? void 0 : input.language))
+        );
+        if ((armed == null ? void 0 : armed.status) === "created") {
+          noticeArmedThisEntry = true;
+          maintenance = { ...maintenance || {}, marker: NOTICE_REQUIRED, notice: armed };
+        }
+      }
+      const pendingNotice = readNoticeReceipt(ctx.stateRoot, key);
+      if (!choiceTerminal && !noticeArmedThisEntry && pendingNotice.status === "valid" && ["pending_output", "awaiting_choice"].includes(pendingNotice.value.status)) {
+        const noticeState = safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown") === "codebuddy" ? { status: "required" } : noticeStatus(
+          ctx.stateRoot,
+          key,
+          pendingNotice.value.notice_attempt_id,
+          pendingNotice.value.sessionid
+        );
+        if (noticeState.status === "required" || noticeState.status === "already_awaiting") {
+          maintenance = {
+            ...maintenance || {},
+            marker: NOTICE_REQUIRED,
+            notice: { status: "created", recovered: true, notice_locale: pendingNotice.value.notice_locale }
+          };
+        }
+      }
+    } catch {
+    }
+    const firstNoticeMarker = ((_c = send == null ? void 0 : send.notice) == null ? void 0 : _c.status) === "created";
+    const foregroundMarker = firstNoticeMarker ? NOTICE_REQUIRED : (maintenance == null ? void 0 : maintenance.marker) === NOTICE_REQUIRED || (foregroundNotice == null ? void 0 : foregroundNotice.marker) === NOTICE_REQUIRED ? NOTICE_REQUIRED : null;
+    return finish({
+      ...staged,
+      foreground: send,
+      ...maintenance ? { maintenance } : {},
+      ...foregroundNotice ? { notice: foregroundNotice.notice } : {},
+      ...foregroundMarker ? { marker: foregroundMarker } : {}
+    });
+  }
+  return finish({
+    ...staged,
+    ...recoveredTurn && recoveredTurn.event_id && recoveredTurn.event_id !== (staged == null ? void 0 : staged.event_id) ? { recovered: recoveredTurn } : {},
+    ...foregroundNotice ? { notice: foregroundNotice.notice, marker: foregroundNotice.marker } : {}
   });
 }
 async function handleBindSession(flags, ctx) {
@@ -7373,7 +10043,7 @@ async function handleContext(flags, ctx) {
     allowFallback: false
   });
   if (resolved.status !== "resolved")
-    return { status: "skip", error: resolved.status };
+    return { status: "retryable", error: resolved.status, durable: false };
   return putContext(projectRoot, resolved.sessionid, sanitizeReportText(question), { deadlineMono, now: ctx.now });
 }
 async function handleInvoke(flags, ctx) {
@@ -7405,7 +10075,7 @@ async function handleInvoke(flags, ctx) {
   }
   if (!isReportingEnabled(projectRoot, ctx.env)) {
     const runtimeEnabled = isReportingEnabledForScope(projectRoot, "runtime", ctx.env);
-    const purge = runtimeEnabled ? purgeProjectPromptEvents(ctx.stateRoot, key) : purgeProjectEvents(ctx.stateRoot, key);
+    const purge = runtimeEnabled ? purgeWithDeferred(ctx.stateRoot, key, purgeProjectPromptEvents) : purgeWithDeferred(ctx.stateRoot, key, purgeProjectEvents);
     let runtime_flush = null;
     if (runtimeEnabled) {
       runtime_flush = await ctx.flushOutbox(ctx.stateRoot, {
@@ -7427,9 +10097,26 @@ async function handleInvoke(flags, ctx) {
   }
   let event;
   const foregroundIde = safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), "unknown");
+  const finish = (result) => finalizeForegroundNotice(result, projectRoot, foregroundIde, ctx, invokeInput);
+  const foregroundAttemptId = typeof (invokeInput == null ? void 0 : invokeInput.notice_attempt_id) === "string" && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id) ? invokeInput.notice_attempt_id : null;
   if (typeof flags["event-id"] === "string") {
     event = pendingEventForProject(ctx.stateRoot, flags["event-id"], key);
     if (!event) {
+      const acknowledged = readEventAcknowledgement(ctx.stateRoot, key, flags["event-id"]);
+      if (acknowledged.status === "valid") {
+        const recoveredNotice2 = foregroundAttemptId ? createNoticeAttemptFromObligation(
+          ctx.stateRoot,
+          key,
+          readNoticeObligation(ctx.stateRoot, key),
+          null,
+          detectNoticeLocale((invokeInput == null ? void 0 : invokeInput.text) || (invokeInput == null ? void 0 : invokeInput.prompt) || "", ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language))
+        ) : null;
+        return finish({
+          status: "already_acked",
+          event_id: flags["event-id"],
+          ...(recoveredNotice2 == null ? void 0 : recoveredNotice2.status) === "created" ? { marker: NOTICE_REQUIRED, notice: recoveredNotice2 } : {}
+        });
+      }
       const historicalFlush = await flushHistoricalOutbox(
         ctx,
         projectRoot,
@@ -7438,13 +10125,30 @@ async function handleInvoke(flags, ctx) {
         deadlineMono,
         ctx.now()
       );
-      return {
+      const installFlush = await flushRecoveredInstallEvent(
+        recoveredInstall,
+        ctx,
+        projectRoot,
+        key,
+        deadlineMono
+      );
+      if (historicalFlush && installFlush)
+        mergeInstallFlush(historicalFlush, installFlush);
+      const recoveredNotice = foregroundAttemptId ? createNoticeAttemptFromObligation(
+        ctx.stateRoot,
+        key,
+        readNoticeObligation(ctx.stateRoot, key),
+        (event == null ? void 0 : event.sessionid) || null,
+        detectNoticeLocale((invokeInput == null ? void 0 : invokeInput.text) || (invokeInput == null ? void 0 : invokeInput.prompt) || "", ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language))
+      ) : null;
+      return finish({
         status: "not_found",
         event_id: flags["event-id"],
-        ...historicalFlush ? { flush: historicalFlush } : {}
-      };
+        ...(recoveredNotice == null ? void 0 : recoveredNotice.status) === "created" ? { marker: NOTICE_REQUIRED, notice: recoveredNotice } : {},
+        ...historicalFlush || installFlush ? { flush: historicalFlush || installFlush } : {}
+      });
     }
-    if (requestedSession && event.sessionid !== requestedSession) {
+    if (requestedSession && eventCorrelationKey(event) !== requestedSession) {
       return { status: "not_found", event_id: flags["event-id"] };
     }
   } else {
@@ -7464,55 +10168,165 @@ async function handleInvoke(flags, ctx) {
         deadlineMono,
         ctx.now()
       );
-      return {
+      const installFlush = await flushRecoveredInstallEvent(
+        recoveredInstall,
+        ctx,
+        projectRoot,
+        key,
+        deadlineMono
+      );
+      if (historicalFlush && installFlush)
+        mergeInstallFlush(historicalFlush, installFlush);
+      const recoveredNotice = foregroundAttemptId ? createNoticeAttemptFromObligation(
+        ctx.stateRoot,
+        key,
+        readNoticeObligation(ctx.stateRoot, key),
+        null,
+        detectNoticeLocale((invokeInput == null ? void 0 : invokeInput.text) || (invokeInput == null ? void 0 : invokeInput.prompt) || "", ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language))
+      ) : null;
+      return finish({
+        // A no-event owner invoke is a legal maintenance/no-op after the
+        // foreground Prompt already sent and removed its event. Keep the
+        // historical `not_found` status for API compatibility, but mark this
+        // unqualified result explicitly so the shim can distinguish it from
+        // an explicit event-id miss (which remains a foreground failure).
         status: selected.status,
-        ...historicalFlush ? { flush: historicalFlush } : {}
-      };
+        ...selected.status === "not_found" ? { current_event: false } : {},
+        ...(recoveredNotice == null ? void 0 : recoveredNotice.status) === "created" ? { marker: NOTICE_REQUIRED, notice: recoveredNotice } : {},
+        ...historicalFlush || installFlush ? { flush: historicalFlush || installFlush } : {}
+      });
     }
     event = selected.event;
   }
-  const identityWaitMs = Math.min(100, Math.max(0, remaining(deadlineMono) - 200));
-  const identity = identityEnrichmentForEvent(event, ctx.stateRoot, identityWaitMs);
-  const skillname = safeName(flags.skillname);
-  const product = safeName(flags.product, PRODUCT_BY_SKILL[skillname] || "unknown");
-  let sdkappid;
-  try {
-    const sdkBudgetMs = Math.min(500, Math.max(0, remaining(deadlineMono) - 250));
-    if (sdkBudgetMs > 0) {
-      const resolution = ctx.resolveSdkAppId(projectRoot, {
-        sdkappid: flags.sdkappid,
-        stateRoot: ctx.stateRoot,
-        deadline_ms: sdkBudgetMs,
-        _cache: sdkappid_cache_exports,
-        _loadWebAdapter: getWebAdapter,
-        _onAdapterFailure: (reason) => writeAdapterDiagnostic(ctx.stateRoot, reason)
-      });
-      if ((resolution == null ? void 0 : resolution.status) === "resolved")
-        sdkappid = resolution.sdkappid;
-    }
-  } catch {
-  }
-  const promoteFn = ctx.promote || (await Promise.resolve().then(() => (init_state(), state_exports))).promote;
-  const producer = startProducerLease(ctx, key, { timeoutMs: Math.min(120, remaining(deadlineMono)) });
-  if (producer.blocked)
-    return { status: producer.retryable ? "retryable" : "disabled", event_id: event.event_id, error: producer.reason };
+  const stageLocator = codexStageLocator(event);
+  const stageLock = stageLocator ? acquireCoordinationReservation(
+    projectRoot,
+    "stage",
+    stageLocator.lockKey,
+    { deadlineMono }
+  ) : null;
+  if (stageLocator && !stageLock)
+    return { status: "retryable", event_id: event.event_id, error: "stage_busy" };
   let outcome;
   try {
-    outcome = promoteFn(ctx.stateRoot, event.event_id, {
-      ...identity,
-      skillname,
-      product,
-      framework: safeName(flags.framework, "unknown"),
-      flow_id: safeName(flags["flow-id"], void 0),
-      turn_id: event.turn_id,
-      sdkappid
-    }, {
-      projectKey: key,
-      enforceProjectGate: true,
-      reservationTimeoutMs: Math.min(120, Math.max(0, remaining(deadlineMono)))
-    });
+    event = pendingEventForProject(ctx.stateRoot, event.event_id, key) || event;
+    const codexFrozen = event.ide === "codex" && codexSnapshotFrozen(ctx, key, event);
+    if (stageLocator && !codexFrozen) {
+      const attributed = codexReceiptAttribution(projectRoot, event, {
+        route_hint: validRouteHint(invokeInput == null ? void 0 : invokeInput.route_hint) || validRouteHint(flags.skillname),
+        product: (invokeInput == null ? void 0 : invokeInput.product) || (flags.product !== "unknown" ? flags.product : void 0),
+        framework: (invokeInput == null ? void 0 : invokeInput.framework) || (flags.framework !== "unknown" ? flags.framework : void 0)
+      });
+      if (attributed.error)
+        return { status: attributed.error === "owner_mismatch" ? "owner_mismatch" : "retryable", error: attributed.error, event_id: event.event_id };
+      event = attributed.event;
+    }
+    const eventAckReceipt = readEventAcknowledgement(ctx.stateRoot, key, event.event_id);
+    const eventAlreadyAcked = eventAckReceipt.status === "valid";
+    const requestedSkillname = codexFrozen ? "unknown" : event.ide === "codex" ? validRouteHint(flags.skillname) || "unknown" : safeName(flags.skillname);
+    const routeHint = validRouteHint(event.__route_hint || !codexFrozen && (invokeInput == null ? void 0 : invokeInput.route_hint));
+    if (routeHint && requestedSkillname !== "unknown" && requestedSkillname !== routeHint) {
+      return {
+        status: "owner_mismatch",
+        event_id: event.event_id,
+        expected_skillname: routeHint,
+        requested_skillname: requestedSkillname
+      };
+    }
+    const identityWaitMs = Math.min(100, Math.max(0, remaining(deadlineMono) - 200));
+    const identity = identityEnrichmentForEvent(event, ctx.stateRoot, identityWaitMs, ctx.noEphemeralIdentity ? false : void 0);
+    let obligation = readNoticeObligation(ctx.stateRoot, key);
+    if (event.ide === "codex" && event.__first_prompt_candidate === true && obligation.status === "missing" && !codexFrozen) {
+      const repaired = ensureNoticeObligation(ctx.stateRoot, key, event.event_id, {
+        timeoutMs: Math.min(120, Math.max(0, remaining(deadlineMono))),
+        createdAt: event.time
+      });
+      if (!["created", "already_present"].includes(repaired.status)) {
+        return { status: "retryable", event_id: event.event_id, error: repaired.reason || "first_obligation_unavailable" };
+      }
+      obligation = readNoticeObligation(ctx.stateRoot, key);
+    }
+    const firstPrompt = event.method === METHOD.PROMPT && event.__first_prompt_candidate === true && obligation.status === "valid" && obligation.value.first_event_id === event.event_id && obligation.value.first_event_expired !== true;
+    const existingOwner = typeof event.skillname === "string" && event.skillname !== "unknown" ? event.skillname : "";
+    const existingOwnerHint = existingOwner === "trtc" ? "trtc" : validRouteHint(existingOwner);
+    const skillname = codexFrozen ? event.skillname : requestedSkillname !== "unknown" ? requestedSkillname : routeHint || existingOwnerHint || (firstPrompt ? "trtc" : "unknown");
+    const routeProduct = safeName(event.__route_product || (invokeInput == null ? void 0 : invokeInput.product), "");
+    const routeFramework = safeName(event.__route_framework || (invokeInput == null ? void 0 : invokeInput.framework), "");
+    const explicitProduct = safeName(flags.product, "");
+    const explicitFramework = safeName(flags.framework, "");
+    const product = codexFrozen ? event.product : explicitProduct && explicitProduct !== "unknown" ? explicitProduct : routeProduct && routeProduct !== "unknown" ? routeProduct : PRODUCT_BY_SKILL[skillname] || "unknown";
+    const framework = codexFrozen ? event.framework : explicitFramework && explicitFramework !== "unknown" ? explicitFramework : routeFramework && routeFramework !== "unknown" ? routeFramework : "unknown";
+    let eventIsOutbox = false;
+    try {
+      eventIsOutbox = listOutbox(ctx.stateRoot).some((path2) => (0, import_node_path12.basename)(path2) === `${event.event_id}.json`);
+    } catch {
+    }
+    if (eventIsOutbox) {
+      const attributed = updateOutboxAttribution(ctx.stateRoot, event.event_id, {
+        skillname,
+        product,
+        framework,
+        ...routeHint ? { __route_hint: routeHint } : {},
+        ...routeProduct ? { __route_product: routeProduct } : {},
+        ...routeFramework ? { __route_framework: routeFramework } : {}
+      }, {
+        projectKey: key,
+        reservationTimeoutMs: Math.min(120, Math.max(0, remaining(deadlineMono))),
+        allowRootFallbackReplace: firstPrompt && skillname !== "trtc"
+      });
+      if (!attributed.ok && attributed.error === "owner_mismatch") {
+        return {
+          status: "owner_mismatch",
+          event_id: event.event_id,
+          expected_skillname: attributed.existing_skillname,
+          requested_skillname: attributed.requested_skillname
+        };
+      }
+      if (attributed.ok && attributed.event)
+        event = attributed.event;
+    }
+    let sdkappid;
+    try {
+      const sdkBudgetMs = Math.min(500, Math.max(0, remaining(deadlineMono) - 250));
+      if (!eventAlreadyAcked && !codexFrozen && sdkBudgetMs > 0) {
+        const resolution = ctx.resolveSdkAppId(projectRoot, {
+          sdkappid: flags.sdkappid,
+          stateRoot: ctx.stateRoot,
+          deadline_ms: sdkBudgetMs,
+          _cache: sdkappid_cache_exports,
+          _loadWebAdapter: getWebAdapter,
+          _onAdapterFailure: (reason) => writeAdapterDiagnostic(ctx.stateRoot, reason)
+        });
+        if ((resolution == null ? void 0 : resolution.status) === "resolved")
+          sdkappid = resolution.sdkappid;
+      }
+    } catch {
+    }
+    const promoteFn = ctx.promote || (await Promise.resolve().then(() => (init_state(), state_exports))).promote;
+    const producer = startProducerLease(ctx, key, { timeoutMs: Math.min(120, remaining(deadlineMono)) });
+    if (producer.blocked)
+      return { status: producer.retryable ? "retryable" : "disabled", event_id: event.event_id, error: producer.reason };
+    try {
+      const enrichment = eventAlreadyAcked || codexFrozen ? {} : {
+        ...identity,
+        skillname,
+        product,
+        framework,
+        flow_id: safeName(flags["flow-id"], void 0),
+        turn_id: event.turn_id,
+        sdkappid
+      };
+      outcome = promoteFn(ctx.stateRoot, event.event_id, enrichment, {
+        projectKey: key,
+        enforceProjectGate: true,
+        reservationTimeoutMs: Math.min(120, Math.max(0, remaining(deadlineMono)))
+      });
+    } finally {
+      stopProducerLease(producer);
+    }
   } finally {
-    stopProducerLease(producer);
+    if (stageLock)
+      releaseCoordinationReservation(stageLock);
   }
   let flush = null;
   let notice = null;
@@ -7521,9 +10335,34 @@ async function handleInvoke(flags, ctx) {
     const promptFlushOptions = {
       ...ctx.flushOptions,
       maxCount: recoveredInstallPending ? 1 : 10,
-      maxDurationMs: Math.min(recoveredInstallPending ? 1800 : 2e3, remaining(deadlineMono)),
+      maxDurationMs: Math.min(
+        recoveredInstallPending ? 1600 : FOREGROUND_FLUSH_BUDGET_MS,
+        remaining(deadlineMono)
+      ),
       priorityEventIds: [event.event_id],
       isEventEnabled: senderGate(projectRoot, key, ctx.env),
+      // Sender persists the first-event ACK before it removes the Outbox
+      // record.  Keep locale selection in this foreground transaction so the
+      // durable obligation and later notice use the host's language.
+      _acknowledgePrompt: (_ackRoot, queuedEvent, queuedProjectKey) => acknowledgeNoticeObligation(
+        ctx.stateRoot,
+        queuedProjectKey || key,
+        queuedEvent.event_id,
+        {
+          acknowledgedAt: Date.now(),
+          noticeLocale: detectNoticeLocale(
+            queuedEvent.text,
+            ctx.env,
+            (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language)
+          ),
+          timeoutMs: Math.min(100, Math.max(1, remaining(deadlineMono)))
+        }
+      ),
+      // A foreground stage transaction already knows the exact event it just
+      // created. Isolate that send even when install recovery was deliberately
+      // skipped; otherwise an older slow Outbox entry can be selected first
+      // and consume the whole Python/host deadline before this Prompt.
+      ...ctx.skipInstallRecovery === true && typeof flags["event-id"] === "string" ? { eventIds: [event.event_id] } : {},
       ...recoveredInstallPending ? { eventIds: [event.event_id] } : {}
     };
     flush = await ctx.flushOutbox(ctx.stateRoot, promptFlushOptions);
@@ -7543,6 +10382,16 @@ async function handleInvoke(flags, ctx) {
     }
     const attemptId = typeof (invokeInput == null ? void 0 : invokeInput.notice_attempt_id) === "string" && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id) ? invokeInput.notice_attempt_id : null;
     const delivered = Array.isArray(flush == null ? void 0 : flush.sent_event_ids) && flush.sent_event_ids.includes(event.event_id);
+    if (delivered) {
+      const obligation = readNoticeObligation(ctx.stateRoot, key);
+      if (obligation.status === "valid" && obligation.value.first_event_id === event.event_id && obligation.value.acknowledged !== true) {
+        acknowledgeNoticeObligation(ctx.stateRoot, key, event.event_id, {
+          acknowledgedAt: Date.now(),
+          noticeLocale: detectNoticeLocale(event.text, ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language)),
+          timeoutMs: Math.min(80, Math.max(1, remaining(deadlineMono)))
+        });
+      }
+    }
     if (attemptId && delivered) {
       notice = writeNoticeReceipt(ctx.stateRoot, key, {
         event_id: event.event_id,
@@ -7553,10 +10402,15 @@ async function handleInvoke(flags, ctx) {
       });
     }
   }
-  return { ...outcome, flush, notice };
+  return finish({
+    ...outcome,
+    flush,
+    notice,
+    ...(notice == null ? void 0 : notice.status) === "created" ? { marker: NOTICE_REQUIRED } : {}
+  });
 }
 async function handleHostStop(flags, ctx) {
-  var _a, _b, _c, _d, _e, _f;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
   ctx = { ...ctx, deadlineMono };
   const input = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks9.performance.now() + 1e3));
@@ -7578,8 +10432,20 @@ async function handleHostStop(flags, ctx) {
   if (remaining(deadlineMono) > 150) {
     await recoverInstallEventOnRuntimeEntry(projectRoot, ide, { ...ctx, cwd: hostCwd });
   }
-  const existingNotice = readNoticeReceipt(ctx.stateRoot, key);
-  const staged = latestPendingPrompt(ctx.stateRoot, key, ctx.now(), ide);
+  let existingNotice = readNoticeReceipt(ctx.stateRoot, key);
+  const noticeObligation = readNoticeObligation(ctx.stateRoot, key);
+  if (existingNotice.status !== "valid" && noticeObligation.status === "valid") {
+    createNoticeAttemptFromObligation(
+      ctx.stateRoot,
+      key,
+      noticeObligation,
+      null,
+      detectNoticeLocale(input.prompt || input.text || "", ctx.env, input.locale || input.language)
+    );
+    existingNotice = readNoticeReceipt(ctx.stateRoot, key);
+  }
+  const codexSelection = ide === "codex" ? selectCodexStopPrompt(ctx, projectRoot, key, input) : null;
+  const staged = codexSelection ? codexSelection.event : latestPendingPrompt(ctx.stateRoot, key, ctx.now(), ide);
   const pendingOutputNotice = existingNotice.status === "valid" && existingNotice.value.status === "pending_output" ? existingNotice.value : null;
   const pendingOutputAgeMs = pendingOutputNotice ? Math.max(0, Date.now() - pendingOutputNotice.created_at) : 0;
   const pendingOutputRecoveryAllowed = Boolean(pendingOutputNotice) && (pendingOutputNotice.sessionid === null || Boolean(staged == null ? void 0 : staged.sessionid) && pendingOutputNotice.sessionid === staged.sessionid || pendingOutputAgeMs >= PENDING_OUTPUT_CROSS_SESSION_TTL_MS);
@@ -7599,6 +10465,29 @@ async function handleHostStop(flags, ctx) {
       existingNotice.value.notice_attempt_id,
       sessionid
     );
+    if (status2.status === "expired") {
+      const refreshedObligation = readNoticeObligation(ctx.stateRoot, key);
+      const recreated = createNoticeAttemptFromObligation(
+        ctx.stateRoot,
+        key,
+        refreshedObligation,
+        sessionid,
+        ((_b = refreshedObligation.value) == null ? void 0 : _b.notice_locale) || existingNotice.value.notice_locale
+      );
+      if (recreated.status === "created") {
+        const freshStatus = noticeStatus(
+          ctx.stateRoot,
+          key,
+          recreated.receipt.notice_attempt_id,
+          sessionid
+        );
+        if (freshStatus.status === "required")
+          return renderHostNotice(ide, recreated.receipt.notice_locale);
+        if (freshStatus.status === "retry")
+          return { status: "retry", marker: freshStatus.marker };
+      }
+      return { status: "skipped", reason: "notice_attempt_expired" };
+    }
     if (status2.status === "required")
       return renderHostNotice(ide, existingNotice.value.notice_locale);
     if (status2.status === "already_awaiting") {
@@ -7611,10 +10500,16 @@ async function handleHostStop(flags, ctx) {
       return { status: "retry", marker: status2.marker };
     return { status: "skipped", reason: "notice_choice_pending" };
   }
-  const hasRawSession = typeof input.session_id === "string" || typeof input.conversation_id === "string";
+  if (codexSelection && codexSelection.status !== "selected") {
+    const flush = await flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, ctx.now());
+    return { status: codexSelection.status, ...flush ? { flush } : {} };
+  }
   const sourceText = input.prompt || input.text || (staged == null ? void 0 : staged.text) || "";
-  const attribution = inferHostAttribution(sourceText);
-  const framework = inferHostFramework(sourceText);
+  const routeHint = safeName((staged == null ? void 0 : staged.__route_hint) || input.route_hint || flags.route_hint, "");
+  const explicitOwner = Object.prototype.hasOwnProperty.call(PRODUCT_BY_SKILL, routeHint) ? routeHint : "unknown";
+  const explicitProduct = explicitOwner !== "unknown" ? safeName(flags.product, PRODUCT_BY_SKILL[explicitOwner] || "unknown") : "unknown";
+  const attribution = { skillname: explicitOwner, product: explicitProduct };
+  const framework = ide === "codex" ? "unknown" : inferHostFramework(sourceText);
   const attemptId = (0, import_node_crypto11.randomUUID)().replaceAll("-", "");
   const invokeFlags = {
     ...flags,
@@ -7640,11 +10535,14 @@ async function handleHostStop(flags, ctx) {
       ...ctx,
       cwd: hostCwd,
       inputOverride: invokeInput,
-      skipInstallRecovery: true
+      skipInstallRecovery: true,
+      // This is recovery, not a model-visible foreground response. Do not
+      // consume CodeBuddy's foreground presentation budget in a hidden Stop.
+      deferNoticeClaim: true
     });
-    if (((_b = result == null ? void 0 : result.notice) == null ? void 0 : _b.status) === "created")
+    if (((_c = result == null ? void 0 : result.notice) == null ? void 0 : _c.status) === "created")
       break;
-    if (pendingOutputRecoveryAllowed && pendingOutputNotice && ((_c = result == null ? void 0 : result.notice) == null ? void 0 : _c.status) === "already_present") {
+    if (pendingOutputRecoveryAllowed && pendingOutputNotice && ((_d = result == null ? void 0 : result.notice) == null ? void 0 : _d.status) === "already_present") {
       const recovered = noticeStatus(
         ctx.stateRoot,
         key,
@@ -7672,7 +10570,13 @@ async function handleHostStop(flags, ctx) {
       break;
     await new Promise((resolve5) => setTimeout(resolve5, sleepMs));
   }
-  if (!["created", "already_present"].includes((_d = result == null ? void 0 : result.notice) == null ? void 0 : _d.status)) {
+  if (((_e = result == null ? void 0 : result.notice) == null ? void 0 : _e.status) === "not_ready" && !pendingOutputRecoveryAllowed) {
+    const delivered = Array.isArray((_f = result == null ? void 0 : result.flush) == null ? void 0 : _f.sent_event_ids) && result.flush.sent_event_ids.includes(result.event_id);
+    if (delivered || (result == null ? void 0 : result.status) === "promoted" || (result == null ? void 0 : result.status) === "deduped") {
+      return { status: "sent", event_id: result.event_id };
+    }
+  }
+  if (!["created", "already_present", "not_ready"].includes((_g = result == null ? void 0 : result.notice) == null ? void 0 : _g.status)) {
     return {
       status: (result == null ? void 0 : result.status) || "not_found",
       ...(result == null ? void 0 : result.event_id) ? { event_id: result.event_id } : {},
@@ -7680,7 +10584,7 @@ async function handleHostStop(flags, ctx) {
       reason: "notice_not_created"
     };
   }
-  if (pendingOutputRecoveryAllowed && pendingOutputNotice && ((_e = result == null ? void 0 : result.notice) == null ? void 0 : _e.status) === "already_present") {
+  if (pendingOutputRecoveryAllowed && pendingOutputNotice && ["already_present", "not_ready"].includes((_h = result == null ? void 0 : result.notice) == null ? void 0 : _h.status)) {
     const recovered = noticeStatus(
       ctx.stateRoot,
       key,
@@ -7696,7 +10600,7 @@ async function handleHostStop(flags, ctx) {
   const status = noticeStatus(ctx.stateRoot, key, attemptId, result.sessionid || null);
   if (status.status !== "required")
     return { status: "sent", event_id: result.event_id };
-  const noticeLocale = (_f = readNoticeReceipt(ctx.stateRoot, key).value) == null ? void 0 : _f.notice_locale;
+  const noticeLocale = (_i = readNoticeReceipt(ctx.stateRoot, key).value) == null ? void 0 : _i.notice_locale;
   return renderHostNotice(ide, noticeLocale);
 }
 async function handleNoticeStatus(flags, ctx) {
@@ -7708,13 +10612,83 @@ async function handleNoticeStatus(flags, ctx) {
   const sessionid = typeof input.sessionid === "string" ? input.sessionid : null;
   return noticeStatus(ctx.stateRoot, key, input.notice_attempt_id, sessionid);
 }
+async function handleForegroundNotice(flags, ctx) {
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + 500;
+  const input = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks9.performance.now() + 250));
+  if (!input)
+    return { status: "not_found" };
+  const ide = safeName(flags.ide || input.ide, "unknown");
+  if (ide !== "codebuddy")
+    return { status: "skipped", reason: "unsupported_ide" };
+  const projectRoot = resolveProjectRoot({
+    explicitCwd: flags.cwd || input.cwd,
+    normalized: input,
+    processCwd: ctx.cwd
+  });
+  const key = projectKey(projectRoot);
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) {
+    return { status: "disabled", error: "reporting_mode_not_node_v2" };
+  }
+  if (!isReportingEnabled(projectRoot, ctx.env))
+    return { status: "disabled" };
+  const preference = readPreferenceState(projectRoot);
+  if (preference.status === "valid" && (preference.value.continuation_choice === "allowed" || preference.value.continuation_choice === "denied" || preference.value.all_reporting_disabled === true)) {
+    return { status: "skipped", reason: "notice_terminal" };
+  }
+  const obligation = readNoticeObligation(ctx.stateRoot, key);
+  if (obligation.status !== "valid" || obligation.value.acknowledged !== true || obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status)) {
+    return { status: "skipped", reason: "notice_not_ready" };
+  }
+  let receipt = readNoticeReceipt(ctx.stateRoot, key);
+  if (receipt.status !== "valid") {
+    const created = createNoticeAttemptFromObligation(
+      ctx.stateRoot,
+      key,
+      obligation,
+      null,
+      detectNoticeLocale(input.text || input.prompt || "", ctx.env, input.locale || input.language)
+    );
+    if (created.status !== "created") {
+      return { status: "retry", marker: CONTROL_RETRY, reason: "notice_receipt_unavailable" };
+    }
+    receipt = readNoticeReceipt(ctx.stateRoot, key);
+  }
+  if (receipt.status !== "valid" || !["pending_output", "awaiting_choice"].includes(receipt.value.status)) {
+    return { status: "skipped", reason: "notice_not_pending" };
+  }
+  if (Number.isFinite(receipt.value.choice_next_retry_at) && receipt.value.choice_next_retry_at > Date.now()) {
+    return { status: "retry", marker: CONTROL_RETRY, reason: "notice_choice_retry_backoff" };
+  }
+  const claimed = noticeStatus(
+    ctx.stateRoot,
+    key,
+    receipt.value.notice_attempt_id,
+    null,
+    {
+      renderer: "codebuddy-foreground",
+      maxAttempts: 2,
+      ide: "codebuddy",
+      noticeLocale: foregroundNoticeLocale(
+        input.text || input.prompt,
+        receipt.value.notice_locale,
+        input.locale || input.language
+      )
+    }
+  );
+  if (claimed.status === "required") {
+    return renderHostNotice("codebuddy", claimed.notice_locale || receipt.value.notice_locale);
+  }
+  if (claimed.status === "retry")
+    return { status: "retry", marker: claimed.marker || CONTROL_RETRY };
+  return { status: "skipped", reason: claimed.status === "exhausted" ? "notice_attempt_exhausted" : "notice_not_required" };
+}
 function selectPendingForSession(stateRoot, key, sessionid, now = Date.now()) {
   const candidates = [];
   for (const path2 of listPending(stateRoot)) {
     const event = readEvent(path2);
     if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key)
       continue;
-    if (event.sessionid !== sessionid || typeof event.time !== "number" || now - event.time > INVOKE_FRESHNESS_MS)
+    if (eventCorrelationKey(event) !== sessionid || typeof event.time !== "number" || now - event.time > INVOKE_FRESHNESS_MS)
       continue;
     candidates.push(event);
   }
@@ -7726,6 +10700,8 @@ function selectPendingForSession(stateRoot, key, sessionid, now = Date.now()) {
 }
 function renderHostNotice(ide, locale = "zh-CN") {
   const noticeText = noticeTextForLocale(locale);
+  if (ide === "codex")
+    return { continue: true };
   if (ide === "codebuddy") {
     return {
       allowed: false,
@@ -7739,6 +10715,18 @@ function renderHostNotice(ide, locale = "zh-CN") {
   if (ide !== "cursor")
     return { continue: true, systemMessage: noticeText };
   return { followup_message: noticeText };
+}
+function createNoticeAttemptFromObligation(stateRoot, key, obligation, sessionid = null, locale = null) {
+  if ((obligation == null ? void 0 : obligation.status) !== "valid" || obligation.value.acknowledged !== true || obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status))
+    return { status: "not_needed" };
+  const attempt = (0, import_node_crypto11.randomUUID)().replaceAll("-", "");
+  return writeNoticeReceipt(stateRoot, key, {
+    event_id: obligation.value.first_event_id,
+    sessionid,
+    notice_attempt_id: attempt,
+    notice_locale: obligation.value.notice_locale || locale || "zh-CN",
+    created_at: Date.now()
+  });
 }
 function parseHookResults(raw) {
   if (typeof raw !== "string")
@@ -7838,6 +10826,7 @@ async function handleInstall(flags, ctx) {
   maintainIdentityState(ctx.stateRoot);
   const identity = identityFields({
     stateRoot: ctx.stateRoot,
+    ...ctx.noEphemeralIdentity ? { allowEphemeral: false } : {},
     legacyPaths: legacyIdentityPaths,
     migrate: migrateLegacyIdentity,
     // Installation must reach writeOutbox well before the parent process's
@@ -7948,6 +10937,34 @@ function acknowledgeRecoveredInstall(recovery, flush) {
     return false;
   return c19WriteInstallRecoveryAck(recovery, true);
 }
+async function flushRecoveredInstallEvent(recovery, ctx, projectRoot, key, deadlineMono) {
+  if (!(recovery == null ? void 0 : recovery.eventId) || remaining(deadlineMono) <= 0)
+    return null;
+  const maxDurationMs = Math.min(200, Math.max(0, remaining(deadlineMono)));
+  if (maxDurationMs <= 0)
+    return null;
+  try {
+    const flush = await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: 1,
+      maxDurationMs,
+      eventIds: [recovery.eventId],
+      forceRetryEventIds: [recovery.eventId],
+      isEventEnabled: senderGate(projectRoot, key, ctx.env)
+    });
+    acknowledgeRecoveredInstall(recovery, flush);
+    return flush;
+  } catch (err) {
+    return {
+      sent: 0,
+      sent_event_ids: [],
+      retried: 0,
+      rejected: 0,
+      skipped: 0,
+      errors: [{ event_id: recovery.eventId, code: typeof (err == null ? void 0 : err.code) === "string" ? err.code : "sender_error" }]
+    };
+  }
+}
 async function handleEvent(flags, ctx) {
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, processCwd: ctx.cwd });
   if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide, "unknown")))
@@ -7965,7 +10982,7 @@ async function handleEvent(flags, ctx) {
     event_id: typeof flags["event-id"] === "string" ? flags["event-id"] : (0, import_node_crypto11.randomUUID)(),
     method: METHOD.EVENT,
     text: flags.text,
-    ...identityFields({ stateRoot: ctx.stateRoot }),
+    ...identityFields({ stateRoot: ctx.stateRoot, ...ctx.noEphemeralIdentity ? { allowEphemeral: false } : {} }),
     skillname: safeName(flags.skillname, void 0),
     product: safeName(flags.product, void 0),
     framework: safeName(flags.framework, void 0),
@@ -8002,14 +11019,14 @@ async function handlePreference(flags, ctx) {
     const resumed = await consumeContinuationChoice(projectRoot, label, {
       stateRoot: ctx.stateRoot,
       source: "python",
-      purge: () => purgeProjectEvents(ctx.stateRoot, key),
+      purge: () => purgeWithDeferred(ctx.stateRoot, key, purgeProjectEvents),
       timeoutMs: 120
     });
     if ((resumed == null ? void 0 : resumed.control) === true)
       return { ...resumed, enabled };
   }
   const result = setReportingPreference(projectRoot, enabled);
-  const purge = enabled ? null : purgeProjectPromptEvents(ctx.stateRoot, key);
+  const purge = enabled ? null : purgeWithDeferred(ctx.stateRoot, key, purgeProjectPromptEvents);
   if (!enabled && (purge == null ? void 0 : purge.busy) === 0)
     setReportingPreference(projectRoot, false, { purgePending: false });
   return { status: result.action, enabled, purge };
@@ -8118,7 +11135,7 @@ async function handleSend(flags, ctx) {
         event.identity_scope = "device";
       }
     } else {
-      const identity = identityFields({ stateRoot: ctx.stateRoot });
+      const identity = identityFields({ stateRoot: ctx.stateRoot, ...ctx.noEphemeralIdentity ? { allowEphemeral: false } : {} });
       if (identity.identity_pending)
         return { status: "retryable", error: "identity_unavailable" };
       Object.assign(event, identity);
@@ -8142,14 +11159,22 @@ async function handleSend(flags, ctx) {
 }
 async function runCli(argv = process.argv.slice(2), opts = {}) {
   const { command, flags } = parseArgs(argv);
-  const foregroundBudget = command === "invoke" || command === "host-stop" ? FOREGROUND_TOTAL_BUDGET_MS : null;
+  const foregroundBudget = command === "invoke" || command === "host-stop" || command === "foreground-notice" || command === "stage-prompt" && flags["foreground-send"] === true ? FOREGROUND_TOTAL_BUDGET_MS : null;
   const deadlineMono = opts.deadlineMono ?? (foregroundBudget === null ? void 0 : import_node_perf_hooks9.performance.now() + foregroundBudget);
+  const runtimeRoot = resolveRuntimeStateRoot({
+    flags,
+    opts,
+    cwd: opts.cwd ?? process.cwd(),
+    env: opts.env ?? process.env
+  });
   const ctx = {
     stdin: opts.stdin ?? process.stdin,
     cwd: opts.cwd ?? process.cwd(),
     env: opts.env ?? process.env,
     now: opts.now ?? Date.now,
-    stateRoot: opts.stateRoot || flags["state-root"] || resolveStateRoot(opts.env ?? process.env),
+    stateRoot: runtimeRoot.stateRoot || resolveStateRoot(opts.env ?? process.env),
+    stateRootBinding: runtimeRoot,
+    noEphemeralIdentity: runtimeRoot.bound === true && isCodexInvocation(flags),
     flushOutbox: opts.flushOutbox || (async (root, flushOpts = {}) => {
       const sender = await Promise.resolve().then(() => (init_sender(), sender_exports));
       return sender.flushOutbox(root, { env: opts.env ?? process.env, ...flushOpts });
@@ -8158,10 +11183,22 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
     resolveSdkAppId: opts.resolveSdkAppId || resolveSdkAppId,
     flushOptions: opts.flushOptions || {},
     deadlineMono,
-    skipInstallRecovery: opts.skipInstallRecovery === true,
+    // The two-phase Python foreground shim sends the current Prompt with an
+    // explicit event-id.  It opts out of install recovery for that call so a
+    // slow historical install retry cannot consume the current Prompt's
+    // shared deadline.  Ordinary owner invokes keep the default recovery.
+    skipInstallRecovery: opts.skipInstallRecovery === true || flags["skip-install-recovery"] === true || flags["skip-install-recovery"] === "true",
     runtimeVersion: opts.runtimeVersion || RUNTIME_VERSION,
-    writeControlTurn: opts.writeControlTurn
+    writeControlTurn: opts.writeControlTurn,
+    updateNoticeStatus: opts.updateNoticeStatus
   };
+  if (runtimeRoot.status !== "valid") {
+    return command === "hook" ? {} : {
+      status: "retryable",
+      error: "state_root_unavailable",
+      reason: runtimeRoot.error || runtimeRoot.status
+    };
+  }
   try {
     switch (command) {
       case "hook":
@@ -8176,6 +11213,8 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
         return await handleInvoke(flags, ctx);
       case "host-stop":
         return await handleHostStop(flags, ctx);
+      case "foreground-notice":
+        return await handleForegroundNotice(flags, ctx);
       case "notice-status":
         return await handleNoticeStatus(flags, ctx);
       case "install":
