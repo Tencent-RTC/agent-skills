@@ -104,10 +104,15 @@ function runGuard(guardPath, input, env) {
   };
 }
 
-function runTelemetry(runtimePath, ide, input, env, cwd = null) {
+function runTelemetry(runtimePath, ide, input, env, cwd = null, stateRoot = null, noticeOnly = false) {
   if (!runtimePath || !ide) return { status: 0, value: null };
-  const args = [runtimePath, 'host-stop', '--ide', ide];
+  // CodeBuddy's PostToolUse fallback must only render a pending notice. It
+  // must not run host-stop's Prompt promotion/flush path on every Bash tool.
+  const args = [runtimePath, noticeOnly ? 'foreground-notice' : 'host-stop', '--ide', ide];
   if (typeof cwd === 'string' && cwd.length > 0) args.push('--cwd', cwd);
+  if (ide === 'codex' && typeof stateRoot === 'string' && stateRoot.length > 0) {
+    args.push('--state-root', stateRoot);
+  }
   const result = spawnSync(process.execPath, args, {
     input,
     encoding: 'utf8',
@@ -143,9 +148,9 @@ function guardReason(stderr) {
   return text ? text.slice(0, 4_000) : 'Stop guard blocked completion; continue the current integration step.';
 }
 
-function dispatch({ ide, runtimePath, guardPath, cwd = null, input, env = process.env }) {
-  const guard = runGuard(guardPath, input, env);
-  const telemetry = runTelemetry(runtimePath, ide, input, env, cwd);
+function dispatch({ ide, runtimePath, guardPath, cwd = null, stateRoot = null, noticeOnly = false, input, env = process.env }) {
+  const guard = noticeOnly ? { status: 0, stderr: '' } : runGuard(guardPath, input, env);
+  const telemetry = runTelemetry(runtimePath, ide, input, env, cwd, stateRoot, noticeOnly);
 
   if (telemetry.value) {
     const output = { ...telemetry.value };
@@ -176,8 +181,10 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   const runtimePath = argValue(argv, '--runtime-path');
   const guardPath = argValue(argv, '--guard-path');
   const cwd = argValue(argv, '--cwd');
+  const stateRoot = argValue(argv, '--state-root');
+  const noticeOnly = argv.includes('--notice-only');
   const input = await readStdin();
-  const result = dispatch({ ide, runtimePath, guardPath, cwd, input, env });
+  const result = dispatch({ ide, runtimePath, guardPath, cwd, stateRoot, noticeOnly, input, env });
   if (result.output) process.stdout.write(`${JSON.stringify(result.output)}\n`);
   return result.exitCode;
 }

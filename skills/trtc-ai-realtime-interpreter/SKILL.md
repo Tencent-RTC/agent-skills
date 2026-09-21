@@ -182,6 +182,32 @@ test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MIS
 
 ### 5.1 钥匙 1 · TRTC 应用凭证（语音通道）
 
+**短路**：若 session 已有 root 层写入的 `sdkappid`（非 null 非 0，由 root `flows/collect-sdkappid.md` 收集）—— 跳过 SDKAppID 询问。
+
+**区域自动判断**：不要求用户手动填写 `TRTC_REGION`。写入配置时，SDKAppID 以 `14` 或 `16` 开头使用 `cn`，其他合法 SDKAppID 使用 `intl`。如果已有明确的 `TRTC_REGION` 配置，则保留已有值。
+
+**中文用户** —— VERBATIM 模板（不改写，`<session.sdkappid>` 替换为实际值）：
+
+```
+> 已收到你的 SDKAppID：<session.sdkappid>。现在只需要 SDKSecretKey。
+>
+> 把值贴到下方发给我，我会写入 .env 并验证：
+> TRTC_SDK_SECRET_KEY=
+```
+
+**English users** — VERBATIM template (do not rewrite; substitute `<session.sdkappid>` with the actual value):
+
+```
+> Got your SDKAppID: <session.sdkappid>. I just need the SDKSecretKey now
+>
+> Paste it here so I can write .env and verify:
+> TRTC_SDK_SECRET_KEY=
+```
+
+收到 SDKSecretKey 后：校验格式，按上述规则确定 `TRTC_REGION`，`write_to_file` → `.env`（写 `TRTC_SDK_APP_ID=<session.sdkappid>` + `TRTC_SDK_SECRET_KEY=<user input>` + 自动确定的 `TRTC_REGION`），跑 `verify-credentials.py --type trtc`，继续钥匙 2。
+
+未短路时走以下完整流程：
+
 **AI 话术**：
 > 先配第 1 把——TRTC 应用凭证，它是让翻译 Agent"开口说话"的语音通道。
 >
@@ -190,22 +216,21 @@ test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MIS
 >    - https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw
 > 2. 创建完 RTC Engine 应用后，还需要在控制台左侧的 **"集成"** 标签页下启用 **Conference** 应用
 >    （这个应用和 RTC Engine 一样都有免费试用，我们的 demo 集成了 Conference 能力，必须启用才能正常使用）
-> 3. 进去后找两个信息：**SDKAppID**（一串数字）和 **SDKSecretKey**（在"服务端集成"里的长字符串）
-> 4. ⚠️ 注意：页面上可能还有个 STSecretKey，那是客户端用的，我们不要——要**服务端的 SDKSecretKey**
+> 3. 进去后找到 **SDKAppID**，并准备好对应的 SDKSecretKey
 >
-> 把值填进下面代码块（替换占位文字），整段发给我：
+> 把下面两项一起发给我：
 > ```
 > TRTC_SDK_APP_ID=yourSDKAppID          # 一个数字
-> TRTC_SDK_SECRET_KEY=yourSDKSecretKey  # 服务端 SDKSecretKey，不是客户端 STSecretKey
-> TRTC_REGION=intl
+> TRTC_SDK_SECRET_KEY=yourSDKSecretKey
 > ```
 
 收到后：
-1. 校验：SDKAppID 是整数；SDKSecretKey 64 位 `[0-9a-f]`（若检测到 128 位且前后各 64 位相同，自动截断为前 64 位并告知用户）
-2. `write_to_file("$SKILL_ROOT/capabilities/conversation-core/.env", ...)` 写入 `TRTC_SDK_APP_ID=` + `TRTC_SDK_SECRET_KEY=` + `TRTC_REGION=`
-3. 不回显完整密钥，只确认"收到，格式没问题"
-4. `execute_command("cd \"$SKILL_ROOT\" && python3 scripts/verify-credentials.py --type trtc")`
-5. 解析 JSON：`ok:true` → 说"这把没问题，下一把"进入钥匙 2；`ok:false` → 按 §5.5 错误码表回应
+1. 校验：SDKAppID 是整数；SDKSecretKey 格式正确
+2. 按 SDKAppID 自动确定 `TRTC_REGION`：`14`/`16` 开头使用 `cn`，其他合法 SDKAppID 使用 `intl`
+3. `write_to_file("$SKILL_ROOT/capabilities/conversation-core/.env", ...)` 写入 `TRTC_SDK_APP_ID=` + `TRTC_SDK_SECRET_KEY=` + 自动确定的 `TRTC_REGION`
+4. 不回显完整密钥，只确认"收到，格式没问题"
+5. `execute_command("cd \"$SKILL_ROOT\" && python3 scripts/verify-credentials.py --type trtc")`
+6. 解析 JSON：`ok:true` → 说"这把没问题，下一把"进入钥匙 2；`ok:false` → 按 §5.5 错误码表回应
 
 ### 5.2 钥匙 2 · 腾讯云 API 密钥（"前台"）
 

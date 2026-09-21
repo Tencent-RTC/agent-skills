@@ -264,6 +264,32 @@ LLM_MODEL_NAME=yourModelName (e.g., gpt-4o / deepseek-chat / claude-3-opus)
 
 #### Key 1: TRTC Application Credentials (SDKAppID / SDKSecretKey)
 
+**Short-circuit**: If session already has root-collected `sdkappid` (non-zero int, from `trtc/flows/collect-sdkappid.md`), skip asking for SDKAppID.
+
+**English users** — VERBATIM template (do not rewrite; substitute `<session.sdkappid>` with the actual value):
+
+```
+> Got your SDKAppID: <session.sdkappid>. I just need the SDKSecretKey now
+> (server-side, 64-char hex — TRTC console → Application → Server-side Integration; **not** STSecretKey).
+>
+> Paste it here so I can write .env and verify:
+> TRTC_SDK_SECRET_KEY=
+```
+
+**中文用户** —— VERBATIM 模板（不改写，`<session.sdkappid>` 替换为实际值）：
+
+```
+> 已收到你的 SDKAppID：<session.sdkappid>。现在只需要 SDKSecretKey
+> （服务端 64 位 hex，控制台 → 应用 → 服务端集成；**不是** STSecretKey）。
+>
+> 把值贴到下方发给我，我会写入 .env 并验证：
+> TRTC_SDK_SECRET_KEY=
+```
+
+After the user replies: validate SDKSecretKey 64-char hex, `write_to_file` → `.env` (with `TRTC_SDK_APP_ID=<session.sdkappid>` + `TRTC_SDK_SECRET_KEY=<user input>`), run `verify-credentials.py --type trtc`, then proceed to Key 2.
+
+If no root-collected `sdkappid` (fallback), use the full flow below:
+
 **The AI should say**:
 > Key 1 — TRTC Application Credentials. This is the voice channel for your agent.
 > 1. Go to https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw and log in / register

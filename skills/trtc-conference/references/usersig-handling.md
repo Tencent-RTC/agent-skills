@@ -31,6 +31,10 @@ skills/trtc-conference/references/local-usersig/
 
 ### A2-Q2 (local-dev)
 
+**短路**：若 session 已有 root 层写入的 `sdkappid`（非 null 非 0，由 root `flows/collect-sdkappid.md` 收集）—— SDKAppID 已收到，不再问；直接把 session 的 `sdkappid` 写入 `credentials.sdkappid` + `src/config/basic-info-config.ts` 的 `SDKAPPID`。**只需 Ask SecretKey**（写入 `basic-info-config.ts` 的 `SDKSECRETKEY`，**永不**写入 `.trtc-session.yaml`）。
+
+未短路（session 无 sdkappid，作为 fallback）时走以下完整流程：
+
 Ask **SDKAppID** + **SecretKey** (控制台 → 应用管理 → 应用信息).
 
 - Write `SDKAPPID` to `credentials.sdkappid` in session (reporting).
@@ -60,6 +64,10 @@ await login(getBasicInfo(userId));
 Original flow — **retained**. User generates UserSig in TRTC console and pastes it.
 
 ### A2-Q2 (console)
+
+**短路**：若 session 已有 root 层写入的 `sdkappid`（由 root `flows/collect-sdkappid.md` 收集）—— 直接采用，无需再问；生成代码时将 `SDK_APP_ID` 常量填入 session 的 sdkappid。**登录页仍需 UserSig 输入**（UserSig 与 SDKAppID 是两个独立凭证，UserSig 从控制台粘贴，与本节短路无关）。
+
+未短路（session 无 sdkappid，作为 fallback）时：
 
 Ask **SDKAppID** only (same as before). Do not collect SecretKey.
 

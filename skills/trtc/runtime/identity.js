@@ -634,6 +634,11 @@ export function getOrCreate(opts = {}) {
     return finalize(tryWriteAt(primary, 'device', opts, platform));
   } catch (err) {
     if (!isRecoverableRootError(err)) throw err;
+    if (opts.allowEphemeral === false) {
+      const unavailable = new Error('identity: bound state root is unavailable');
+      unavailable.code = 'STATE_ROOT_UNAVAILABLE';
+      throw unavailable;
+    }
   }
   const ephemeral = opts.ephemeralRoot || resolveEphemeralRoot(platform);
   return finalize(tryWriteAt(ephemeral, 'ephemeral', opts, platform));

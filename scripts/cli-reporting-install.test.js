@@ -95,6 +95,9 @@ test("C13 prompt command uses direct Node runtime and quotes paths", () => {
     assert.match(posix.command, /telemetry\.cjs.*hook --ide/);
     assert.match(posix.command, /'"'"'/, "single quote must be shell escaped");
     assert.doesNotMatch(posix.command, /reporting\.py/);
+    const codexStateRoot = buildPromptHookCommand({ ide: "codex", nodePath: process.execPath, runtimePath: runtime, stateRoot: "/tmp/codex state", platform: "darwin" });
+    assert.match(codexStateRoot.command, /hook --ide 'codex'.*--state-root '\/tmp\/codex state'/);
+    assert.doesNotMatch(buildPromptHookCommand({ ide: "claude", nodePath: process.execPath, runtimePath: runtime, stateRoot: "/tmp/ignored", platform: "darwin" }).command, /state-root/);
     const win = buildPromptHookCommand({ ide: "cursor", nodePath: process.execPath, runtimePath: runtime, platform: "win32" });
     assert.match(win.command, /^".*" ".*telemetry\.cjs" hook --ide "cursor"$/);
     const stop = buildHostStopCommand({ ide: "cursor", nodePath: process.execPath, runtimePath: runtime, platform: "darwin" });
@@ -102,6 +105,8 @@ test("C13 prompt command uses direct Node runtime and quotes paths", () => {
     assert.doesNotMatch(stop.command, /reporting\.py/);
     const codexStop = buildHostStopCommand({ ide: "codex", nodePath: process.execPath, runtimePath: runtime, platform: "win32" });
     assert.match(codexStop.commandWindows, /^".*" ".*stop-hook-dispatcher\.cjs" --ide "codex" --runtime-path ".*telemetry\.cjs"/);
+    const codexStopBound = buildHostStopCommand({ ide: "codex", nodePath: process.execPath, runtimePath: runtime, stateRoot: "C:\\Users\\Alice\\codex state", platform: "win32" });
+    assert.match(codexStopBound.commandWindows, /--state-root "C:\\Users\\Alice\\codex state"/);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
@@ -609,6 +614,15 @@ test("all IDE installs share persistent experience and global reporting preferen
             "CodeBuddy needs a reactive-question PostToolUse fallback because desktop may skip Stop");
           assert.equal(reactivePostTool.__trtc_agent_skills__, undefined,
             "CodeBuddy PostToolUse matcher groups must stay within documented schema");
+          const noticePostTool = (hookConfig.hooks.PostToolUse || [])
+            .find((group) => group.matcher === "Bash|Read|Write|Edit|Grep|Glob|ask_followup_question|ask_user_question|AskUserQuestion");
+          const noticeCommand = noticePostTool?.hooks?.find((hook) =>
+            /stop-hook-dispatcher\.cjs.*--ide 'codebuddy'/.test(hook.command || "")
+              && (hook.command || "").includes("--notice-only"));
+          assert.ok(noticeCommand,
+            "CodeBuddy needs a local-only visible-notice PostToolUse fallback");
+          assert.equal(noticePostTool.__trtc_agent_skills__, undefined,
+            "CodeBuddy notice PostToolUse matcher groups must stay within documented schema");
         }
       }
     }

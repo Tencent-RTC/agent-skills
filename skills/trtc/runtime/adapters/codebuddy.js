@@ -7,6 +7,8 @@
 // the runtime must receive the actual user answer as `prompt`.
 // Output: normalized hook shape or null (fail-open)
 
+import { hostMetadata } from './metadata.js';
+
 function asObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value;
@@ -47,6 +49,7 @@ export function parse(input) {
     : questionAnswerPrompt(input, extra);
   if (!prompt) return null;
   return {
+    ...hostMetadata(input),
     prompt,
     session_id: typeof input.session_id === 'string' && input.session_id
       ? input.session_id

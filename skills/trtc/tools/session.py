@@ -264,11 +264,17 @@ PROJECT_ROOT_ENV_KEYS = (
     "CLAUDE_PROJECT_DIR",
     "CODEBUDDY_PROJECT_DIR",
     "CURSOR_PROJECT_DIR",
-    "CODEX_PROJECT_DIR",
 )
 
 # 字段约束
-VALID_PRODUCTS = {"conference", "chat", "call", "live", "rtc-engine", None}
+# Keep this aligned with the public dispatcher/session flows.  The three
+# Conversational-AI and TIMPush domains are real product values (not CLS
+# transport categories), so rejecting them here would prevent a valid session
+# update from being persisted even though routing and telemetry support them.
+VALID_PRODUCTS = {
+    "conference", "chat", "call", "live", "rtc-engine",
+    "ai-service", "realtime-interpreter", "oral-coach", "tim-push", None,
+}
 VALID_INTENTS = {
     "integrate-scenario",
     "integrate-feature",
@@ -285,6 +291,7 @@ VALID_PLATFORMS = {"web", "android", "ios", "flutter", "electron", "unity", None
 
 VALID_AUTO_ADVANCE = {"pause_each", "pause_on_failure", "pause_at_end", None}
 VALID_INTEGRATION_PATHS = {"topic", "medical-quickstart", "official-roomkit", None}
+VALID_SDKAPPID_STATES = {"awaiting-sdkappid", "pending-console", "collected", None}
 
 PROTECTED_PATCH_FIELDS = {
     "schema_version",
@@ -638,6 +645,16 @@ def _validate(data: dict) -> None:
     coverage_decided = data.get("coverage_decided")
     if coverage_decided not in {True, False, None}:
         raise SchemaError("coverage_decided 必须是 bool，或不设置（legacy session）")
+
+    sdkappid = data.get("sdkappid")
+    if sdkappid is not None:
+        # bool 是 int 的子类，需显式排除
+        if isinstance(sdkappid, bool) or not isinstance(sdkappid, int) or sdkappid <= 0:
+            raise SchemaError("sdkappid 必须是正整数，或不设置")
+    if data.get("sdkappid_state") not in VALID_SDKAPPID_STATES:
+        raise SchemaError(
+            f"sdkappid_state 必须是 {sorted(s for s in VALID_SDKAPPID_STATES if s)} 之一，或不设置"
+        )
 
     session_context = data.get("session_context")
     if session_context is not None and not isinstance(session_context, dict):

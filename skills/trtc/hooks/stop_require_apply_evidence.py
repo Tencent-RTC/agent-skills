@@ -41,9 +41,11 @@ def _resolve_session_path() -> Path:
     explicit = os.environ.get("TRTC_SESSION_PATH")
     if explicit:
         return Path(explicit)
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project_dir:
-        return Path(project_dir) / ".trtc-session.yaml"
+    for _key in ("TRTC_PROJECT_ROOT", "CLAUDE_PROJECT_DIR",
+                 "CODEBUDDY_PROJECT_DIR", "CURSOR_PROJECT_DIR"):
+        project_dir = os.environ.get(_key)
+        if project_dir:
+            return Path(project_dir) / ".trtc-session.yaml"
     return Path.cwd() / ".trtc-session.yaml"
 
 

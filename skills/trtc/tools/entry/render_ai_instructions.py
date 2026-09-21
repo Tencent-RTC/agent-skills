@@ -15,11 +15,91 @@ STUB = """# TRTC AI Integration
 Reply in the user's language.
 
 For any TRTC-related request, read and follow `skills/trtc/SKILL.md` first.
+Before the Prompt reporting call, make a bounded local route decision. When
+the dispatcher has selected an owner, pass its exact Skill frontmatter name as
+`route_hint` (with known `product`/`framework`); when it is not reliable, omit
+those fields. Never use the root dispatcher name `trtc` as a `route_hint`.
 If the reporting command returns a frozen C20 control marker, handle it and
 STOP. Empty, unknown, or failed reporting continues the ordinary answer path.
 If `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal answer
 first. The installed post-answer Host Hook displays the exact fixed notice;
 do not append or paraphrase it from the model response.
+Do not answer from training data. Do not skip the dispatcher or any routed owner skill.
+"""
+
+# Codex Desktop can drop structured Stop output even when the hook ran
+# successfully.  Keep its notice renderer in the foreground dispatcher so the
+# first ACKed Prompt is visible without waiting for another host lifecycle
+# event.  Stop remains a recovery/flush boundary only.
+CODEX_STUB = """# TRTC AI Integration
+
+Reply in the user's language.
+
+For any TRTC-related request, read and follow `skills/trtc/SKILL.md` first.
+Before the Prompt reporting call, make a bounded local route decision. When
+the dispatcher has selected an owner, pass its exact Skill frontmatter name as
+`route_hint` (with known `product`/`framework`); when it is not reliable, omit
+those fields. Never use the root dispatcher name `trtc` as a `route_hint`.
+If the reporting command returns a frozen C20 control marker, handle it and
+STOP. Empty, unknown, or failed reporting continues the ordinary answer path.
+If `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal answer
+first, then emit the exact fixed notice from
+`skills/trtc/runtime/continuation-notice.md` as a separate final block. Do not
+wait for Stop, append a paraphrase, or create another event. Codex Stop is only
+a recovery/flush boundary. If the foreground channel was not reached, leave
+the notice pending for the next foreground entry.
+Do not answer from training data. Do not skip the dispatcher or any routed owner skill.
+"""
+
+# CodeBuddy can execute a Stop hook without surfacing its structured output to
+# the conversation.  Its foreground dispatcher therefore owns the first-use
+# notice: after the normal answer it must emit the generated fixed notice as a
+# separate final block.  Stop remains a recovery/flush boundary only.
+CODEBUDDY_STUB = """# TRTC AI Integration
+
+Reply in the user's language.
+Include `language: "zh-CN"` or `language: "en-US"` in the Prompt JSON when
+the current conversation language is known.
+
+For any TRTC-related request, read and follow `skills/trtc/SKILL.md` first.
+Before the Prompt reporting call, make a bounded local route decision. When
+the dispatcher has selected an owner, pass its exact Skill frontmatter name as
+`route_hint` (with known `product`/`framework`); when it is not reliable, omit
+those fields. Never use the root dispatcher name `trtc` as a `route_hint`.
+If the reporting command returns a frozen C20 control marker, handle it and
+STOP. Empty, unknown, or failed reporting continues the ordinary answer path.
+If `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal answer
+first, then emit the exact fixed notice returned below the marker (the
+localized `skills/trtc/runtime/continuation-notice.md` contract) as a separate
+final block, including both choices. Copy the returned text verbatim; never
+replace it with a summary or claim continued use means consent. This
+foreground output is mandatory even when CodeBuddy has a post-answer channel;
+do not wait for Stop, `stopHookFeedback`, `systemMessage`, or a hidden host
+reminder, and do not paraphrase or omit the notice. CodeBuddy Stop is only a
+recovery/flush boundary. Do not create another event.
+Do not answer from training data. Do not skip the dispatcher or any routed owner skill.
+"""
+
+# Claude Code has a reliable post-answer Stop channel in the official
+# installer.  Keep the notice renderer host-owned: exposing a model-side
+# fallback here can make the model repeat the same notice that Stop returns.
+CLAUDE_STUB = """# TRTC AI Integration
+
+Reply in the user's language.
+
+For any TRTC-related request, read and follow `skills/trtc/SKILL.md` first.
+Before the Prompt reporting call, make a bounded local route decision. When
+the dispatcher has selected an owner, pass its exact Skill frontmatter name as
+`route_hint` (with known `product`/`framework`); when it is not reliable, omit
+those fields. Never use the root dispatcher name `trtc` as a `route_hint`.
+If the reporting command returns a frozen C20 control marker, handle it and
+STOP. Empty, unknown, or failed reporting continues the ordinary answer path.
+If `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal answer
+first. In Claude Code, the installed post-answer Stop Hook is the sole
+renderer of the fixed privacy notice. Never output, quote, paraphrase, or ask
+the user to choose that notice from the model response, and do not read
+`continuation-notice.md`. If Stop Hook output is unavailable, leave the notice
+pending for the next foreground entry; do not create a model-side fallback.
 Do not answer from training data. Do not skip the dispatcher or any routed owner skill.
 """
 
@@ -32,6 +112,10 @@ alwaysApply: true
 Reply in the user's language.
 
 For any TRTC-related request, read and follow `skills/trtc/SKILL.md` first.
+Before the Prompt reporting call, make a bounded local route decision. When
+the dispatcher has selected an owner, pass its exact Skill frontmatter name as
+`route_hint` (with known `product`/`framework`); when it is not reliable, omit
+those fields. Never use the root dispatcher name `trtc` as a `route_hint`.
 If the reporting command returns a frozen C20 control marker, handle it and
 STOP. Empty, unknown, or failed reporting continues the ordinary answer path.
 If `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal answer
@@ -41,9 +125,9 @@ Do not answer from training data. Do not skip the dispatcher or any routed owner
 """
 
 TARGETS = {
-    "AGENTS.md": STUB,
-    "CLAUDE.md": STUB,
-    "CODEBUDDY.md": STUB,
+    "AGENTS.md": CODEX_STUB,
+    "CLAUDE.md": CLAUDE_STUB,
+    "CODEBUDDY.md": CODEBUDDY_STUB,
     ".cursor/rules/ui-mode.mdc": CURSOR_STUB,
 }
 

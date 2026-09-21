@@ -1,57 +1,74 @@
-# Android 厂商通道注册失败 / 收不到排查流程
+# Android 厂商通道收不到排查流程
 
-## 入口现象
+## 与 MCP 的关系
 
-用户反馈 Android 厂商通道不通、`registerPush failed`、控制台测试收不到、厂商离线
-通知不达，或某个厂商设备异常。
+本文件是 **分支知识**，不拥有独立主链。
 
-这类问题必须先按厂商和阶段拆分：配置阶段、注册阶段、token 上报阶段、厂商送达阶段、
-终端展示阶段。
+- ROUTER `workflow_id`：`troubleshoot-android`
+- 主链 owner：`flows/android/offline-not-received.md`
+- 本文件挂载：主要挂 `stage-3-config-alignment`，发测相关补 `stage-6`
+- 执行仍走上述 MCP workflow（进入后先过 `stage-0-investigation-plan`）；本文件不能替代 engine，也不能跳过主链门控（stage-1 有效性、stage-3 配置等）。
+
+## 与通用收不到的关系
+
+厂商通道「已注册成功、在线通知正常，但离线收不到」多发生在厂商配置、
+App 杀死后、或厂商系统限制。
+
+- 广义「收不到」主链先走 `offline-not-received.md` / MCP `troubleshoot-android`；
+- 本流程聚焦**厂商专项细节**（华为 / 荣耀 / 小米 / OPPO / vivo / 魅族 / FCM）；
+- 已送达不展示 → `delivered-not-displayed.md`；通知无跳转 → `click-no-action.md`；
+- 推送服务 + 厂商证书有效性属主链第 1 步，参见 `../../cards/common/console-validity-gate.md`。
 
 ## 首轮证据
 
-- 受影响厂商：huawei / honor / xiaomi / oppo / vivo / meizu / fcm。
-- 测试设备品牌、型号、系统版本，必须与受影响厂商匹配。
-- `applicationId`。
-- 厂商控制台包名、AppID / AppKey / AppSecret。
-- 厂商配置文件：`agconnect-services.json`、`mcs-services.json`、`google-services.json`。
-- `timpush-configs.json`。
-- 签名 SHA-256（华为 / 荣耀必查）。
-- `registerPush` 成功 / 失败日志和错误码。
-- 控制台测试的 UserID / RegistrationID、推送类型和发送时间。
+**顺序硬约束**：先过 `../../cards/common/console-validity-gate.md`（对齐 MCP stage-1）与主链配置校验（MCP stage-3），再做厂商细节核对。
+
+1. 受影响厂商品牌 / 机型 / 系统版本。
+2. 该厂商是否已完成 SDK 配置与控制台证书添加。
+3. `registerPush` 是否成功，以及厂商 Token 是否回传成功。
+4. 后台 / 强杀 / 自启动 / 电量策略状态。
+5. 厂商限制：单日消息限额、通知类别、夜间静默、系统通知权限。
 
 ## 排查顺序
 
-1. 先确认测试设备能覆盖目标厂商通道；不要用华为机判断小米通道。
-2. 确认 `applicationId` 与厂商控制台包名一致。
-3. 核对厂商 AppID / AppKey / AppSecret 与腾讯云控制台证书配置。
-4. 核对 Gradle 依赖、厂商 Maven、插件和 manifest placeholders。
-5. 核对厂商 JSON 文件位置和内容。
-6. 对华为 / 荣耀计算当前包 SHA-256，并与厂商控制台一致。
-7. 收集 `registerPush` 日志，确认 token 是否上报。
-8. 如果厂商回执成功但终端未展示，转 `delivered-not-displayed.md`。
+1. **校验提醒**：控制台厂商通道证书已配置且在有效期内（`console-validity-gate.md`；MCP stage-1）。
+2. **校验提醒**（主链第 3 步）：包名与厂商控制台一致；华为 / 荣耀需 SHA-256 证书指纹一致；
+   `google-services.json` / `agconnect-services.json` 放对位置。
+3. **校验提醒**：厂商后台是否已通过应用审核、是否误传「未发布草稿」。
+4. **观测**：`registerPush` 成功日志中是否出现对应厂商通道成功回调。
+5. **校验提醒**：厂商限制规则（小米单日额度、vivo 夜间免打扰、OPPO 通知栏权限等）。
+6. **观测**：设备通知开关与通道开关；分应用通知权限。
+7. **观测**：杀进程后的离线消息：部分厂商通道对强制停止有限制。
 
 ## 分支处理
 
 | 分支 | 判断信号 | 处理动作 |
 |---|---|---|
-| 华为 / 荣耀 AGConnect 问题 | `800006`、`Huawei appId missing`、`certificate fingerprint empty` | 查 `../../cards/android/vendor-huawei.md` |
-| FCM / GMS 环境问题 | `800005`、`FCM unavailable` | 查 `../../cards/android/fcm-gms-domestic.md` |
-| 包名 / 签名不一致 | 厂商控制台与安装包不一致 | 修正控制台或重新打包 |
-| 厂商证书数量上限 | `cert limit exceeded` | 查 `../../cards/common/console-certificate-quota.md` |
-| token 已上报但收不到 | 厂商返回成功或有 messageId | 转送达后不展示流程 |
-| 控制台提示 ID 不存在 | 查不到设备记录 | 查 `../../cards/common/registration-binding.md` |
+| 控制台有效性 | 服务/厂商证未配置或失效 | `../../cards/common/console-validity-gate.md` |
+| 华为 | `6003` / AGConnect / SHA-256 | `../../cards/android/vendor-huawei.md` |
+| 荣耀 | 包名 / 签名 / 通道状态 | `../../cards/android/vendor-honor.md` |
+| FCM | 海外 / GMS / `FCM unavailable` | `../../cards/android/fcm-gms-domestic.md` |
+| 厂商限额 | 单日上限 / 夜间 | `../../cards/android/message-category-limit.md` |
+| 强杀不达 | 仅杀死后异常 | `../../cards/android/kill-process-offline.md` |
+| 已送达不展示 | 回执成功不弹 | `delivered-not-displayed.md` |
+| 注册侧错误码 | `800xxx` | `../../cards/android/error-codes.md` + `register-failed.md` |
 
 ## 验证信号
 
-- `registerPush success`。
-- `RegistrationID` 非空。
-- 控制台排查工具能查到目标设备。
-- 在线测试推送可达。
-- 强杀 App 后厂商离线推送可达。
+- 控制台厂商通道配置与包名 / 指纹一致。
+- `registerPush` 日志包含目标厂商成功信息。
+- 离线测试可达，或回执可解释厂商策略。
 
 ## 何时升级 / 转交
 
-- 腾讯云侧已拿到厂商成功回执，但设备仍不展示。
-- 厂商 messageId 明确返回异常且文档无公开解释。
-- 用户厂商控制台权益、消息分类或限流状态需要厂商侧确认。
+- 厂商 messageId 存在但系统侧吞掉且无法复现。
+- 需要厂商工单。
+- 灰度 / 限额策略需产品确认。
+
+## 常见错误
+
+- 未配厂商后台应用信息就调客户端。
+- 包名大小写、空格、测试包名与线上不一致。
+- 华为 / 荣耀忘记 SHA-256 指纹。
+- 忽视厂商单日消息量限制与静默时段。
+- 用模拟器验证厂商通道全链路。

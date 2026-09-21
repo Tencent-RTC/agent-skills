@@ -32,6 +32,13 @@ const LOCK_DIR = 'locks';
 const BINDING_DIR = 'bindings';
 const CONTEXT_DIR = 'contexts';
 const STAGE_DIR = 'stages';
+// A foreground host often omits its raw conversation/session id even though
+// it does provide a stable turn id.  Keep a project-local, privacy-safe
+// mapping for that exact turn so a Hook-created event remains addressable
+// after Pending/Outbox cleanup.  The raw turn id is used only as a hash key;
+// it is never persisted.
+const TURN_RECEIPT_DIR = 'turn-receipts';
+const TURN_RECEIPT_VERSION = 1;
 
 function digest(...parts) {
   const hash = createHash('sha256');
@@ -96,6 +103,51 @@ function writeJsonAtomic(path, value, opts = {}) {
   }
 }
 
+// Publish a JSON record without ever replacing an existing record.  Both the
+// Hook and foreground paths use this primitive for turn receipts, so a race
+// between them has one kernel-level winner.  The payload is written and (when
+// requested) synced to a private temporary inode before linkSync publishes it
+// under the final name; a crash therefore cannot leave a half-written final
+// receipt.  Filesystems that do not support hard links are reported to the
+// caller, which falls back to the shared coordination reservation below.
+function writeJsonNoClobberAtomic(path, value, opts = {}) {
+  const dir = dirname(path);
+  ensurePrivateDir(dir);
+  const tmp = join(dir, `.${randomBytes(8).toString('hex')}.receipt.tmp`);
+  let fd;
+  try {
+    fd = openSync(tmp, 'wx', process.platform === 'win32' ? undefined : 0o600);
+    writeAll(fd, `${JSON.stringify(value)}\n`);
+    if (opts.durable !== false) fsyncSync(fd);
+    closeSync(fd); fd = undefined;
+    try {
+      linkSync(tmp, path);
+      if (opts.durable !== false) {
+        try {
+          const dirFd = openSync(dir, 'r');
+          try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+        } catch (err) {
+          // Directory fsync is not available on all supported hosts/filesystems
+          // (notably Windows and some network/FAT mounts). The file has already
+          // been fully written and published at this point; these platform
+          // capability errors must not turn a successful claim into a retry.
+          if (!['EINVAL', 'ENOSYS', 'EPERM', 'EACCES', 'ENOENT', 'EISDIR', 'EBADF', 'ENOTDIR', 'ENOTSUP', 'EOPNOTSUPP'].includes(err?.code)) throw err;
+        }
+      }
+      return { status: 'created' };
+    } catch (err) {
+      if (err?.code === 'EEXIST') return { status: 'exists' };
+      if (['ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV'].includes(err?.code)) {
+        return { status: 'unsupported' };
+      }
+      throw err;
+    }
+  } finally {
+    if (fd !== undefined) try { closeSync(fd); } catch { /* ignore */ }
+    try { unlinkSync(tmp); } catch { /* ignore */ }
+  }
+}
+
 function bindingPath(projectRoot, sessionid) {
   return join(coordinationRoot(projectRoot), BINDING_DIR, `${sessionid}.json`);
 }
@@ -106,6 +158,17 @@ function contextPath(projectRoot, sessionid) {
 
 function stagePath(projectRoot, sessionid, stageKey) {
   return join(coordinationRoot(projectRoot), STAGE_DIR, `${digest(sessionid, stageKey)}.json`);
+}
+
+function turnReceiptKey(ide, turnId) {
+  if (typeof ide !== 'string' || ide.length === 0
+    || typeof turnId !== 'string' || turnId.length === 0 || turnId.length > 1024) return null;
+  return digest('turn-receipt', ide, turnId);
+}
+
+function turnReceiptPath(projectRoot, ide, turnId) {
+  const key = turnReceiptKey(ide, turnId);
+  return key ? join(coordinationRoot(projectRoot), TURN_RECEIPT_DIR, `${key}.json`) : null;
 }
 
 function listJson(dir) {
@@ -230,13 +293,17 @@ export function markContextConsumed(projectRoot, sessionid, eventId, expectedCre
 }
 
 /** Read/write is serialized by the caller's stage reservation. */
-export function readStageReceipt(projectRoot, sessionid, stageKey) {
-  const value = readJson(stagePath(projectRoot, sessionid, stageKey));
-  return value && value.sessionid === sessionid ? value : null;
+export function readStageReceipt(projectRoot, sessionid, stageKey, opts = {}) {
+  const path = stagePath(projectRoot, sessionid, stageKey);
+  const value = readJson(path);
+  if (value && value.sessionid === sessionid) return value;
+  return opts.reportInvalid && existsSync(path) ? { status: 'corrupt' } : null;
 }
 
 export function writeStageReceipt(projectRoot, sessionid, stageKey, value, opts = {}) {
   if (!safeSessionId(sessionid)) throw new TypeError('invalid anonymous sessionid');
+  const previous = readStageReceipt(projectRoot, sessionid, stageKey);
+  const attribution = previous?.event_id === value.event_id ? { ...previous, ...value } : value;
   writeJsonAtomic(stagePath(projectRoot, sessionid, stageKey), {
     sessionid,
     event_id: value.event_id,
@@ -245,7 +312,102 @@ export function writeStageReceipt(projectRoot, sessionid, stageKey, value, opts 
       ? [...new Set(value.claimed_sources.filter((v) => typeof v === 'string'))].slice(0, 8)
       : [],
     time: value.time,
+    ...Object.fromEntries(['route_hint', 'product', 'framework']
+      .filter((field) => typeof attribution[field] === 'string' && attribution[field].length > 0)
+      .map((field) => [field, attribution[field]])),
   }, { durable: opts.durable !== false });
+}
+
+/**
+ * Read the stable project+IDE+turn mapping used when a host omits raw
+ * session identity.  Only an anonymized turn hash is persisted.
+ */
+export function readTurnReceipt(projectRoot, ide, turnId) {
+  const path = turnReceiptPath(projectRoot, ide, turnId);
+  if (!path) return null;
+  const value = readJson(path);
+  if (!value) return existsSync(path) ? { status: 'corrupt' } : null;
+  if (!value || value.version !== TURN_RECEIPT_VERSION
+    || value.turn_key !== turnReceiptKey(ide, turnId)
+    || value.ide !== ide
+    || !safeSessionId(value.sessionid)
+    || typeof value.event_id !== 'string'
+    || !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(value.event_id)
+    || !Number.isFinite(value.time)) return { status: 'corrupt' };
+  return value;
+}
+
+/**
+ * Persist a first-writer-wins mapping from an exact host turn to the event
+ * staged for it.  A conflicting mapping is never overwritten: callers must
+ * retry with the existing identity rather than minting a second event.
+ */
+export function writeTurnReceipt(projectRoot, ide, turnId, value, opts = {}) {
+  const key = turnReceiptKey(ide, turnId);
+  const path = turnReceiptPath(projectRoot, ide, turnId);
+  if (!key || !path || !safeSessionId(value?.sessionid)
+    || typeof value?.event_id !== 'string'
+    || !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(value.event_id)
+    || !Number.isFinite(value.time)) return { status: 'invalid' };
+
+  const next = {
+    version: TURN_RECEIPT_VERSION,
+    turn_key: key,
+    ide,
+    sessionid: value.sessionid,
+    event_id: value.event_id,
+    time: value.time,
+  };
+
+  // Hook and foreground writers share this exact no-clobber publication
+  // protocol.  The temporary inode is complete before linkSync publishes it,
+  // so a process crash cannot expose a half-written final receipt; linkSync's
+  // EEXIST result gives both paths one kernel-level first writer.
+  let publication;
+  try {
+    publication = writeJsonNoClobberAtomic(path, next, { durable: opts.durable !== false });
+  } catch (err) {
+    return { status: 'error', reason: err?.code || 'turn_receipt_write_failed' };
+  }
+  if (publication.status === 'created') return { status: 'created', value: next };
+
+  const existing = readTurnReceipt(projectRoot, ide, turnId);
+  if (existing?.status === 'corrupt') return { status: 'conflict', reason: 'turn_receipt_corrupt' };
+  if (existing) {
+    return existing.sessionid === value.sessionid && existing.event_id === value.event_id
+      ? { status: 'already_present', value: existing }
+      : { status: 'conflict', value: existing };
+  }
+
+  // Hard links can be unavailable on FAT/exFAT/SMB or restricted mounts. In
+  // that case both callers fall back to the same coordination reservation;
+  // the foreground path can wait briefly while a Hook simply returns retry so
+  // the next foreground entry can repair the claim. The fallback still checks
+  // the final record under the shared lock before publishing and never
+  // replaces an existing mapping.
+  if (publication.status === 'unsupported') {
+    const lock = acquireCoordinationReservation(projectRoot, 'turn-receipt', key, opts);
+    if (!lock) return { status: 'retry', reason: 'turn_receipt_busy' };
+    try {
+      const lockedExisting = readTurnReceipt(projectRoot, ide, turnId);
+      if (lockedExisting?.status === 'corrupt') return { status: 'conflict', reason: 'turn_receipt_corrupt' };
+      if (lockedExisting) {
+        return lockedExisting.sessionid === value.sessionid && lockedExisting.event_id === value.event_id
+          ? { status: 'already_present', value: lockedExisting }
+          : { status: 'conflict', value: lockedExisting };
+      }
+      try {
+        writeJsonAtomic(path, next, { durable: opts.durable !== false });
+        return { status: 'created', value: next };
+      } catch (err) {
+        return { status: 'error', reason: err?.code || 'turn_receipt_write_failed' };
+      }
+    } finally { releaseCoordinationReservation(lock); }
+  }
+
+  // A concurrent writer may have published between linkSync's EEXIST and the
+  // read above. Treat that as a transient retry rather than minting an ID.
+  return { status: 'retry', reason: 'turn_receipt_unavailable' };
 }
 
 function sleepSync(ms) {

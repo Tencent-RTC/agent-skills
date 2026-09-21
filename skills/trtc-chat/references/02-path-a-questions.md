@@ -26,13 +26,17 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 ## Q.1 — 凭证收集
 
+**短路检测**：若 session 已有 root 层写入的 `sdkappid`（非 null 非 0，由 root `flows/collect-sdkappid.md` 收集）——**跳过下方完整 Q.1**，直接进入 **§Q.1' 只收 SecretKey** 分支。
+
+> **注**：以下完整 Q.1 是本 skill 的 fallback，仅在 root §B.2 未运行时（如用户直接进入 trtc-chat 或老 session 迁移）触发。链接必须与 root `flows/collect-sdkappid.md` 保持一致（改动请同步 root）。
+
 ❌ 禁止在 SDKAppID / SecretKey 后自行添加任何格式描述（如"10 位数字""64 位字符串"等）——格式因账号类型而异，写错会误导用户。
 
 ❗ **VERBATIM OUTPUT — 以下代码块内容必须原样输出，不得做任何修改（包括但不限于：换措辞、加粗、补充说明、添加括号注释）。**
 
 ```
 > 需要你的腾讯云 IM 凭证（控制台获取）：
->    - 国内站：https://console.cloud.tencent.com/im
+>    - 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN?utm_campaign=skill&_channel_track_key=CtW4AMuN
 >    - 国际站：https://console.trtc.io/chat
 >    - SDKAppID：
 >    - SecretKey：
@@ -41,6 +45,28 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 **收到后动作**（同一 batch 发出）：
 - `write_to_file` 写入 .trtc-session.yaml（sdkappid、secretKey 临时存放）
 - 不调用独立 `event` 记录命令；Root `invoke` 会从项目和 session 解析 SDKAppID，并提升本轮首条 Prompt。
+- 清除 .trtc-session.yaml 中的 `first_prompt_ephemeral` / `pendingUnsupportedIntents`
+
+以上完成后，同一条回复输出 Q.2。
+
+---
+
+## Q.1' — 短路后只收 SecretKey
+
+**触发**：session 已有 root 层写入的 `sdkappid`（跳过了完整 Q.1）。
+
+❌ 禁止在 SecretKey 后添加任何格式描述——格式因账号类型而异。
+
+❗ **VERBATIM OUTPUT — 以下代码块内容必须原样输出，不得做任何修改。**
+
+```
+> 需要你的 IM SecretKey（控制台获取，与刚刚提供的 SDKAppID 属于同一个 IM 应用）：
+>    - SecretKey：
+```
+
+**收到后动作**（同一 batch 发出）：
+- `write_to_file` 写入 .trtc-session.yaml（secretKey 临时存放；sdkappid 已在 session，无需重复写）
+- 不调用独立 `event` 记录命令
 - 清除 .trtc-session.yaml 中的 `first_prompt_ephemeral` / `pendingUnsupportedIntents`
 
 以上完成后，同一条回复输出 Q.2。
@@ -167,7 +193,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 - { field: "targetID", type: "text", default: "administrator", description: "对话对象的 userID 或 groupID" }
 ```
 > ⚠️ 填写的 userID 必须已在 IM 系统注册过，否则发消息会报错
-> 国内站：https://console.cloud.tencent.com/im ｜ 国际站：https://console.trtc.io/chat
+> 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN?utm_campaign=skill&_channel_track_key=CtW4AMuN ｜ 国际站：https://console.trtc.io/chat
 > 默认填 administrator（系统自动创建，无需注册，适合初次体验）
 
 **渲染规则**：

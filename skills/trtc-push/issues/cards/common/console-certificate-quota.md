@@ -1,5 +1,13 @@
 # 厂商证书数量 / 套餐上限
 
+## 与 MCP 的关系
+
+本文件是 **知识卡**，无独立 MCP workflow。
+
+- 关联：flows/common/console-product-limits.md
+- 定位：无独立 workflow；产品配额知识
+- 端侧运行时排障仍进对应 `troubleshoot-*`。
+
 ## 适用现象
 
 当用户反馈以下现象时，优先使用本卡：

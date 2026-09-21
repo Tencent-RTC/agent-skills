@@ -8,8 +8,9 @@ Usage:
 Session path resolution (in order):
     1. --session flag, if given
     2. $TRTC_SESSION_PATH env var
-    3. $CLAUDE_PROJECT_DIR/.trtc-session.yaml (Claude Code sets this to the
-       user project root)
+    3. <projectRoot>/.trtc-session.yaml resolved via one of the IDE project-root env vars:
+       $TRTC_PROJECT_ROOT | $CLAUDE_PROJECT_DIR | $CODEBUDDY_PROJECT_DIR |
+       $CURSOR_PROJECT_DIR (first non-empty wins)
     4. ./.trtc-session.yaml (cwd fallback — useful when AI runs Bash from
        the user project root)
 
@@ -37,15 +38,18 @@ from skills.trtc.tools import state_machine  # noqa: E402
 
 def _resolve_session_path() -> Path:
     """Match the resolver used by guardrails/gate_*.py:
-    env var → $CLAUDE_PROJECT_DIR → cwd. The session file lives in the
-    user project, never in the skill repo, so we never look at HERE.parents.
+    env var → one of the IDE project-root env vars → cwd. The session file
+    lives in the user project, never in the skill repo, so we never look at
+    HERE.parents.
     """
     explicit = os.environ.get("TRTC_SESSION_PATH")
     if explicit:
         return Path(explicit)
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project_dir:
-        return Path(project_dir) / ".trtc-session.yaml"
+    for _key in ("TRTC_PROJECT_ROOT", "CLAUDE_PROJECT_DIR",
+                 "CODEBUDDY_PROJECT_DIR", "CURSOR_PROJECT_DIR"):
+        project_dir = os.environ.get(_key)
+        if project_dir:
+            return Path(project_dir) / ".trtc-session.yaml"
     return Path.cwd() / ".trtc-session.yaml"
 
 
@@ -64,8 +68,10 @@ def main(argv: list[str] | None = None) -> int:
     if not session_path.exists():
         print(
             f"error: session file not found at {session_path}\n"
-            f"  hint: cd to the user project root, or set $CLAUDE_PROJECT_DIR / "
-            f"$TRTC_SESSION_PATH before running this script.",
+            f"  hint: cd to the user project root, or set $TRTC_SESSION_PATH "
+            f"or one of $TRTC_PROJECT_ROOT / $CLAUDE_PROJECT_DIR / "
+            f"$CODEBUDDY_PROJECT_DIR / $CURSOR_PROJECT_DIR "
+            f"before running this script.",
             file=sys.stderr,
         )
         return 1

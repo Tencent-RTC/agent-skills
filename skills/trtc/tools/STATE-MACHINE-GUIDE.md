@@ -67,7 +67,7 @@ apply_passed ─Pause for user "继续"─▶ mark_user_confirmed ─▶ next sl
 
 ## Auto-advance policy
 
-`auto_advance_policy` (root-level field in `${CLAUDE_PROJECT_DIR}/.trtc-session.yaml`) decides whether
+`auto_advance_policy` (root-level field in `<projectRoot>/.trtc-session.yaml`) decides whether
 `tools.apply` pauses for the user after a clean pass:
 
 | policy | After apply pass | After apply fail/partial |

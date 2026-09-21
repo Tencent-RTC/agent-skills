@@ -93,6 +93,32 @@ For each key, the guidance follows: ① explain what it does in one sentence; �
 > The URLs below for each key are **full URLs with tracking parameters** (including `utm_source`, `utm_medium`, `utm_campaign`, `_channel_track_key`). When presenting these links to users, the Agent **MUST copy-paste the full URL verbatim — do not simplify, truncate, or strip query parameters**. These are marketing attribution entry points; simplifying the links causes tracking data loss.
 
 **Key 1 · TRTC App Credentials** (the voice channel):
+
+**Short-circuit**: If session already has root-collected `sdkappid` (non-zero int, from `trtc/flows/collect-sdkappid.md`), skip asking for SDKAppID.
+
+**English users** — VERBATIM template (do not rewrite; substitute `<session.sdkappid>` with the actual value):
+
+```
+> Got your SDKAppID: <session.sdkappid>. I just need the SDKSecretKey now
+> (server-side, 64-char hex — TRTC console → Application → Server-side Integration; **not** STSecretKey).
+>
+> Paste it here so I can write .env and verify:
+> TRTC_SDK_SECRET_KEY=
+```
+
+**中文用户** —— VERBATIM 模板（不改写，`<session.sdkappid>` 替换为实际值）：
+
+```
+> 已收到你的 SDKAppID：<session.sdkappid>。现在只需要 SDKSecretKey
+> （服务端 64 位 hex，控制台 → 应用 → 服务端集成；**不是** STSecretKey）。
+>
+> 把值贴到下方发给我，我会写入 .env 并验证：
+> TRTC_SDK_SECRET_KEY=
+```
+
+After the user replies: validate, `write_to_file` → `.env` (`TRTC_SDK_APP_ID=<session.sdkappid>` + `TRTC_SDK_SECRET_KEY=<user input>`), run `verify-credentials.py --type trtc`, proceed to Key 2. Skip the fallback instructions below.
+
+If no root-collected `sdkappid` (fallback), use the full flow below:
 > How to get them: Go to the TRTC console, create an **RTC Engine** app (supports Conversational AI):
 > 1. Open https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw and sign up / log in;
 > 2. Create an **RTC Engine** app (supports Conversational AI — this is the coach's voice capability);

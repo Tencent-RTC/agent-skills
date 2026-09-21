@@ -1,5 +1,12 @@
 # 产品能力 / 套餐 / 控制台限制咨询处理流程
 
+## 与 MCP 的关系
+
+本文件 **无独立 MCP workflow**（ROUTER 未挂 `workflow_id`）。
+
+- 定位：无独立 workflow；产品/套餐边界咨询，勿直接当接入排障主链
+- 若同时存在「收不到 / 注册失败」等端侧运行时问题，先按平台进入对应 `troubleshoot-*`，再视需要回本文件。
+
 ## 入口现象
 
 用户咨询套餐版本、证书数量、控制台入口、推送总量、QPS、角标、撤回、定时、全员推送统计
@@ -30,10 +37,13 @@
 | 分支 | 判断信号 | 处理动作 |
 |---|---|---|
 | 证书数量上限 | `cert limit exceeded`、证书数量已达上限 | 查 `../../cards/common/console-certificate-quota.md` |
+| 插件到期停服 | 试用/正式插件过期后推送全停 | 引导续费/购买；说明到期即停服属产品行为 |
+| 自助排查工具 | 用户不知如何查链路、要 pushID/TaskId | 引导 [离线测试工具](https://console.cloud.tencent.com/im/push-plugin-push-check) 与 [排查工具文档](https://cloud.tencent.com/document/product/269/100629) |
+| 只接 Push / RegistrationID | 不接 Chat、问能否只用 RegistrationID | 查 `../../cards/common/timpush-only-registrationid.md` |
 | 推送总量 / QPS | 咨询总量限制、解除限制 | 区分腾讯云 QPS 与厂商每日额度 |
 | 控制台入口 / 查询方式 | 找不到入口或查不到记录 | 指引正确控制台路径和查询条件 |
 | 产品不支持 | 角标图片、部分厂商角标、特殊控制能力 | 明确不支持并给替代方案 |
-| 厂商权益 | 即时通信分类、私信通道、厂商限流 | 引导用户到厂商控制台申请或确认 |
+| 厂商权益 | 即时通信分类、私信通道、厂商限流 | 引导用户到厂商控制台申请或确认；Android 限额见 `message-category-limit` card |
 
 ## 验证信号
 

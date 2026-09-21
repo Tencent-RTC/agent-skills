@@ -11,6 +11,7 @@ import {
   linkSync,
   mkdirSync,
   openSync,
+  opendirSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -18,14 +19,14 @@ import {
   unlinkSync,
   writeSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import noticeSpec from './continuation-notice.js';
 import { choiceFromLocalizedText, normalizeNoticeLocale } from './notice-locale.js';
 
 export const NOTICE_VERSION = noticeSpec.version;
 export const NOTICE_STATES = Object.freeze([
   'pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending',
-  'allowed', 'denied', 'ignored',
+  'allowed', 'denied', 'defaulted', 'ignored',
 ]);
 export const CONTROL_STATES = Object.freeze([
   'allowed_pending', 'allowed', 'deny_pending', 'denied', 'retryable',
@@ -44,6 +45,15 @@ const CONTROL_KEY_RE = /^[a-f0-9]{64}$/;
 const ATTEMPT_RE = /^[a-f0-9]{32}$/;
 const OWNER_FILE = '.control-owner';
 const SEND_OWNER_FILE = '.send-owner';
+// Admission is intentionally separate from the sender lock.  It only
+// serializes the short deny-gate check and producer/Pending commit; it must
+// never be held while a network request is in flight.
+const ADMISSION_OWNER_FILE = '.admission-owner';
+const NOTICE_OBLIGATION_FILE = 'notice-obligation.json';
+// Per-event delivery receipts are local-only ACK evidence.  They contain no
+// Prompt text and let a later owner invoke distinguish an already delivered
+// event from a genuinely missing event after the Outbox file was removed.
+const EVENT_ACK_DIR = 'event-acks';
 const PRODUCER_DIR = 'producer-leases';
 const LOCK_GRACE_MS = 5000;
 const UNSUPPORTED_DIR_FSYNC = new Set(['EINVAL', 'ENOSYS', 'EPERM', 'EACCES', 'ENOENT']);
@@ -51,6 +61,14 @@ const UNSUPPORTED_DIR_FSYNC = new Set(['EINVAL', 'ENOSYS', 'EPERM', 'EACCES', 'E
 // the fixed producer directory has been validated/created, avoid repeating a
 // recursive mkdir on every prompt; each lease itself remains O_EXCL.
 const READY_PRODUCER_DIRS = new Set();
+// Match the Outbox event-id filename contract (including short synthetic
+// IDs used by compatibility tests); the first character is still restricted
+// so an ACK receipt can never become a hidden/path-traversal entry.
+const SAFE_EVENT_ID_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
+// A receipt/attempt is a delivery capability, not the durable proof that the
+// first Prompt was acknowledged.  Expire individual attempts so a lost host
+// output can be retried, while keeping the project-level acknowledgement fact.
+export const NOTICE_ATTEMPT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function isCanonicalOption(text) {
   return choiceFromLocalizedText(text);
@@ -84,10 +102,13 @@ function paths(stateRoot, projectKey) {
   return {
     dir,
     notice: join(dir, 'notice-v1.json'),
+    obligation: join(dir, NOTICE_OBLIGATION_FILE),
     tombstone: join(dir, 'deny-v1.tombstone'),
     lock: join(dir, OWNER_FILE),
     sendLock: join(dir, SEND_OWNER_FILE),
+    admissionLock: join(dir, ADMISSION_OWNER_FILE),
     producerDir: join(dir, PRODUCER_DIR),
+    eventAckDir: join(dir, EVENT_ACK_DIR),
     turns: join(dir, 'control-turns'),
   };
 }
@@ -147,6 +168,20 @@ function atomicWrite(path, value, opts = {}) {
     try { unlinkSync(tmp); } catch { /* noop */ }
     return false;
   }
+}
+
+// Notice delivery bookkeeping is best-effort, but a transient rename/fsync
+// race should not consume a foreground presentation attempt.  Retry the same
+// atomic write once in the current process; callers decide whether a failed
+// retry may emit another host-visible marker.  This deliberately reuses the
+// single notice-v1.json path rather than creating a second journal.
+function atomicNoticeWrite(path, value, opts = {}) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      if (atomicWrite(path, value, opts)) return true;
+    } catch { /* the next bounded attempt may still succeed */ }
+  }
+  return false;
 }
 
 function readJson(path) {
@@ -233,9 +268,43 @@ function validateNotice(value, projectKey) {
     || !validAttempt(value.notice_attempt_id) || !Number.isFinite(value.created_at)) return null;
   if (value.sessionid !== null && typeof value.sessionid !== 'string') return null;
   if (value.notice_locale !== undefined && !normalizeNoticeLocale(value.notice_locale)) return null;
+  if (value.choice_retry_count !== undefined
+    && (!Number.isInteger(value.choice_retry_count) || value.choice_retry_count < 0)) return null;
+  if (value.choice_next_retry_at !== undefined && !Number.isFinite(value.choice_next_retry_at)) return null;
+  if (value.choice_last_error !== undefined && typeof value.choice_last_error !== 'string') return null;
+  // Foreground notice delivery bookkeeping lives in this existing receipt;
+  // it is intentionally optional so receipts written by older releases keep
+  // working.  The counter is local-only and is never copied to CLS.
+  if (value.foreground_attempts !== undefined
+    && (!Number.isInteger(value.foreground_attempts) || value.foreground_attempts < 0)) return null;
+  if (value.foreground_last_ide !== undefined && typeof value.foreground_last_ide !== 'string') return null;
   // Legacy receipts predate localization and are intentionally interpreted as
   // Chinese so an existing first-use flow remains replayable.
-  return { ...value, notice_locale: normalizeNoticeLocale(value.notice_locale) || 'zh-CN' };
+  // C20.0 used `ignored` for a few non-terminal notice paths.  Treat that
+  // legacy value as the new explicit default-open terminal state so recovery
+  // cannot re-arm the same privacy notice after an upgrade.
+  return {
+    ...value,
+    status: value.status === 'ignored' ? 'defaulted' : value.status,
+    notice_locale: normalizeNoticeLocale(value.notice_locale) || 'zh-CN',
+  };
+}
+
+function validateNoticeObligation(value, projectKey) {
+  if (!value || typeof value !== 'object' || !validProjectKey(projectKey)) return null;
+  if (value.version !== NOTICE_VERSION || value.project_key !== projectKey
+    || typeof value.first_event_id !== 'string' || !SAFE_EVENT_ID_RE.test(value.first_event_id)
+    || typeof value.acknowledged !== 'boolean' || !Number.isFinite(value.created_at)) return null;
+  if (value.acknowledged && !Number.isFinite(value.acknowledged_at)) return null;
+  if (value.notice_status !== undefined
+    && !['pending', 'allowed', 'denied', 'defaulted', 'expired'].includes(value.notice_status)) return null;
+  if (value.first_event_expired === true && !Number.isFinite(value.expired_at)) return null;
+  if (value.notice_locale !== undefined && !normalizeNoticeLocale(value.notice_locale)) return null;
+  return {
+    ...value,
+    notice_status: value.notice_status || 'pending',
+    ...(value.notice_locale ? { notice_locale: normalizeNoticeLocale(value.notice_locale) } : {}),
+  };
 }
 
 function validateTurn(value, projectKey, expectedKey) {
@@ -257,12 +326,274 @@ export function readNoticeReceipt(stateRoot, projectKey) {
   return value ? { status: 'valid', value } : { status: 'corrupt' };
 }
 
+/**
+ * Read the project-scoped first-Prompt obligation.  It intentionally contains
+ * no Prompt text: it only keeps the first event identity, ACK fact, and notice
+ * terminal state so a receipt/attempt can be safely garbage-collected.
+ */
+export function readNoticeObligation(stateRoot, projectKey) {
+  const p = paths(stateRoot, projectKey);
+  if (!p) return { status: 'invalid' };
+  const file = lstatRegularFile(p.obligation);
+  if (file.status === 'missing') return { status: 'missing' };
+  if (file.status !== 'regular') return { status: 'corrupt' };
+  const value = validateNoticeObligation(readJson(p.obligation), projectKey);
+  return value ? { status: 'valid', value } : { status: 'corrupt' };
+}
+
+function writeNoticeObligationLocked(p, value, opts = {}) {
+  return atomicWrite(p.obligation, value, opts);
+}
+
+/** First-writer-wins project first-event identity; safe to call on every stage. */
+export function ensureNoticeObligation(stateRoot, projectKey, eventId, opts = {}) {
+  const p = paths(stateRoot, projectKey);
+  if (!p || !SAFE_EVENT_ID_RE.test(String(eventId || ''))) return { status: 'error', reason: 'invalid_event_id' };
+  const lock = acquireControlReservation(stateRoot, projectKey, { timeoutMs: opts.timeoutMs ?? 100 });
+  if (!lock) return { status: 'retry', reason: 'control_busy' };
+  try {
+    const current = readNoticeObligation(stateRoot, projectKey);
+    if (current.status === 'valid') {
+      return current.value.first_event_id === eventId
+        ? { status: 'already_present', value: current.value }
+        : { status: 'conflict', value: current.value };
+    }
+    if (current.status === 'corrupt') {
+      // A malformed obligation may only be replaced when the caller presents
+      // the same durable first-event candidate that was written before the
+      // corruption. A later ordinary Prompt must never overwrite the first
+      // event identity. Symlinks/special entries remain fail-closed.
+      if (opts.allowCorruptReplacement !== true) return { status: 'error', reason: 'obligation_corrupt' };
+      const entry = lstatRegularFile(p.obligation);
+      if (entry.status !== 'regular') return { status: 'error', reason: 'obligation_corrupt' };
+    }
+    const value = {
+      version: NOTICE_VERSION,
+      project_key: projectKey,
+      first_event_id: eventId,
+      acknowledged: false,
+      notice_status: 'pending',
+      created_at: Number.isFinite(opts.createdAt) ? opts.createdAt : Date.now(),
+      ...(normalizeNoticeLocale(opts.noticeLocale) ? { notice_locale: normalizeNoticeLocale(opts.noticeLocale) } : {}),
+    };
+    return writeNoticeObligationLocked(p, value, opts)
+      ? { status: 'created', value }
+      : { status: 'error', reason: 'obligation_write_failed' };
+  } finally { releaseControlReservation(lock); }
+}
+
+/** Persist the ACK fact without retaining Prompt content. */
+export function acknowledgeNoticeObligation(stateRoot, projectKey, eventId, opts = {}) {
+  const p = paths(stateRoot, projectKey);
+  if (!p || !SAFE_EVENT_ID_RE.test(String(eventId || ''))) return { status: 'error', reason: 'invalid_event_id' };
+  const lock = acquireControlReservation(stateRoot, projectKey, { timeoutMs: opts.timeoutMs ?? 100 });
+  if (!lock) return { status: 'retry', reason: 'control_busy' };
+  try {
+    const current = readNoticeObligation(stateRoot, projectKey);
+    if (current.status !== 'valid') return { status: current.status === 'missing' ? 'not_found' : 'error', reason: current.status };
+    if (current.value.first_event_id !== eventId) return { status: 'conflict', value: current.value };
+    if (current.value.acknowledged) return { status: 'already_present', value: current.value };
+    const value = {
+      ...current.value,
+      acknowledged: true,
+      acknowledged_at: Number.isFinite(opts.acknowledgedAt) ? opts.acknowledgedAt : Date.now(),
+      ...(normalizeNoticeLocale(opts.noticeLocale) ? { notice_locale: normalizeNoticeLocale(opts.noticeLocale) } : {}),
+    };
+    return writeNoticeObligationLocked(p, value, opts)
+      ? { status: 'updated', value }
+      : { status: 'error', reason: 'obligation_write_failed' };
+  } finally { releaseControlReservation(lock); }
+}
+
+function eventAckPath(p, eventId) {
+  if (!p || !SAFE_EVENT_ID_RE.test(String(eventId || ''))) return null;
+  return join(p.eventAckDir, `${eventId}.json`);
+}
+
+function validateEventAck(value, projectKey, eventId) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && value.version === NOTICE_VERSION
+    && value.project_key === projectKey
+    && value.event_id === eventId
+    && value.acknowledged === true
+    && Number.isFinite(value.acknowledged_at);
+}
+
+// Read at most a bounded number of directory entries without materializing
+// the whole directory with readdirSync. Maintenance callers can stop on the
+// shared monotonic deadline; a truncated scan is reported so callers never
+// mistake a sample for a complete maxFiles count.
+function readDirectoryNamesBounded(dirPath, maxEntries, deadlineMono) {
+  let dir;
+  try { dir = opendirSync(dirPath); }
+  catch (err) {
+    return err?.code === 'ENOENT'
+      ? { status: 'ok', names: [], truncated: false }
+      : { status: 'error', names: [], truncated: false, reason: err?.code || 'directory_open_failed' };
+  }
+  const names = [];
+  let truncated = false;
+  try {
+    while (names.length < maxEntries) {
+      if (Number.isFinite(deadlineMono) && performanceNow() >= deadlineMono) {
+        truncated = true;
+        break;
+      }
+      const entry = dir.readSync();
+      if (!entry) break;
+      names.push(entry.name);
+    }
+    if (names.length >= maxEntries) truncated = true;
+  } catch (err) {
+    return { status: 'error', names, truncated: true, reason: err?.code || 'directory_read_failed' };
+  } finally {
+    try { dir.closeSync(); } catch { /* best effort */ }
+  }
+  return { status: 'ok', names, truncated };
+}
+
+/**
+ * Persist the fact that CLS acknowledged one logical event before its
+ * Outbox record is removed.  This is intentionally separate from the first
+ * Prompt notice obligation so ordinary Prompts can also be recognized as
+ * already delivered after a crash or successful cleanup.
+ */
+export function acknowledgeEvent(stateRoot, projectKey, eventId, opts = {}) {
+  const p = paths(stateRoot, projectKey);
+  const path = eventAckPath(p, eventId);
+  if (!p || !path) return { status: 'error', reason: 'invalid_event_id' };
+  const existing = readEventAcknowledgement(stateRoot, projectKey, eventId);
+  // A visible receipt is not enough: a crash can leave a renamed file whose
+  // directory entry was never fsynced. Re-sync the file and directory before
+  // allowing Sender to delete the Outbox record or classify a retry as ACKed.
+  if (existing.status === 'valid') {
+    return durabilizeFile(path, p.eventAckDir, opts)
+      ? { status: 'already_present', value: existing.value }
+      : { status: 'error', reason: 'ack_receipt_durability_failed' };
+  }
+  if (!['missing', 'invalid', 'corrupt'].includes(existing.status)) {
+    return { status: 'error', reason: 'ack_receipt_unavailable' };
+  }
+  const value = {
+    version: NOTICE_VERSION,
+    project_key: projectKey,
+    event_id: eventId,
+    acknowledged: true,
+    acknowledged_at: Number.isFinite(opts.acknowledgedAt) ? opts.acknowledgedAt : Date.now(),
+  };
+  return atomicWrite(path, value, opts)
+    ? { status: 'created', value }
+    : { status: 'error', reason: 'ack_receipt_write_failed' };
+}
+
+/**
+ * Best-effort retention for local event ACK receipts. Receipts contain only
+ * event identity and timestamps; they are retained long enough for a retry
+ * or notice recovery, then aged out without touching Pending/Outbox records.
+ * Callers pass all currently protected event IDs so an ACK receipt cannot be
+ * removed while its event is still queued or is the first-notice target.
+ */
+export function gcEventAcknowledgements(stateRoot, projectKey, opts = {}) {
+  const p = paths(stateRoot, projectKey);
+  if (!p) return { status: 'invalid', removed: 0 };
+  const protectedIds = new Set(Array.isArray(opts.protectedEventIds) ? opts.protectedEventIds : []);
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+  const maxAgeMs = Number.isFinite(opts.maxAgeMs) ? Math.max(0, opts.maxAgeMs) : 7 * 24 * 60 * 60 * 1000;
+  const maxFiles = Number.isFinite(opts.maxFiles) ? Math.max(1, Math.floor(opts.maxFiles)) : 5000;
+  const maxEntries = Number.isFinite(opts.maxEntries) ? Math.max(1, Math.floor(opts.maxEntries)) : 128;
+  const scan = readDirectoryNamesBounded(p.eventAckDir, maxEntries, opts.deadlineMono);
+  if (scan.status !== 'ok') return { status: 'error', removed: 0, scanned: scan.names.length, truncated: scan.truncated, reason: scan.reason };
+  const entries = [];
+  for (const name of scan.names) {
+    if (Number.isFinite(opts.deadlineMono) && performanceNow() >= opts.deadlineMono) break;
+    if (!name.endsWith('.json')) continue;
+    const eventId = basename(name, '.json');
+    if (!SAFE_EVENT_ID_RE.test(eventId)) continue;
+    const path = join(p.eventAckDir, name);
+    const file = lstatRegularFile(path);
+    if (file.status !== 'regular') continue;
+    let mtimeMs;
+    try { mtimeMs = statSync(path).mtimeMs; } catch { continue; }
+    entries.push({ path, eventId, mtimeMs });
+  }
+  const removable = entries
+    .filter((entry) => !protectedIds.has(entry.eventId)
+      && (now - entry.mtimeMs >= maxAgeMs))
+    .sort((a, b) => a.mtimeMs - b.mtimeMs);
+  // A bounded/truncated sample cannot support a global maxFiles decision.
+  // Age-based cleanup is still safe; a later flush will scan the next slice.
+  if (!scan.truncated && entries.length - removable.length > maxFiles) {
+    for (const entry of [...entries].sort((a, b) => a.mtimeMs - b.mtimeMs)) {
+      if (entries.length - removable.length <= maxFiles) break;
+      if (!protectedIds.has(entry.eventId) && !removable.includes(entry)) removable.push(entry);
+    }
+  }
+  let removed = 0;
+  for (const entry of removable) {
+    try { unlinkSync(entry.path); removed += 1; } catch (err) { if (err?.code !== 'ENOENT') continue; }
+  }
+  if (removed > 0) fsyncDirBestEffort(p.eventAckDir, opts);
+  return { status: 'ok', removed, scanned: entries.length, truncated: scan.truncated };
+}
+
+/** Read a local event ACK without creating directories or following links. */
+export function readEventAcknowledgement(stateRoot, projectKey, eventId) {
+  const p = paths(stateRoot, projectKey);
+  const path = eventAckPath(p, eventId);
+  if (!p || !path) return { status: 'invalid' };
+  const entry = lstatRegularFile(path);
+  if (entry.status === 'missing') return { status: 'missing' };
+  if (entry.status !== 'regular') return { status: entry.status };
+  const value = readJson(path);
+  return validateEventAck(value, projectKey, eventId) ? { status: 'valid', value } : { status: 'corrupt' };
+}
+
+/** Mark an unacknowledged first event as expired without retaining its text. */
+export function markFirstEventExpired(stateRoot, projectKey, eventId, opts = {}) {
+  const p = paths(stateRoot, projectKey);
+  if (!p || !SAFE_EVENT_ID_RE.test(String(eventId || ''))) return { status: 'error', reason: 'invalid_event_id' };
+  const lock = acquireControlReservation(stateRoot, projectKey, { timeoutMs: opts.timeoutMs ?? 50 });
+  if (!lock) return { status: 'retry', reason: 'control_busy' };
+  try {
+    const current = readNoticeObligation(stateRoot, projectKey);
+    if (current.status !== 'valid') return { status: current.status === 'missing' ? 'not_found' : 'error', reason: current.status };
+    if (current.value.first_event_id !== eventId) return { status: 'not_first', value: current.value };
+    if (current.value.acknowledged || current.value.first_event_expired) return { status: 'already_present', value: current.value };
+    const value = {
+      ...current.value,
+      first_event_expired: true,
+      expired_at: Number.isFinite(opts.expiredAt) ? opts.expiredAt : Date.now(),
+      notice_status: 'expired',
+    };
+    return writeNoticeObligationLocked(p, value, opts)
+      ? { status: 'updated', value }
+      : { status: 'error', reason: 'obligation_write_failed' };
+  } finally { releaseControlReservation(lock); }
+}
+
 export function writeNoticeReceipt(stateRoot, projectKey, receipt) {
   const p = paths(stateRoot, projectKey);
   if (!p || !validAttempt(receipt?.notice_attempt_id)) return { status: 'error', reason: 'invalid_receipt' };
   const lock = acquireControlReservation(stateRoot, projectKey, { timeoutMs: 100 });
   if (!lock) return { status: 'error', reason: 'control_busy' };
   try {
+    const obligation = readNoticeObligation(stateRoot, projectKey);
+    // New C20 projects must only create a disposable notice capability after
+    // the project-level first Prompt has been durably acknowledged.  A valid
+    // obligation is authoritative: a later Prompt, a mismatched event, or an
+    // unacknowledged first event cannot manufacture a notice.  Projects that
+    // predate obligations remain readable through the legacy compatibility
+    // path below, so upgrading them does not erase an existing notice flow.
+    if (obligation.status === 'valid' && receipt?.legacy !== true
+      && (obligation.value.first_event_id !== receipt.event_id
+        || obligation.value.acknowledged !== true)) {
+      return { status: 'not_ready', reason: 'first_prompt_not_acknowledged', obligation: obligation.value };
+    }
+    if (obligation.status === 'valid'
+      && (obligation.value.first_event_expired === true
+        || ['allowed', 'denied', 'defaulted', 'expired'].includes(obligation.value.notice_status))) {
+      return { status: 'terminal', obligation: obligation.value };
+    }
     const existing = readNoticeReceipt(stateRoot, projectKey);
     if (existing.status === 'valid') return { status: 'already_present', receipt: existing.value };
     if (existing.status === 'corrupt') return { status: 'error', reason: 'receipt_corrupt' };
@@ -277,7 +608,7 @@ export function writeNoticeReceipt(stateRoot, projectKey, receipt) {
   } finally { releaseControlReservation(lock); }
 }
 
-export function noticeStatus(stateRoot, projectKey, attemptId, sessionid = null) {
+export function noticeStatus(stateRoot, projectKey, attemptId, sessionid = null, opts = {}) {
   const p = paths(stateRoot, projectKey);
   if (!p || !validAttempt(attemptId)) return { status: 'not_found' };
   const lock = acquireControlReservation(stateRoot, projectKey, { timeoutMs: 100 });
@@ -291,9 +622,45 @@ export function noticeStatus(stateRoot, projectKey, attemptId, sessionid = null)
     // only safe bridge (never scan or guess among sessions).
     if (value.notice_attempt_id !== attemptId
       || (value.sessionid !== null && sessionid !== null && value.sessionid !== sessionid)) return { status: 'not_found' };
+    if (['pending_output', 'awaiting_choice'].includes(value.status)
+      && Date.now() - value.created_at > NOTICE_ATTEMPT_MAX_AGE_MS) {
+      // Expiring a delivery attempt must never erase the project-level ACK
+      // fact. The next valid foreground turn can create a fresh attempt.
+      try { unlinkSync(p.notice); } catch (err) {
+        if (err?.code !== 'ENOENT') return { status: 'retry', marker: CONTROL_RETRY };
+      }
+      return { status: 'expired', notice_status: 'expired' };
+    }
+    // CodeBuddy has no verified host-native visible notification channel.
+    // Its foreground bootstrap must therefore claim a bounded number of
+    // presentation attempts using this same notice-v1 receipt.  Do not mark
+    // the notice terminal when the bound is exhausted: an explicit choice is
+    // still required, and a later repair can inspect the pending state.
+    if (opts?.renderer === 'codebuddy-foreground'
+      && ['pending_output', 'awaiting_choice'].includes(value.status)) {
+      const maxAttempts = Number.isInteger(opts.maxAttempts) && opts.maxAttempts > 0
+        ? opts.maxAttempts : 2;
+      const attempts = Number.isInteger(value.foreground_attempts)
+        ? value.foreground_attempts : 0;
+      if (attempts >= maxAttempts) {
+        return { status: 'exhausted', notice_status: value.status, attempts };
+      }
+      const next = {
+        ...value,
+        status: 'awaiting_choice',
+        foreground_attempts: attempts + 1,
+        notice_locale: normalizeNoticeLocale(opts.noticeLocale) || value.notice_locale,
+        ...(typeof opts.ide === 'string' ? { foreground_last_ide: opts.ide } : {}),
+      };
+      if (!atomicNoticeWrite(p.notice, next)) return { status: 'retry', marker: CONTROL_RETRY, persisted: false };
+      return {
+        status: 'required', notice_version: NOTICE_VERSION, attempts: attempts + 1,
+        notice_attempt_id: next.notice_attempt_id, notice_locale: next.notice_locale,
+      };
+    }
     if (value.status === 'pending_output') {
       const next = { ...value, status: 'awaiting_choice' };
-      if (!atomicWrite(p.notice, next)) return { status: 'retry', marker: CONTROL_RETRY };
+      if (!atomicWrite(p.notice, next)) return { status: 'retry', marker: CONTROL_RETRY, persisted: false };
       return { status: 'required', notice_version: NOTICE_VERSION };
     }
     if (value.status === 'awaiting_choice') return { status: 'already_awaiting' };
@@ -313,7 +680,51 @@ export function updateNoticeStatus(stateRoot, projectKey, expected, status) {
       return { status: 'conflict', value: current.value };
     }
     const next = { ...current.value, status };
-    return atomicWrite(p.notice, next) ? { status: 'updated', value: next } : { status: 'error', reason: 'notice_write_failed' };
+    delete next.choice_retry_count;
+    delete next.choice_last_error;
+    delete next.choice_next_retry_at;
+    if (!atomicWrite(p.notice, next)) return { status: 'error', reason: 'notice_write_failed' };
+    if (['allowed', 'denied', 'defaulted'].includes(status)) {
+      const obligation = readNoticeObligation(stateRoot, projectKey);
+      if (obligation.status === 'valid' && obligation.value.first_event_id === next.event_id) {
+        const terminal = { ...obligation.value, notice_status: status };
+        if (!writeNoticeObligationLocked(p, terminal)) {
+          return { status: 'retry', reason: 'obligation_write_failed', value: next };
+        }
+      }
+    }
+    return { status: 'updated', value: next };
+  } finally { releaseControlReservation(lock); }
+}
+
+// Record a bounded retry on the existing notice receipt.  This deliberately
+// uses the same authoritative file as the notice state; a second fallback
+// file would create a split-brain recovery path and would not help when the
+// underlying directory is read-only or out of space.
+export function recordNoticeRetry(stateRoot, projectKey, expected, reason, opts = {}) {
+  const p = paths(stateRoot, projectKey);
+  if (!p) return { status: 'error', reason: 'invalid_project_key' };
+  const lock = acquireControlReservation(stateRoot, projectKey, { timeoutMs: opts.timeoutMs ?? 100 });
+  if (!lock) return { status: 'retry', reason: 'control_busy' };
+  try {
+    const current = readNoticeReceipt(stateRoot, projectKey);
+    if (current.status !== 'valid') return { status: 'retry', reason: current.status };
+    if (expected && current.value.status !== expected) {
+      return { status: 'conflict', value: current.value };
+    }
+    const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+    const count = Number.isInteger(current.value.choice_retry_count)
+      ? current.value.choice_retry_count + 1 : 1;
+    const delays = [60 * 1000, 5 * 60 * 1000, 30 * 60 * 1000];
+    const delay = delays[Math.min(count - 1, delays.length - 1)] || 24 * 60 * 60 * 1000;
+    const next = {
+      ...current.value,
+      choice_retry_count: count,
+      choice_last_error: typeof reason === 'string' ? reason.slice(0, 128) : 'state_write_failed',
+      choice_next_retry_at: now + delay,
+    };
+    if (!atomicWrite(p.notice, next)) return { status: 'error', reason: 'notice_write_failed' };
+    return { status: 'updated', value: next };
   } finally { releaseControlReservation(lock); }
 }
 
@@ -477,13 +888,41 @@ export function acquireProjectSendReservation(stateRoot, projectKey, opts = {}) 
 
 export function releaseProjectSendReservation(lock) { releaseFileReservation(lock); }
 
+/**
+ * Short production-admission serialization for Prompt producers and deny.
+ * This is deliberately not the network sender lock: holding it across a
+ * network request would allow an unrelated slow event to block a new Prompt
+ * before it can even be persisted.
+ */
+export function acquireProjectAdmissionReservation(stateRoot, projectKey, opts = {}) {
+  const p = paths(stateRoot, projectKey);
+  return p ? acquireFileReservation(p.admissionLock, { project_key: projectKey, kind: 'admission' }, {
+    ...opts,
+    _hookMode: opts._hookMode === true,
+  }) : null;
+}
+
+export function releaseProjectAdmissionReservation(lock) { releaseFileReservation(lock); }
+
 export function beginProducerLease(stateRoot, projectKey, opts = {}) {
   const p = paths(stateRoot, projectKey);
   if (!p) return { blocked: true, retryable: false, reason: 'invalid_project_key' };
-  // Hook producer begin is a bounded fixed-path O_EXCL lease only. It must
-  // not contend on the foreground send lock or perform durable fsync work;
-  // foreground recovery owns that stronger serialization.
-  if (opts._hookMode === true) {
+  // Every producer uses the same short admission protocol.  The Hook keeps
+  // its bounded no-fsync behavior; foreground code may use a larger budget.
+  // Crucially, this lock is released before Pending/Outbox delivery or any
+  // network request, so a slow Sender cannot starve the next Prompt.
+  const timeoutMs = opts._hookMode === true
+    ? Math.min(25, opts.timeoutMs ?? 25)
+    : (opts.timeoutMs ?? 120);
+  const admission = acquireProjectAdmissionReservation(stateRoot, projectKey, {
+    ...opts,
+    timeoutMs,
+    _hookMode: opts._hookMode === true,
+  });
+  if (!admission) return { blocked: true, retryable: true, reason: 'admission_busy' };
+  try {
+    const gate = readProjectDenyGate(stateRoot, projectKey);
+    if (!gate.allowed) return { blocked: true, retryable: gate.status !== 'valid', reason: `deny_${gate.status}` };
     try {
       if (!READY_PRODUCER_DIRS.has(p.producerDir)) {
         ensureDir(p.producerDir);
@@ -492,23 +931,15 @@ export function beginProducerLease(stateRoot, projectKey, opts = {}) {
     } catch { return { blocked: true, retryable: true, reason: 'lease_dir_unavailable' }; }
     const lease = acquireFileReservation(join(p.producerDir, `${process.pid}-${ownerToken()}.json`), {
       project_key: projectKey, kind: 'producer',
-    }, { timeoutMs: Math.min(25, opts.timeoutMs ?? 25), staleGraceMs: opts.staleGraceMs, _hookMode: true, _dirReady: true });
-    return lease ? { lease, blocked: false } : { blocked: true, retryable: true, reason: 'lease_busy' };
-  }
-  const gate = readProjectDenyGate(stateRoot, projectKey);
-  if (!gate.allowed) return { blocked: true, retryable: gate.status !== 'valid', reason: `deny_${gate.status}` };
-  const sendLock = acquireProjectSendReservation(stateRoot, projectKey, opts);
-  if (!sendLock) return { blocked: true, retryable: true, reason: 'send_busy' };
-  try {
-    const recheck = readProjectDenyGate(stateRoot, projectKey);
-    if (!recheck.allowed) return { blocked: true, retryable: recheck.status !== 'valid', reason: `deny_${recheck.status}` };
-    ensureDir(p.producerDir);
-    const lease = acquireFileReservation(join(p.producerDir, `${process.pid}-${ownerToken()}.json`), {
-      project_key: projectKey, kind: 'producer',
-    }, { timeoutMs: opts.leaseTimeoutMs ?? opts.timeoutMs ?? 25, staleGraceMs: opts.staleGraceMs, _hookMode: opts._hookMode === true });
+    }, {
+      timeoutMs: opts.leaseTimeoutMs ?? timeoutMs,
+      staleGraceMs: opts.staleGraceMs,
+      _hookMode: opts._hookMode === true,
+      _dirReady: true,
+    });
     if (!lease) return { blocked: true, retryable: true, reason: 'lease_busy' };
     return { lease, blocked: false };
-  } finally { releaseProjectSendReservation(sendLock); }
+  } finally { releaseProjectAdmissionReservation(admission); }
 }
 
 export function endProducerLease(lease) { releaseFileReservation(lease); }
@@ -634,7 +1065,17 @@ export function readControlTurn(stateRoot, projectKey, key) {
 export function writeControlTurn(stateRoot, projectKey, key, value, opts = {}) {
   const p = paths(stateRoot, projectKey);
   if (!p || !validControlKey(key)) return { status: 'error', reason: 'invalid_control_key' };
-  ensureDir(p.turns);
+  // The control-turn replay bridge is auxiliary state.  A host sandbox may
+  // allow writes to the already-created project control directory while
+  // refusing the first mkdir for its child directory.  Do not let that
+  // filesystem error escape and abort the foreground choice transaction;
+  // callers can persist the user choice and notice terminal state first, then
+  // retry this replay record on a later entry.
+  try {
+    ensureDir(p.turns);
+  } catch (err) {
+    return { status: 'error', reason: err?.code || 'control_dir_unavailable' };
+  }
   const path = turnPath(p, key);
   const next = {
     version: NOTICE_VERSION, project_key: projectKey, notice_version: NOTICE_VERSION,
@@ -666,10 +1107,11 @@ export function hasControlState(stateRoot, projectKey) {
   const p = paths(stateRoot, projectKey);
   if (!p) return { status: 'invalid' };
   const notice = readNoticeReceipt(stateRoot, projectKey);
+  const obligation = readNoticeObligation(stateRoot, projectKey);
   const tombstone = readDenyTombstone(stateRoot, projectKey);
   let turns = [];
   try {
     turns = readdirSync(p.turns).filter((n) => CONTROL_KEY_RE.test(n.replace(/\.json$/, '')));
   } catch { /* missing is normal */ }
-  return { status: 'ok', notice, tombstone, hasTurns: turns.length > 0 };
+  return { status: 'ok', notice, obligation, tombstone, hasTurns: turns.length > 0 };
 }
