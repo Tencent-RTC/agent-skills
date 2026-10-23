@@ -1,0 +1,10 @@
+// Type-checks the unit tests only. They run under Node (node:test), so unlike
+// the browser sources they need Node's type definitions.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src/**/*.test.ts", "src/lib", "src/types"],
+  "exclude": []
+}

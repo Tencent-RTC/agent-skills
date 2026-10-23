@@ -818,6 +818,50 @@ def _validate_send_payload(payload: dict[str, Any]) -> None:
         raise ValueError("feedback must be 0 or 1")
 
 
+def _normalize_capture_sdkappid(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise ValueError("sdkappid must be a positive decimal integer")
+    raw = str(value).strip()
+    if not raw or len(raw) > 64 or any(char < "0" or char > "9" for char in raw):
+        raise ValueError("sdkappid must be a positive decimal integer")
+    normalized = raw.lstrip("0")
+    if not normalized or len(normalized) > 32:
+        raise ValueError("sdkappid must be a positive decimal integer")
+    return normalized
+
+
+def _capture_label(value: Any, name: str) -> str | None:
+    if value is None:
+        return None
+    if (not isinstance(value, str) or not 1 <= len(value) <= 128
+            or any(not (char.isascii() and (char.isalnum() or char in "._+-")) for char in value)):
+        raise ValueError(f"{name} must be a short identifier")
+    return value
+
+
+def _capture_sdkappid_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"sdkappid", "product", "framework", "skillname", "version", "source", "cwd"}
+    if set(raw) - allowed:
+        raise ValueError("unsupported SDKAppID capture field")
+    source = raw.get("source")
+    if source not in {"root-flow", "domain-fallback"}:
+        raise ValueError("source must identify the active collection flow")
+    payload: dict[str, Any] = {
+        "sdkappid": _normalize_capture_sdkappid(raw.get("sdkappid")),
+        "source": source,
+    }
+    for name in ("product", "framework", "skillname", "version"):
+        value = _capture_label(raw.get(name), name)
+        if value is not None:
+            payload[name] = value
+    cwd = raw.get("cwd")
+    if cwd is not None:
+        if not isinstance(cwd, str) or _validated_project_root(cwd) is None:
+            raise ValueError("cwd must be an existing project directory")
+        payload["cwd"] = cwd
+    return payload
+
+
 def _print_debug(enabled: bool, result: dict[str, Any]) -> None:
     if enabled:
         print(json.dumps(result, ensure_ascii=False))
@@ -913,7 +957,7 @@ def _foreground_notice_marker(result: Any) -> str | None:
     return None
 
 
-def _codebuddy_notice_text(result: dict[str, Any]) -> tuple[str | None, str | None]:
+def _foreground_notice_text(result: dict[str, Any]) -> tuple[str | None, str | None]:
     """Project a claimed notice from the packaged, single-source contract.
 
     Runtime owns ACKs, language selection and the presentation budget. The
@@ -943,11 +987,11 @@ def _codebuddy_notice_text(result: dict[str, Any]) -> tuple[str | None, str | No
 def _emit_foreground_marker(
     result: dict[str, Any], marker: str, ide: str | None, emitted_notices: set[str],
 ) -> None:
-    """Keep frozen marker lines, with verbatim notice text for CodeBuddy only."""
-    if ide != "codebuddy" or marker != "TRTC_REPORTING_NOTICE_REQUIRED_V1":
+    """Keep frozen markers, with claimed fixed text for foreground renderers."""
+    if ide not in {"codebuddy", "cursor", "claude"} or marker != "TRTC_REPORTING_NOTICE_REQUIRED_V1":
         print(marker)
         return
-    attempt, body = _codebuddy_notice_text(result)
+    attempt, body = _foreground_notice_text(result)
     key = attempt or "missing-notice-attempt"
     if key in emitted_notices:
         return
@@ -996,6 +1040,10 @@ def _parser() -> argparse.ArgumentParser:
         help="explicit project root for foreground/control calls; JSON cwd remains supported",
     )
     prompt.add_argument("--debug", action="store_true")
+    capture = sub.add_parser("capture-sdkappid")
+    capture.add_argument("--input-stdin", action="store_true", required=True)
+    capture.add_argument("--ide", choices=("claude", "cursor", "codebuddy", "codex"))
+    capture.add_argument("--debug", action="store_true")
     invoke = sub.add_parser("invoke"); invoke.add_argument("--skillname", required=True); invoke.add_argument("--product"); invoke.add_argument("--framework"); invoke.add_argument("--ide", choices=("claude", "cursor", "codebuddy", "codex")); invoke.add_argument("--debug", action="store_true")
     pref = sub.add_parser("preference"); pref.add_argument("--enabled", required=True, choices=("on", "off")); pref.add_argument("--debug", action="store_true")
     send = sub.add_parser("send")
@@ -1028,6 +1076,17 @@ def main(argv: list[str] | None = None) -> int:
             ok, result = _run_node("context", payload=payload, debug=debug)
             if not ok or result.get("status") in _RUNTIME_FAILURE_STATUSES:
                 return _foreground_runtime_failure(result)
+        elif args.cmd == "capture-sdkappid":
+            raw = _read_hook_input()
+            if not raw:
+                raise ValueError("SDKAppID capture requires one JSON object on stdin")
+            payload = _ambient_payload(_capture_sdkappid_payload(raw), args.ide)
+            ok, result = _run_node("capture-sdkappid", payload=payload, ide=args.ide, debug=debug)
+            # This telemetry is best-effort after integration data has been
+            # saved. Runtime and transport failures must not halt integration.
+            if debug:
+                _print_debug(True, result)
+            return 0
         elif args.cmd == "prompt":
             if getattr(args, "control_choice", None):
                 choice = args.control_choice
@@ -1275,8 +1334,8 @@ def main(argv: list[str] | None = None) -> int:
                 marker = result.get("marker") if isinstance(result, dict) else None
                 if isinstance(marker, str) and marker.startswith("TRTC_REPORTING_"):
                     _emit_foreground_marker(result, marker, foreground_ide, emitted_notices)
-            elif foreground_ide == "codebuddy" and result.get("marker") == "TRTC_REPORTING_NOTICE_REQUIRED_V1":
-                _, body = _codebuddy_notice_text(result)
+            elif foreground_ide in {"codebuddy", "cursor", "claude"} and result.get("marker") == "TRTC_REPORTING_NOTICE_REQUIRED_V1":
+                _, body = _foreground_notice_text(result)
                 if body is not None:
                     result["notice_text"] = body
             foreground = result.get("foreground") if isinstance(result, dict) else None
@@ -1318,18 +1377,19 @@ def main(argv: list[str] | None = None) -> int:
             # Other hosts retain their existing created-receipt contract.
             invoke_marker = None
             notice = result.get("notice") if isinstance(result, dict) else None
-            if (args.ide or _ambient_ide()) == "codebuddy":
+            if foreground_ide in {"codebuddy", "cursor", "claude"}:
                 if result.get("marker") == _CONTINUATION_MARKERS.get("notice_required"):
                     invoke_marker = _CONTINUATION_MARKERS.get("notice_required")
-            elif isinstance(notice, dict) and notice.get("status") == "created":
+            elif (isinstance(notice, dict) and notice.get("status") == "created"
+                  and foreground_ide not in {"codebuddy", "cursor", "claude"}):
                 invoke_marker = _CONTINUATION_MARKERS.get("notice_required")
             if debug:
                 # Preserve the legacy single JSON debug record; production
                 # callers (without --debug) receive the exact marker stdout.
                 if invoke_marker:
                     result["reporting_marker"] = invoke_marker
-                    if foreground_ide == "codebuddy":
-                        _, body = _codebuddy_notice_text(result)
+                    if foreground_ide in {"codebuddy", "cursor", "claude"}:
+                        _, body = _foreground_notice_text(result)
                         if body is not None:
                             result["notice_text"] = body
             elif isinstance(result, dict) and result.get("marker") == "TRTC_REPORTING_ROOT_INVOKE_REJECTED_V1":

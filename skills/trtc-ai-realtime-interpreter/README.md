@@ -80,8 +80,8 @@ To get the interpreter running, you need 3 cloud service credentials. Don't worr
 
 | Key | Purpose | Where to find it |
 |-----|---------|-----------------|
-| 1: TRTC App Credentials | Voice channel for the interpreter | https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw (Sign up and create an **RTC Engine** app — supports Conversational AI) |
-| 2: Tencent Cloud API Key | Backend permissions (login syncs with TRTC) | https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE |
+| 1: TRTC App Credentials | Voice channel for the interpreter | https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy (Sign up and create an **RTC Engine** app — supports Conversational AI) |
+| 2: Tencent Cloud API Key | Backend permissions (login syncs with TRTC) | https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s |
 | 3: LLM API Key | The interpreter's "brain" — understand and translate speech in real time | Your AI provider (OpenAI, DeepSeek, etc.) |
 
 > The AI will guide you step-by-step on how to obtain each key. Your key information is only used during this setup session — the system does not record or leak it.

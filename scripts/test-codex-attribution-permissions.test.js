@@ -233,6 +233,48 @@ test('Codex read-only global state: real Python foreground persists both AI owne
   await verifyPermissionBoundary(t, 'posix');
 });
 
+test('Codex read-only global state: real Python accepts one natural refusal and closes every reporting scope', async (t) => {
+  if (process.platform === 'win32' || typeof process.getuid !== 'function' || process.getuid() === 0) {
+    t.skip('requires an unprivileged POSIX process');
+    return;
+  }
+  const { projectKey, readPreferenceState, isReportingEnabledForScope } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/preference.js')));
+  const { ensureNoticeObligation, acknowledgeNoticeObligation, writeNoticeReceipt, noticeStatus } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/control.js')));
+  const f = installedFixture();
+  let restore;
+  try {
+    const key = projectKey(f.project);
+    const attempt = '1234567890abcdef1234567890abcdef';
+    ensureNoticeObligation(f.state, key, 'readonly-deny-first');
+    acknowledgeNoticeObligation(f.state, key, 'readonly-deny-first');
+    writeNoticeReceipt(f.state, key, {
+      event_id: 'readonly-deny-first', notice_attempt_id: attempt,
+      sessionid: 'sess_0123456789abcdef0123456789abcdef',
+    });
+    noticeStatus(f.state, key, attempt, null);
+    f.env.CODEX_THREAD_ID = 'desktop-opaque-task';
+    const globalBefore = snapshotFiles(f.state);
+    restore = makeReadOnly(f.state);
+    const denied = childWithBoundary(f, [f.script, 'prompt', '--input-stdin', '--require-input'], {
+      text: '不同意上报', control_choice: 'deny', cwd: f.project, ide: 'codex',
+    }, 'posix', process.env.PYTHON_BIN || 'python3');
+    assert.equal(denied.status, 0, JSON.stringify(denied));
+    assert.equal(denied.stdout.trim(), 'TRTC_REPORTING_DISABLED_V1', JSON.stringify(denied));
+    assert.equal(readPreferenceState(f.project).value.continuation_choice, 'denied');
+    assert.equal(isReportingEnabledForScope(f.project, 'experience', f.env), false);
+    assert.equal(isReportingEnabledForScope(f.project, 'runtime', f.env), false);
+    const next = childWithBoundary(f, [f.script, 'prompt', '--input-stdin', '--require-input'], {
+      text: '下一条普通提示词', cwd: f.project, ide: 'codex',
+    }, 'posix', process.env.PYTHON_BIN || 'python3');
+    assert.equal(next.status, 0, JSON.stringify(next));
+    assert.equal(next.stdout, '', JSON.stringify(next));
+    assert.deepEqual(snapshotFiles(f.state), globalBefore, 'read-only global state is unchanged; no control reply is queued');
+  } finally {
+    if (restore) restore();
+    fs.rmSync(f.base, { recursive: true, force: true });
+  }
+});
+
 test('Codex sandbox-exec read-only global state: real Python foreground preserves owner', async (t) => {
   if (process.platform !== 'darwin' || !fs.existsSync('/usr/bin/sandbox-exec')) {
     t.skip('macOS sandbox-exec is not available; the separate POSIX permission test still covers real denied filesystem writes.');

@@ -53,7 +53,10 @@ events.
 
 Delivery has these invariants:
 
-1. Prompt Hooks only write local state and always fail open for the IDE flow.
+1. Prompt reporting Hooks only write local state and fail open for ordinary
+   user messages. Cursor's complete fixed notice replay returns
+   `continue:false` / `user_message` to cancel a synthetic submission before
+   reporting-state handling; this presentation gate makes no network call.
 2. Dispatcher `invoke` attributes one same-project Pending event and promotes it
    with the Hook-created `event_id`; it does not create a replacement ID.
 3. Installer and compatibility `send` calls first persist an event to Outbox,

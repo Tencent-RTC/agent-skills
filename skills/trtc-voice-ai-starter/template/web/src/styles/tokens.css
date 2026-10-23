@@ -1,0 +1,74 @@
+/*
+ * Design tokens — the only place colours are defined.
+ *
+ * UI rules (enforced by styles.test.ts, also in AGENTS.md §D):
+ *   1. Light theme only — no dark mode, no prefers-color-scheme.
+ *   2. Colours come from these variables. No hex / rgb() / hsl() literals in
+ *      any other file; add a token here first.
+ *   3. No emoji in the UI — plain text.
+ * Fonts are the system stack below; do not add web fonts.
+ */
+
+:root {
+  /* ---- Surface ---- */
+  --color-bg:            #f5f5f7;
+  --color-surface:       #ffffff;
+  --color-surface-alt:   #f0f0f2;
+  --color-border:        #e0e0e4;
+
+  /* ---- Text ---- */
+  --color-text-primary:  #1a1a1e;
+  --color-text-secondary:#6b6b78;
+  --color-text-muted:    #9898a5;
+  --color-text-inverse:  #ffffff;   /* text on primary / danger fills */
+
+  /* ---- Brand / action ---- */
+  --color-primary:       #0071e3;
+  --color-primary-hover: #0062c4;
+  --color-danger:        #d93025;
+  --color-danger-hover:  #b5271f;
+  --color-danger-bg:     #fff0ef;   /* error banner */
+  --color-danger-border: #f5c2c0;
+
+  /* ---- LED states ---- */
+  --color-led-off:       #d1d1d6;
+  --color-led-listening: #34c759;   /* green */
+  --color-led-thinking:  #ff9500;   /* amber */
+  --color-led-speaking:  #007aff;   /* blue */
+
+  /* ---- Subtitle roles ---- */
+  --color-user-accent:   #007aff;
+  --color-agent-accent:  #34c759;
+
+  /* ---- Type ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  --font-size-xs:   11px;
+  --font-size-sm:   13px;
+  --font-size-base: 15px;
+  --font-size-lg:   17px;
+  --font-size-xl:   20px;
+
+  /* ---- Spacing ---- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+
+  /* ---- Shape ---- */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-full: 9999px;
+
+  /* ---- Shadow ---- */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.10), 0 2px 4px rgba(0,0,0,.06);
+
+  /* ---- Layout ---- */
+  --sidebar-width: 260px;
+  --header-height: 56px;
+}

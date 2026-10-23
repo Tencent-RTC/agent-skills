@@ -123,7 +123,7 @@ MISSING → 用 §0.2 的 `find` 兜底重新确定 `SKILL_ROOT`。
 ```bash
 test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MISSING
 ```
-- OK → 告知用户"之前配置过密钥，可以直接复用；如需重新配置请告诉我"，可跳过 §5（除非用户明确要求重配）
+- OK → 先跑 `cd "$SKILL_ROOT" && python3 scripts/verify-credentials.py --type all`（`.env` 可能只是从模板复制、还没填完）。全部通过 → 告知用户"之前配置过密钥，可以直接复用；如需重新配置请告诉我"，可跳过 §5（除非用户明确要求重配）；有失败项 → 走 §5（已填好的项不用重填）
 - MISSING → 第一步必须走 §5 三把钥匙配置
 
 ---
@@ -157,16 +157,23 @@ test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MIS
 
 > 触发条件：§3.3 返回 MISSING，或某个钥匙后续被 verify-credentials.py 判定失败。
 > 命令中的 `$SKILL_ROOT` 替换为绝对路径后执行。
-> **引导风格硬规则**：最大程度对新手友好。用"三把钥匙"的比喻、大白话、一次只让用户做一件事。
-> 每把钥匙都遵循同一套流程：①一句话解释它是干嘛的 → ②给一段带占位符的代码块让用户复制、填好、回传 →
-> ③Agent 用 `write_to_file` 写进 `.env` → ④立即跑 `verify-credentials.py` 验证 → ⑤只回"收到了，格式没问题"，
-> **绝不回显完整钥匙内容**。
+> **引导风格硬规则**：最大程度对新手友好。用"三把钥匙"的比喻、大白话。
+> **只有 SDKAppID 在聊天里收集**；SDKSecretKey、SecretId / SecretKey、LLM 的 Key / 地址 / 模型名
+> 全部由用户自己填进 `.env`。Agent **不得在聊天中索要任何密钥**；用户主动贴了也不复述，提醒其填进 `.env`。
 
 > **⚠️ 链接使用红线（违反视为缺陷）**：
-> 下面每把钥匙的获取链接都是**带埋点参数的完整 URL**（含 `utm_source`、`utm_medium`、`utm_campaign`、`_channel_track_key`）。
+> 下面的控制台链接都是**带埋点参数的完整 URL**（含 `utm_campaign`、`_channel_track_key` 等）。
 > Agent 向用户展示这些链接时，**必须原样复制粘贴完整 URL，不得简化、不得截断、不得去掉查询参数**。
-> 例如 TRTC 国际版控制台链接必须包含 `?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=...&_channel_track_key=3WFHfiqw`，
-> 不得简化为 `https://console.trtc.io/`。这是营销归因入口，简化链接会导致埋点丢失。
+> 这是营销归因入口，简化链接会导致埋点丢失。
+
+**控制台链接表（VERBATIM）**：
+
+| 用途 | 中文用户（两个都展示，先国内后海外） | 英文用户（只展示这一个） |
+|---|---|---|
+| 钥匙 1 · TRTC（SDKAppID + SDKSecretKey） | 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje<br>海外站：https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy | https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy |
+| 钥匙 2 · 腾讯云 API 密钥 | 国内站：https://console.cloud.tencent.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5-%E5%9B%BD%E5%86%85&utm_campaign=skill&_channel_track_key=hTRQ0ctd<br>海外站：https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s | https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s |
+
+英文用户不得展示国内站链接。中文用户需提醒：钥匙 1 和钥匙 2 要在**同一个站点**获取。
 
 > **开场白（对用户说）**：
 > 要让翻译 Agent 真正"开口"帮你翻译，需要 3 把钥匙，我一把一把带你搞定，不用担心：
@@ -174,90 +181,58 @@ test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MIS
 > 2. **腾讯云 API 密钥** —— 负责发放临时通行证的"前台"（语音跑在 TRTC 上，凭证在腾讯云签发，两个账号自动打通，不用单独注册）；
 > 3. **LLM 密钥** —— 翻译 Agent 的"大脑"，负责听懂你说的话、把它翻译成另一种语言。
 
-### 5.0 配置方式（两种任选）
+### 5.0 准备 `.env`
 
-**方式一：自己填**：把 `capabilities/conversation-core/.env.example` 复制成 `.env`，照着填。
-
-**方式二：发给我，我帮你填**：把每把钥匙的值贴给我，我写进 `.env`。钥匙信息只用于这次配置写入，不会被记录或泄露。
-
-### 5.1 钥匙 1 · TRTC 应用凭证（语音通道）
-
-**短路**：若 session 已有 root 层写入的 `sdkappid`（非 null 非 0，由 root `flows/collect-sdkappid.md` 收集）—— 跳过 SDKAppID 询问。
-
-**区域自动判断**：不要求用户手动填写 `TRTC_REGION`。写入配置时，SDKAppID 以 `14` 或 `16` 开头使用 `cn`，其他合法 SDKAppID 使用 `intl`。如果已有明确的 `TRTC_REGION` 配置，则保留已有值。
-
-**中文用户** —— VERBATIM 模板（不改写，`<session.sdkappid>` 替换为实际值）：
-
-```
-> 已收到你的 SDKAppID：<session.sdkappid>。现在只需要 SDKSecretKey。
->
-> 把值贴到下方发给我，我会写入 .env 并验证：
-> TRTC_SDK_SECRET_KEY=
+先确认 `.env` 会被 git 忽略（项目在 git 仓库内且未忽略时，先把 `.env` 加进 `.gitignore`），然后：
+```bash
+cd "$SKILL_ROOT/capabilities/conversation-core" && (test -f .env || cp .env.example .env) && chmod 600 .env
 ```
 
-**English users** — VERBATIM template (do not rewrite; substitute `<session.sdkappid>` with the actual value):
+### 5.1 钥匙 1 · 收集 SDKAppID（聊天里只收这一项）
 
-```
-> Got your SDKAppID: <session.sdkappid>. I just need the SDKSecretKey now
->
-> Paste it here so I can write .env and verify:
-> TRTC_SDK_SECRET_KEY=
-```
+**短路**：若 session 已有 root 层写入的 `sdkappid`（非 null 非 0，由 root `flows/collect-sdkappid.md` 收集）—— 跳过询问，直接写入。
 
-收到 SDKSecretKey 后：校验格式，按上述规则确定 `TRTC_REGION`，`write_to_file` → `.env`（写 `TRTC_SDK_APP_ID=<session.sdkappid>` + `TRTC_SDK_SECRET_KEY=<user input>` + 自动确定的 `TRTC_REGION`），跑 `verify-credentials.py --type trtc`，继续钥匙 2。
+**区域自动判断**：不要求用户手动填写 `TRTC_REGION`。SDKAppID 以 `14` 或 `16` 开头使用 `cn`，其他合法 SDKAppID 使用 `intl`。如果 `.env` 里已有用户明确改过的 `TRTC_REGION`，保留已有值。
 
-未短路时走以下完整流程：
-
-**AI 话术**：
+未短路时 **AI 话术**（链接按上方链接表、按用户语言展示）：
 > 先配第 1 把——TRTC 应用凭证，它是让翻译 Agent"开口说话"的语音通道。
 >
 > 获取步骤：
 > 1. 进 TRTC 控制台创建一个支持"对话式 AI"的 **RTC Engine** 应用（已经有的话直接用）
->    - https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw
+>    - <钥匙 1 链接>
 > 2. 创建完 RTC Engine 应用后，还需要在控制台左侧的 **"集成"** 标签页下启用 **Conference** 应用
 >    （这个应用和 RTC Engine 一样都有免费试用，我们的 demo 集成了 Conference 能力，必须启用才能正常使用）
-> 3. 进去后找到 **SDKAppID**，并准备好对应的 SDKSecretKey
+> 3. 进去后找到 **SDKAppID**（一串数字），**只把 SDKAppID 发给我**就行
+
+收到 SDKAppID 后（或短路时）：
+1. 校验：SDKAppID 是纯数字
+2. 按上述规则确定 `TRTC_REGION`
+3. 只修改 `.env` 中的 `TRTC_SDK_APP_ID=` 和 `TRTC_REGION=` 两行（此时 `.env` 里还没有任何密钥）
+4. 非短路时，写入成功后调用 `python3 "<当前 trtc skill 根目录>/tools/reporting.py" capture-sdkappid --input-stdin --ide <ide>`；stdin JSON 仅含本轮用户明确提供的 SDKAppID、已知 `product` / `framework` / `skillname`、`source:"domain-fallback"` 和 `cwd`，不得含任一密钥。上报失败继续集成。
+5. 进入 §5.2
+
+### 5.2 其余密钥由用户自己填进 `.env`
+
+**中文用户 AI 话术**（`<.env 绝对路径>` 替换为 `$SKILL_ROOT/capabilities/conversation-core/.env` 的绝对路径；链接按上方链接表展示）：
+> SDKAppID 已写好。剩下的密钥请你直接打开这个文件自己填，填好保存后回我一句"填好了"，我来统一验证：
+> `<.env 绝对路径>`
 >
-> 把下面两项一起发给我：
-> ```
-> TRTC_SDK_APP_ID=yourSDKAppID          # 一个数字
-> TRTC_SDK_SECRET_KEY=yourSDKSecretKey
-> ```
+> 1. **`TRTC_SDK_SECRET_KEY`** —— 钥匙 1 剩下的部分，在刚才那个应用页面里（服务端用的 **SDKSecretKey**，不是客户端的 STSecretKey）
+> 2. **`TENCENT_CLOUD_SECRET_ID` / `TENCENT_CLOUD_SECRET_KEY`** —— 钥匙 2，腾讯云 API 密钥，负责发放临时通行证的"前台"。和钥匙 1 用**同一个站点**的账号：
+>    - <钥匙 2 链接>
+> 3. **`LLM_API_KEY` / `LLM_API_URL` / `LLM_MODEL`** —— 钥匙 3，翻译 Agent 的"大脑"。用你已有的任意 OpenAI 兼容服务，三项要来自同一家；用 OpenAI 的话 URL 和模型可以保留默认值。
 
-收到后：
-1. 校验：SDKAppID 是整数；SDKSecretKey 格式正确
-2. 按 SDKAppID 自动确定 `TRTC_REGION`：`14`/`16` 开头使用 `cn`，其他合法 SDKAppID 使用 `intl`
-3. `write_to_file("$SKILL_ROOT/capabilities/conversation-core/.env", ...)` 写入 `TRTC_SDK_APP_ID=` + `TRTC_SDK_SECRET_KEY=` + 自动确定的 `TRTC_REGION`
-4. 不回显完整密钥，只确认"收到，格式没问题"
-5. `execute_command("cd \"$SKILL_ROOT\" && python3 scripts/verify-credentials.py --type trtc")`
-6. 解析 JSON：`ok:true` → 说"这把没问题，下一把"进入钥匙 2；`ok:false` → 按 §5.5 错误码表回应
-
-### 5.2 钥匙 2 · 腾讯云 API 密钥（"前台"）
-
-**AI 话术**：
-> 第 2 把——腾讯云 API 密钥，它是负责发放临时通行证的"前台"。TRTC 和腾讯云是同一个账号体系，登录态自动同步，不用重新注册。
+**English users** (substitute the path and links the same way; show only the international links):
+> SDKAppID saved. Please open this file and fill in the remaining keys yourself, then save and reply "done" — I'll verify them all:
+> `<absolute .env path>`
 >
-> 获取步骤：
-> 1. 打开 https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE
-> 2. 页面上会看到 **SecretId** 和 **SecretKey**（可能要点"显示"才能看到完整内容）
->
-> 填进代码块发给我：
-> ```
-> TENCENT_CLOUD_SECRET_ID=yourSecretId
-> TENCENT_CLOUD_SECRET_KEY=yourSecretKey
-> ```
+> 1. **`TRTC_SDK_SECRET_KEY`** — the rest of key 1, on the same application page (the server-side **SDKSecretKey**, not the client-side STSecretKey)
+> 2. **`TENCENT_CLOUD_SECRET_ID` / `TENCENT_CLOUD_SECRET_KEY`** — key 2, the Tencent Cloud API key that issues temporary credentials:
+>    - <key 2 link>
+> 3. **`LLM_API_KEY` / `LLM_API_URL` / `LLM_MODEL`** — key 3, the agent's "brain". Any OpenAI-compatible provider you already use; all three values must come from the same provider. For OpenAI you can keep the default URL and model.
 
-收到后：
-1. 校验：SecretId 通常 36 位 `^[A-Za-z0-9]+$`；SecretKey 非空
-2. `write_to_file` 追加 `TENCENT_CLOUD_SECRET_ID=` + `TENCENT_CLOUD_SECRET_KEY=` + `TENCENT_CLOUD_REGION=ap-guangzhou`
-3. `execute_command("cd \"$SKILL_ROOT\" && python3 scripts/verify-credentials.py --type tencent")`
-4. 解析同上；失败按 §5.5 回应
+用户问 LLM 去哪拿时，可参考下表（不替用户选）：
 
-### 5.3 钥匙 3 · LLM 密钥（"大脑"）
-
-**AI 话术**：
-> 最后一把——LLM 密钥，它是翻译 Agent 的"大脑"，负责听懂你说的话并翻译成另一种语言。你需要一个 LLM 服务商的账号。
->
 | 服务商 | 模型 | 获取 API Key |
 |---|---|---|
 | OpenAI | GPT | https://platform.openai.com/api-keys |
@@ -268,40 +243,34 @@ test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MIS
 | Groq | 高性能推理 | https://console.groq.com/keys |
 | Cohere | 企业 AI | https://dashboard.cohere.com/api-keys |
 | Mistral AI | Mistral | https://console.mistral.ai/api-keys |
->
-> 填进代码块发给我：
-> ```
-> LLM_API_KEY=yourAPIKey
-> LLM_API_URL=yourAPIEndpoint   # 用 OpenAI 时可删掉此行
-> LLM_MODEL=yourModelName
-> ```
-> - 用 **OpenAI**：可以删掉 `LLM_API_URL` 那行（默认就是 OpenAI 地址）
-> - 用**其他服务商**（DeepSeek/Claude/Gemini 等）：必须同时填 `LLM_API_URL` 和 `LLM_MODEL`，去对应服务商文档查"API Base URL"和"Model Name"
 
-收到后：
-1. 校验：`LLM_API_KEY` 非空；`LLM_API_URL` 空则默认 `https://api.openai.com/v1/chat/completions`；`LLM_MODEL` 空则默认 `gpt-4o-mini`
-2. `write_to_file` 追加对应字段
-3. `execute_command("cd \"$SKILL_ROOT\" && python3 scripts/verify-credentials.py --type llm")`
-4. `ok:true` → "三把钥匙都配好、也都验证通过了，进入下一步"
+### 5.3 统一校验
+
+用户回复"填好了"后：
+1. `execute_command("cd \"$SKILL_ROOT\" && python3 scripts/verify-credentials.py --type all")`
+2. 解析 JSON：全部 `ok:true` → "三把钥匙都配好、也都验证通过了，进入下一步"；有失败项 → 按 §5.5 一次性列出所有失败项，请用户在 `.env` 里改好后再回复，然后重跑校验
 
 ### 5.4 安全约束（红线，违反视为缺陷）
 
 | 红线 | 正确做法 |
 |---|---|
-| 不把密钥当命令行参数传给任何脚本 | 用 write_to_file 写 .env，再无参数调用 verify-credentials.py |
-| 不在聊天回复里回显完整密钥值 | 只确认"收到 + 长度/格式 OK" |
+| 不在聊天里索要任何密钥 | 只收 SDKAppID；密钥由用户自己填进 `.env`，用户贴了也不复述 |
+| 不把密钥当命令行参数传给任何脚本 | verify-credentials.py 直接读 `.env` |
+| 不在聊天回复里回显密钥值、不读取 `.env` 里的密钥 | 只看 verify-credentials.py 的结果 |
 | 不把密钥输出到日志/stdout | verify-credentials.py 只输出 ok/error/message/latency_ms |
 | 不用 `echo $SECRET` / `cat .env` | shell 历史/终端日志会记录 |
-| 写完 .env 后权限设为 600 | `execute_command("chmod 600 \"$SKILL_ROOT/capabilities/conversation-core/.env\"")` |
+| `.env` 权限设为 600 | §5.0 创建时已 `chmod 600` |
 
 ### 5.5 错误码 → AI 回应模板
 
+失败时让用户**在 `.env` 里改好后回复**，不要让用户把密钥发到聊天里。
+
 | error | 含义 | AI 该说什么 |
 |---|---|---|
-| E000 | 密钥未配置/为空 | "这项在 .env 里看起来是空的，请再发一次" |
-| E001 | 腾讯云 API 校验失败 | "腾讯云 API 校验失败。常见原因：①Id/Key 顺序可能填反了 ②密钥可能被禁用 ③账号未开通 STS。可在 console.cloud.tencent.com/cam 检查" |
+| E000 | 密钥未配置/为空 | "`.env` 里这一项还是空的，填好保存后告诉我" |
+| E001 | 腾讯云 API 校验失败 | "腾讯云 API 校验失败。常见原因：①Id/Key 顺序可能填反了 ②密钥可能被禁用 ③账号未开通 STS ④和钥匙 1 不是同一个站点的账号。请在 `.env` 里核对后告诉我" |
 | E002 | TRTC 校验失败 | "TRTC 校验失败。请核对：①SDKAppID 是否属于你的账号 ②是否把 SDKSecretKey 和 STSecretKey 弄混了 ③确认 TRTC_REGION 与你的控制台站点一致（国际站用 intl）" |
-| E003 | LLM 校验失败 | "LLM 校验失败。如果用的不是 OpenAI，可能需要更新 API 地址，你用的是哪家服务商？" |
+| E003 | LLM 校验失败 | "LLM 校验失败。请核对 `.env` 里 `LLM_API_KEY`、`LLM_API_URL`、`LLM_MODEL` 是否来自同一家服务商" |
 | E004 | 网络不可达 | "连不上校验服务器，请检查：①是否需要代理 ②是否有防火墙限制 ③网络是否正常。也可以先跳过深度校验继续" |
 
 ---
@@ -333,7 +302,7 @@ test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MIS
 ```bash
 test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MISSING
 ```
-MISSING → 走 §5 逐把配置，完成后 `chmod 600 "$SKILL_ROOT/capabilities/conversation-core/.env"`，再回到 Step 2。
+MISSING → 走 §5 配置，再回到 Step 2。
 
 **Step 2：验证三把钥匙全部有效（关键关卡，不通过不往下走）**
 ```bash
@@ -577,7 +546,7 @@ If you want advanced customization later, just tell me — no need to decide now
 ```bash
 test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo OK || echo MISSING
 ```
-MISSING → 走 §5 逐把配置（翻译能力硬依赖三把钥匙，全部必填）。
+MISSING → 走 §5 配置（翻译能力硬依赖三把钥匙，全部必填）。
 
 配完后**必须验证全部通过再往下走**：
 ```bash

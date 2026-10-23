@@ -273,7 +273,8 @@ PROJECT_ROOT_ENV_KEYS = (
 # update from being persisted even though routing and telemetry support them.
 VALID_PRODUCTS = {
     "conference", "chat", "call", "live", "rtc-engine",
-    "ai-service", "realtime-interpreter", "oral-coach", "tim-push", None,
+    "ai-service", "realtime-interpreter", "oral-coach", "conversational-ai",
+    "tim-push", None,
 }
 VALID_INTENTS = {
     "integrate-scenario",

@@ -163,6 +163,19 @@ Prompt deliverable. The fallback key is retained only in private
 `__correlation_key` state, `userid` is omitted from the CLS payload, and no
 Context from another live conversation is borrowed. This lowers session-level
 analytics precision but does not block Prompt delivery.
+Claude and Codex Hook and foreground Prompt paths also discard host-generated
+internal tasks before staging, deferred sends, notice recovery, or SDKAppID
+resolution. Host-supplied `internal`/`is_internal` and recognized
+`host_source`/`event_source`/`host_kind` provenance take priority. Without that
+metadata, Claude filters complete `<task-notification>` envelopes containing
+task ID, status, and summary; Codex filters the background Overview template
+and the app-generated “suggested next user message” request shown in the empty
+composer. Codex template matching normalizes CRLF and leading presentation
+whitespace, including a BOM, before the staging path trims the text. These
+callbacks never count as the first user Prompt. Explicit
+`user_initiated: true` metadata keeps user-authored text reportable even if it
+matches one of these templates. Quoted notifications, pasted-content wrappers,
+excerpts, and notifications accompanied by user prose remain reportable.
 Natural-language controls such as
 “关闭体验上报” and “turn off experience reporting” update the preference locally
 and are never staged or uploaded.
@@ -187,12 +200,12 @@ JSON) and arms a disposable notice attempt. The owner `invoke` and optional
 Host Stop are recovery/attribution paths for the same event; they may return
 the same marker but never create another event ID. The Skill finishes the
 normal answer; the host-specific bootstrap then renders the locale-matched
-continuation notice. Codex and CodeBuddy render the exact notice through their
-foreground dispatcher after the normal answer; Claude and Cursor use their
+continuation notice. Codex, Cursor, and CodeBuddy render the exact notice through
+their foreground dispatcher after the normal answer; Claude uses its
 host-visible post-answer channel. If a foreground renderer is not reached,
 the marker remains pending and is replayed on the next foreground entry. No
 host waits for Stop as the first renderer, sends a new event, or requires a
-second consent transaction. Codex and CodeBuddy Stop remain recovery/flush
+second consent transaction. Codex, Cursor, and CodeBuddy Stop remain recovery/flush
 boundaries only. The locale is
 selected from
 explicit host language metadata when available, otherwise from the first
@@ -205,23 +218,32 @@ obligation independently of the current Prompt result. If that Prompt is
 ambiguous or retryable, the helper may still return the same
 `TRTC_REPORTING_NOTICE_REQUIRED_V1` marker while preserving the Prompt failure
 for retry; a notice marker never turns an undelivered Prompt into success.
-The host bootstrap owns the rendering contract: Codex and CodeBuddy emit the
-exact generated `continuation-notice.md` block from their foreground path,
-while Claude and Cursor use their host-visible post-answer channel. No host
+The host bootstrap owns the rendering contract: Codex, Claude, Cursor, and CodeBuddy emit the
+exact generated `continuation-notice.md` block from their foreground path. No host
 may paraphrase the notice, rely on hidden Stop output, or treat the marker as
 proof that the user has already chosen allow/deny.
 
-Claude Code uses a stricter host boundary: its installed post-answer Stop Hook
-is the sole renderer of the fixed notice. The model response must never output,
-quote, paraphrase, or ask the user to choose that notice. If the Stop Hook does
-not produce visible output, keep the notice pending for the next foreground
-entry; do not create a model-side fallback. This does not gate the Prompt send:
-the foreground `prompt --input-stdin --require-input` path still sends the first
-Prompt before the answer, and owner `invoke`/Stop only recover or attribute the
-same event.
+Claude Code renders the exact claimed notice after the normal answer, including
+both choices. The foreground helper returns the localized fixed text under the
+marker; the bootstrap uses `continuation-notice.md` if that text is missing.
+Its Stop Hook only recovers or flushes delivery and never claims or repeats
+the notice. Missing hooks and `stop_hook_active` callbacks therefore cannot
+suppress foreground presentation. A lost foreground response leaves the same
+notice available for one bounded recovery attempt. This does not gate the
+Prompt send: `prompt --input-stdin --require-input` still sends the first Prompt
+before the answer, and owner `invoke`/Stop use the same event.
+When a claimed Claude foreground presentation recovers an old notice in a new
+session, its receipt is atomically bound to that new anonymous session ID.
+The old session's replies remain invalid; control messages cannot rebind it.
 The user's next message is classified by the model/Host before telemetry staging.
-The classifier sends an explicit local `control_choice` enum; Runtime does not
-guess intent from arbitrary natural-language text:
+The model may send an explicit local `control_choice` enum only when the
+current conversation visibly contains an active privacy notice and the current
+user message is responding to it. It recognizes natural agreement such as
+“可以” and “没问题”; an exact fixed option label is not required. If a host
+does not provide a reliable session ID, the model must verify the relationship
+from the current conversation. When both the notice and current message have a
+session ID, Runtime requires them to match. Runtime does not guess intent from
+arbitrary natural-language text:
 
 - `同意继续体验数据上报` — writes `continuation_choice='allowed'`; does NOT
   override an existing global-off preference; outputs `TRTC_REPORTING_ALLOWED_V1`
@@ -230,18 +252,23 @@ guess intent from arbitrary natural-language text:
   `purge_pending=true`; outputs `TRTC_REPORTING_DISABLED_V1` (success) or
   `TRTC_REPORTING_DISABLE_RETRY_V1` (tombstone set but purge incomplete)
 - `control_choice: "allow"` / `"deny"` — equivalent explicit enum inputs
-- `control_choice: "ambiguous"` — persists the notice as `defaulted` when
-  possible, keeps default-on Prompt reporting, and does not return an
-  ALLOWED/DISABLED marker. It is not shown again after the state is persisted.
+- `control_choice: "ambiguous"` — skips the current reply before ordinary
+  Prompt staging, enqueue, or network delivery. With a fresh, project-scoped
+  notice receipt and a matching session ID when both sides provide one, Runtime
+  persists the notice as `defaulted`; otherwise it leaves preference and notice
+  state unchanged. It returns no ALLOWED/DISABLED marker and never uploads the
+  ambiguous reply itself.
 - Any other message without an active choice context — continues as a normal
   Prompt; defaults remain active.
 
-`defaulted` is an internal terminal notice state, not a public marker. If the
-single authoritative `notice-v1.json` cannot be updated, Runtime keeps ordinary
-Prompt delivery flowing and retries the same-file transition with bounded
-backoff. It never creates a second fallback state file. A persistent
+`defaulted` is an internal terminal notice state, not a public marker. It does
+not change the default-on Prompt reporting preference; later ordinary Prompts
+continue through the normal path. If the single authoritative
+`notice-v1.json` cannot be updated, Runtime records a bounded retry on that same
+receipt and retries on a later foreground entry without blocking a later
+ordinary Prompt. It never creates a second fallback state file. A persistent
 filesystem failure may leave the notice awaiting recovery after a process
-restart; this is a local storage boundary, not a network failure.
+restart; the current ambiguous reply still does not enter the telemetry queue.
 
 The two canonical Chinese labels remain valid control aliases for backward
 compatibility. A localized notice also accepts its localized option labels. All
@@ -273,14 +300,34 @@ receipt, they remain ordinary Prompt text.
 | `TRTC_REPORTING_ALLOWED_V1` | `allowed` preference persisted |
 | `TRTC_REPORTING_ALLOW_RETRY_V1` | Preference write failed; ask user to retry |
 | `TRTC_REPORTING_CHOICE_RETRY_V1` | Control state unreadable; ask user to retry |
-| `TRTC_REPORTING_DISABLED_V1` | Fully closed: preference + purge complete |
+| `TRTC_REPORTING_DISABLED_V1` | All reporting durably disabled; global cleanup may be deferred when the foreground sandbox cannot write it |
 | `TRTC_REPORTING_DISABLE_RETRY_V1` | Tombstone set; preference/purge incomplete |
 
 **Kill switch:** when a deny tombstone exists at
 `<stateRoot>/telemetry/control/<project_key>/deny-v1.tombstone`, the Sender
 final gate refuses any transport regardless of preference file state. The
-tombstone is the primary blocking mechanism; preference write is a secondary
-human-readable record.
+tombstone blocks producers and Sender independently of preference state. A
+durable project preference with `continuation_choice='denied'` and
+`all_reporting_disabled=true` also blocks every reporting scope, including
+Sender's final network gate, even when the foreground sandbox cannot write the
+global control directory. A fresh valid project notice and a confirmed refusal
+are required for this local fallback. It returns `DISABLED` with local-only
+`cleanup_pending:true`; the next permitted invoke/Stop purges the queues. A
+global control write failure must not ask the user to make the same choice again.
+
+Codex's ambient `CODEX_THREAD_ID` is a local correlation hint, not reliable
+conversation identity for a privacy reply. Only explicit host session fields
+participate in strict receipt matching. Without them, the model must confirm
+that the user is replying to the notice visible in the current conversation.
+An explicitly supplied session mismatch still cannot change preferences.
+
+If the host captures the first Prompt but its model request fails before the
+foreground helper runs, a later foreground send recovers that original event
+from the project's first-event obligation. Recovery uses the exact event ID,
+its original attribution, the same project/IDE, and the remaining foreground
+deadline. Only its actual ACK unlocks the privacy notice; a newer Prompt's ACK
+does not substitute for it. A notice visibly recovered in a new CodeBuddy
+session is rebound to that presentation session before accepting its reply.
 
 **What the first event contains** (and what it does NOT contain):
 
@@ -322,6 +369,29 @@ does not disable anonymous install statistics; global `--no-report` does.
 | `hook_results` | Per-IDE static install result | JSON-stringified only at the CLS boundary; not activation proof |
 | `os` | `"darwin"` / `"win32"` / `"linux"` | `os.platform()` |
 
+### SDKAppID collection
+
+When an integration flow receives an SDKAppID directly from the user, it calls
+`reporting.py capture-sdkappid --input-stdin` only after the current flow has
+successfully saved that value. The helper accepts one allowlisted JSON object
+on stdin and creates a V2 `method="event"`, `text="sdkappid_collected"`
+record with `sdkappid` at the top level. It includes only known product,
+framework, owner skill, IDE, and collection source metadata. It never resolves
+an SDKAppID from project files, dependencies, `.env`, session state, or caches,
+and does not include SecretKey or prompt text.
+
+Root's normal collection flow and domain fallbacks share this event. A domain
+fallback emits it only when that fallback has newly received and saved the ID;
+reusing the ID already captured by Root does not create another event. The
+event is in the experience scope, so saved privacy preferences and the global
+deny gate apply. The Runtime persists to Outbox before its bounded foreground
+send. A non-2xx response keeps the same `event_id`; a later foreground call in
+the same project and IDE retries it within the seven-day Outbox retention
+window. Delivery remains best-effort and does not block integration.
+
+This event records collection only. It does not determine whether an app is
+new, whether SDK usage occurred, or whether an integration generated usage.
+
 ---
 
 ## Payload Schema
@@ -335,10 +405,10 @@ calls or pass Prompt/answer content directly to `telemetry.cjs` argv flags.
 
 | Key | Value | Notes |
 |-----|-------|-------|
-| `product` | `chat` / `call` / `live` / `conference` / `rtc-engine` / `tim-push` / `ai-service` / `unknown` | From structured session state or an explicit helper payload; the transport writes this value to CLS `type` |
+| `product` | `chat` / `call` / `live` / `conference` / `rtc-engine` / `tim-push` / `ai-service` / `oral-coach` / `realtime-interpreter` / `conversational-ai` / `unknown` | From structured session state or an explicit helper payload; the transport writes this value to CLS `type`. Values are not validated against this list (see below) — a new value must be added here and to `PRODUCT_BY_SKILL` together |
 | `framework` | `vue3` / `react` / `android` / `ios` / `android+ios` / `flutter` / `web` / `unity` / `unknown` | See Framework mapping below; the transport writes this value to CLS `framework` |
 | `version` | Installed package version for shared routed-Prompt reporting; Chat docs-query may use its Skill version | |
-| `sdkappid` | SDKAppID when uniquely resolved; otherwise omitted | Read through the bounded project resolver described below. It is an application identifier, not the anonymous user ID |
+| `sdkappid` | SDKAppID when uniquely resolved; otherwise omitted | Existing Prompt attribution uses the bounded project resolver below. `sdkappid_collected` requires the value explicitly passed by the current flow. It is an application identifier, not the anonymous user ID |
 | `sessionid` | `sess_{local hash}` when a reliable host session/turn id is available; `null` for anonymous fallback events | Reliable host IDs are hashed locally and mapped to CLS `userid`. Anonymous fallback events keep a private `__correlation_key` for local dedupe/queue recovery and omit `userid` rather than presenting a project bucket as a user session |
 | `ide` | `claude` / `cursor` / `codebuddy` / `codex` / `unknown` | Actual host that fired the conversation Hook. The value is explicitly marked by the installed Hook and is never inferred by AI or by scanning installed IDE directories |
 | `method` | `"prompt"`, `"event"`, or `"feedback"` | See Method enum below |
@@ -350,8 +420,22 @@ calls or pass Prompt/answer content directly to `telemetry.cjs` argv flags.
 
 The official npx installer wires each host Prompt event directly to the
 self-contained `telemetry.cjs hook` entry point. The Hook performs no upload,
-prints nothing to stdout/stderr, binds local state to the current IDE
-conversation, and stages the locally-redacted Prompt for post-route attribution.
+stays stdout/stderr-silent for ordinary Prompts, binds local state to the current
+IDE conversation, and stages the locally-redacted Prompt for post-route attribution.
+Cursor renders the notice as a separate fixed block at the end of the normal
+answer. Its Stop hook never emits `followup_message` or consumes foreground
+presentation attempts; a recovery ACK keeps `pending_output` for the next
+foreground entry. The Python command returns the localized canonical text
+alongside its marker, claiming at most two presentation attempts on the same
+receipt. The notice never enters the composer or creates a synthetic user turn.
+Legacy complete fixed notice replay remains a presentation exception: before any
+reporting state handling, `beforeSubmitPrompt` prints
+`{"continue":false,"user_message":"<fixed localized notice>"}` to cancel the
+synthetic submission. Merely omitting a telemetry event does not stop Cursor
+from sending that message to the model. The full projection is matched with
+presentation whitespace ignored; an option label or additional user reply is
+not a replay. No preference or notice transition occurs for the full notice,
+even if a model incorrectly attaches `control_choice:"ambiguous"`.
 Older installations and plugin templates may still enter through the Python
 standard-library `reporting.py bind-session` compatibility shim until they are
 reinstalled; both paths share the same local receipt and event-id dedupe:
@@ -362,13 +446,13 @@ reinstalled; both paths share the same local receipt and event-id dedupe:
   Node Runtime directly. Plugin-mode/legacy Claude and CodeBuddy use
   their host-provided plugin-root environment variable as the deterministic
   fallback.
-- Claude Stop notices use the host-visible `stopReason` field with
-  `continue:false` (with no model-generated follow-up answer) because some
-  Claude Code releases execute a Stop hook but drop `systemMessage`. If a host drops the first
-  structured Stop result, Claude re-renders the `awaiting_choice` notice on the
-  next real Stop, while Codex keeps Stop silent and re-renders it through the
-  foreground dispatcher; Cursor remains silent for its synthetic
-  `followup_message` replay to avoid a notice loop. CodeBuddy's foreground
+- Claude, Cursor and Codex keep Stop silent and render the fixed notice
+  after the normal foreground answer. Claude and Cursor claim at most two
+  foreground presentations for the same pending receipt; Stop cannot consume
+  that budget or start a model continuation to display the notice.
+  Cursor's
+  `beforeSubmitPrompt` cancellation remains only a guard for legacy replays.
+  The pending choice remains available for the real user. CodeBuddy's foreground
   dispatcher is the first-use renderer: after the normal answer it emits the
   exact generated notice from `continuation-notice.md` as a separate final
   block, regardless of whether a post-answer channel is available. CodeBuddy
@@ -409,8 +493,13 @@ only after CLS returns 2xx; offline/5xx/GC cases recreate or dedupe the same id.
 The Hook never flushes it. A later foreground `prompt`/`invoke`/Sender uploads it, so
 activation can be delayed when the user never enters a routed Skill flow.
 
-The shared Runtime canonicalizes `product` and `framework` before transport;
-unsupported or cross-wired values become `"unknown"` instead of polluting CLS.
+The shared Runtime checks `product` and `framework` only for format before
+transport: a value that fails `SAFE_NAME_RE` (`^[A-Za-z0-9._+-]{1,128}$`) is
+dropped and the field falls back to the owner's `PRODUCT_BY_SKILL` entry or
+`"unknown"`. There is **no allow-list** — any well-formed value, including one
+not listed in the table above, reaches CLS unchanged. Keep the table above and
+`PRODUCT_BY_SKILL` in `telemetry.js` in sync by hand, and check CLS dashboards
+or alerts that filter on a fixed list of `type` values when adding one.
 `schema.js` is the sole wire boundary: it maps internal `product` to CLS
 `type`, while `framework` keeps its name. Callers must not send wire-only keys.
 
@@ -497,7 +586,7 @@ SDKAppID inspection.
 | `method` | When to use | `text` format |
 |----------|------------|---------------|
 | `"prompt"` | User's original message or selected option, durably staged on entry and sent immediately by the required foreground path; the later Dispatcher/owner step only adds attribution or retries the same event | Plain text after local sensitive-data redaction, plus `skillname` only when emitted by `reporting.py invoke`. Before showing a clarification / confirmation / option question, record that exact assistant question with `reporting.py context --question ...`; then still render the fixed choices with `AskUserQuestion`. For the user's selected option / confirmation, report `引导问题：...\n用户选择：...`, e.g. `引导问题：你选择的是通用会议场景（适用于小班课、多人视频等场景）。确认以此为基础集成吗？\n用户选择：是的，继续`. Do not summarize or translate user-provided text. The helper caps the redacted UTF-8 payload at 32 KiB, retaining the beginning and end with a `[TRUNCATED FOR REPORTING]` marker. |
-| `"event"` | All skill behavior/milestone events | JSON string: `{"type":"<event-type>","data":{...}}` |
+| `"event"` | Skill behavior/milestone events; SDKAppID capture uses the dedicated helper | Usually a JSON string: `{"type":"<event-type>","data":{...}}`; `sdkappid_collected` is the fixed event text |
 | `"feedback"` | Chat Path D explicit resolved/unresolved feedback | The related user prompt in `text`, with `"0"` or `"1"` in the optional `feedback` field |
 
 ---
@@ -513,6 +602,7 @@ SDKAppID inspection.
 | `business-decisions-complete` | A2-Q1.5 finishes for **all** slices in `confirmed_plan` | `decisions` (full `session_context.business_decisions` object), `sdkappid` |
 | `docs-query` | Docs skill returns a result (slice or llms.txt) | `query`, `source` (`"slice"` / `"llms-txt"` / `"slice-planned"`), `matched_heading` |
 | `feature-gap` | Search/docs finds slice with `status_planned` or `no_match` | `query`, `gap_type` (`"planned"` / `"no-slice"` / `"no-match"`), `slice_id` (if planned) |
+| `sdkappid_collected` | Current integration flow successfully saves an SDKAppID explicitly provided by the user | Top-level `sdkappid`; optional known `product`, `framework`, `skillname`, and `collection_source` |
 
 ### Conference deep events (product = conference only)
 
@@ -530,7 +620,6 @@ JSON event envelope. The active values are:
 | Event text | Meaning |
 |------------|---------|
 | `skill_start\|path=A/B/D` | Chat workflow path starts |
-| `credentials_collected` | SDKAppID was collected |
 | `mode_selected\|mode=...` | Integration mode was selected |
 | `features_confirmed\|features=...` | Requested features were confirmed |
 | `direct_chat_config\|targetID=...\|entry=...` | Direct-chat target and entry position were configured |
@@ -586,8 +675,7 @@ implementation state and is never written to CLS.
 
 The foreground `prompt --input-stdin --require-input` and `invoke` stdout marker
 `TRTC_REPORTING_NOTICE_REQUIRED_V1` must be consumed after the normal answer is
-rendered. A host Stop Hook may render the locale-matched notice immediately;
-when that channel is unavailable, the foreground integration MUST render the
+rendered. The foreground integration MUST render the
 same generated notice after the normal answer and accept the fixed choice on
 the next prompt entry. The two fixed continuation labels are sent through the same stdin protocol. They are control messages only
 when the matching project notice/receipt is present; otherwise they follow the

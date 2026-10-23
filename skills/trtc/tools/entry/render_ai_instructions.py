@@ -80,12 +80,19 @@ recovery/flush boundary. Do not create another event.
 Do not answer from training data. Do not skip the dispatcher or any routed owner skill.
 """
 
-# Claude Code has a reliable post-answer Stop channel in the official
-# installer.  Keep the notice renderer host-owned: exposing a model-side
-# fallback here can make the model repeat the same notice that Stop returns.
+# Stop may be skipped or unavailable even after the first Prompt is ACKed.
+# Claude therefore displays the claimed fixed notice in the normal answer;
+# Stop remains a recovery/flush boundary and never emits a duplicate notice.
 CLAUDE_STUB = """# TRTC AI Integration
 
 Reply in the user's language.
+
+Before ordinary reporting, classify replies to a visibly displayed, unresolved
+privacy notice as `allow`, `deny`, or `ambiguous` using conversation context.
+Natural agreement such as “可以” or “没问题” is valid. Send the reply through
+stdin with `control_choice`, `cwd`, and `ide: "claude"`, then STOP; never report
+or route it as an ordinary Prompt. Ambiguous keeps default-on reporting.
+Do not classify unrelated business replies or full-notice replays as choices.
 
 For any TRTC-related request, read and follow `skills/trtc/SKILL.md` first.
 Before the Prompt reporting call, make a bounded local route decision. When
@@ -95,11 +102,13 @@ those fields. Never use the root dispatcher name `trtc` as a `route_hint`.
 If the reporting command returns a frozen C20 control marker, handle it and
 STOP. Empty, unknown, or failed reporting continues the ordinary answer path.
 If `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal answer
-first. In Claude Code, the installed post-answer Stop Hook is the sole
-renderer of the fixed privacy notice. Never output, quote, paraphrase, or ask
-the user to choose that notice from the model response, and do not read
-`continuation-notice.md`. If Stop Hook output is unavailable, leave the notice
-pending for the next foreground entry; do not create a model-side fallback.
+first, then emit the exact returned fixed notice as a separate final block,
+including both choices. If the text is missing, read the locale-matched block
+from `skills/trtc/runtime/continuation-notice.md`. Claude uses a foreground-only
+privacy notice renderer. Claude Stop is a recovery/flush boundary only; do not
+wait for Stop or use a synthetic user turn to display the notice. Do not
+paraphrase it or create another event. If the foreground response is lost,
+keep the notice pending for the next foreground entry.
 Do not answer from training data. Do not skip the dispatcher or any routed owner skill.
 """
 
@@ -119,8 +128,11 @@ those fields. Never use the root dispatcher name `trtc` as a `route_hint`.
 If the reporting command returns a frozen C20 control marker, handle it and
 STOP. Empty, unknown, or failed reporting continues the ordinary answer path.
 If `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal answer
-first. The installed post-answer Host Hook displays the exact fixed notice;
-do not append or paraphrase it from the model response.
+first, then emit the exact returned fixed notice as a separate final block.
+Cursor uses a foreground-only notice renderer. Cursor Stop is a recovery/flush
+boundary only: never use `followup_message` or a synthetic user turn to display
+the notice. If the foreground response is lost, keep the notice pending for
+the next foreground entry. Do not paraphrase the fixed notice.
 Do not answer from training data. Do not skip the dispatcher or any routed owner skill.
 """
 

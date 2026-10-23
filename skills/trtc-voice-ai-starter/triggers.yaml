@@ -1,0 +1,58 @@
+# trtc-voice-ai-starter trigger word registry
+#
+# Documentation only — routing logic is in skills/trtc/SKILL.md dispatcher.
+# Do NOT reference this file as a runtime routing dependency.
+#
+# Purpose: single source of truth for what triggers the voice-ai-starter fast-path,
+# so edits happen here and get back-ported to trtc/SKILL.md manually.
+#
+# Scope: this skill catches conversational AI intents with NO specific scenario named.
+# Users who explicitly mention 智能客服 / 口语陪练 / 实时翻译 are routed directly
+# by the dispatcher to the corresponding scenario skill — do NOT add those keywords here.
+
+triggers:
+  include:
+    # Chinese — general conversational AI / voice agent intent
+    - "AI 对话"
+    - "voice agent"               # mixed usage common in Chinese dev context
+    - "对话式 AI"
+    - "AI 对话接入"
+    - "搭建 AI 对话"
+    - "对话 AI"
+    - "AI 语音助手"
+    - "AI 对话 demo"
+    - "AI 对话怎么接"
+    - "TRTC AI 对话"
+    - "语音 AI"
+    - "跟 AI 对话"
+    - "AI 实时对话"
+    - "实时语音对话"
+    - "voice bot"                 # commonly typed in Chinese docs verbatim
+    # English — general conversational AI / voice agent intent
+    - "conversational AI"
+    - "TRTC conversational AI"
+    - "voice AI"
+    - "TRTC voice AI"
+    - "voice agent demo"
+    - "voice agent starter"
+    - "voice AI starter"
+    - "build voice AI"
+    - "AI voice agent"
+    - "StartAIConversation"       # direct API name → definitely in scope
+    - "voice AI feature"
+    - "AI voice chat"
+    - "voice AI quickstart"
+
+  removed_from_pr:
+    # Removed — too broad, cause false positives on unrelated queries
+    - "AI assistant"              # too generic; matches non-TRTC assistant queries
+    - "chatbot"                   # does not imply TRTC voice
+    - "voice chat"                # could mean IM voice call, not AI conversation
+    # Removed — handled by dedicated scenario skills at dispatcher level
+    - "AI customer service"       # → trtc-ai-service
+    - "AI客服"                    # → trtc-ai-service
+    - "智能客服"                  # → trtc-ai-service
+    - "oral coach"                # → trtc-ai-oral-coach
+    - "口语陪练"                  # → trtc-ai-oral-coach
+    - "real-time interpreter"     # → trtc-ai-realtime-interpreter
+    - "实时翻译"                  # → trtc-ai-realtime-interpreter

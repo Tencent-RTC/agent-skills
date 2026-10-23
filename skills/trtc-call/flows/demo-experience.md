@@ -61,7 +61,7 @@ SKILL.md 路由 `active_flow = demo-experience` 时，先检查 session 字段�
 
 ```
 到腾讯云控制台创建 TRTC 应用（未登录会先引导注册）：
-  国内站 → https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje?utm_campaign=skill&_channel_track_key=lDTHxeje
+  国内站 → https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje
   国际站 → https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy
 
 进入应用管理 → 创建应用 → 场景选"音视频通话"

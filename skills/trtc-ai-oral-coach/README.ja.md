@@ -43,8 +43,8 @@ AI（すべて自動実行）：
 
 | キー | 目的 | 入手先 |
 |------|------|--------|
-| 1: TRTCアプリ認証情報 | コーチの音声チャネル | https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw |
-| 2: Tencent Cloud APIキー | バックエンド権限（TRTCと同一ログイン） | https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE |
+| 1: TRTCアプリ認証情報 | コーチの音声チャネル | https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy |
+| 2: Tencent Cloud APIキー | バックエンド権限（TRTCと同一ログイン） | https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s |
 | 3: LLM APIキー | コーチの「頭脳」— 理解・添削・レポート生成 | AIプロバイダー（OpenAI、DeepSeekなど） |
 
 ## コーチの機能

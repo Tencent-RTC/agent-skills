@@ -10,6 +10,7 @@ const {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   unlinkSync,
@@ -22,6 +23,48 @@ const PACKAGE_EVIDENCE_SCHEMA_VERSION = 1;
 const BUNDLE_PATH = 'skills/trtc/runtime/telemetry.cjs';
 const COLD_BUNDLE_PATH = 'skills/trtc/runtime/sdkappid-resolver-web.cjs';
 const MAX_ARTIFACT_BYTES = 20 * 1024 * 1024;
+
+// A real `.env` holds live TRTC / Tencent Cloud / LLM credentials. Skill
+// templates keep one locally for development, and the only thing keeping it out
+// of the tarball is a nested `.gitignore` inside the template directory — the
+// root `.gitignore` does NOT apply once package.json declares a `files`
+// whitelist. That makes the protection a single point of failure that one
+// rename can silently remove (verified: removing it admits `.env` plus ~20k
+// node_modules files), so the invariant is asserted here rather than left to
+// review. `.env.example` is shippable; `.env` is not.
+const SECRET_FILE_RE = /(^|\/)\.env$/;
+
+function assertNoPublishedSecrets(paths, where) {
+  const secrets = paths.filter((name) => SECRET_FILE_RE.test(name)).sort();
+  if (secrets.length > 0) {
+    const err = new Error(
+      `npm package would publish credential file(s) ${where}: ${secrets.join(', ')}. `
+      + 'Only .env.example may ship. Check that the template directory still has a '
+      + '.gitignore listing .env — the root .gitignore does not cover it.',
+    );
+    err.code = 'PACKAGE_SECRET_LEAK';
+    throw err;
+  }
+  const vendored = paths.filter((name) => name.split('/').includes('node_modules')).sort();
+  if (vendored.length > 0) {
+    const err = new Error(
+      `npm package would publish ${vendored.length} node_modules file(s) ${where} `
+      + `(e.g. ${vendored[0]}). The same missing template .gitignore causes this.`,
+    );
+    err.code = 'PACKAGE_VENDORED_DEPS';
+    throw err;
+  }
+}
+
+function listFilesRecursively(root, prefix = '') {
+  const out = [];
+  for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...listFilesRecursively(root, rel));
+    else out.push(rel);
+  }
+  return out;
+}
 
 function npmCommandFor(platform = process.platform) {
   return platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -157,6 +200,7 @@ function verifyPackage({ repoRoot = resolve(__dirname, '..'), jsonOutput = null,
       const listedFiles = new Set((manifest[0].files || []).map((item) => item.path));
       if (!listedFiles.has(BUNDLE_PATH)) throw new Error(`npm package is missing ${BUNDLE_PATH}`);
       if ([...listedFiles].some((name) => name.startsWith('tests/'))) throw new Error('npm package unexpectedly includes tests/');
+      assertNoPublishedSecrets([...listedFiles], 'per npm pack manifest');
       tarball = join(packDir, manifest[0].filename);
       artifactName = manifest[0].filename;
     }
@@ -164,6 +208,10 @@ function verifyPackage({ repoRoot = resolve(__dirname, '..'), jsonOutput = null,
     const unpackedBundle = join(unpackDir, 'package', ...BUNDLE_PATH.split('/'));
     if (!existsSync(unpackedBundle)) throw new Error(`Unpacked bundle is missing: ${unpackedBundle}`);
     if (existsSync(join(unpackDir, 'package', 'tests'))) throw new Error('npm package unexpectedly includes tests/');
+    // Re-check against the extracted tree, not just the manifest: an artifact
+    // supplied via --artifact never produces a manifest, and this is the only
+    // check that sees what a consumer actually receives.
+    assertNoPublishedSecrets(listFilesRecursively(join(unpackDir, 'package')), 'in the extracted tarball');
 
     const evidence = buildPackageEvidence({ tarball, unpackRoot: unpackDir, repoRoot });
     const isolatedBundle = join(isolatedDir, 'telemetry.cjs');
@@ -196,8 +244,11 @@ module.exports = {
   BUNDLE_PATH,
   PACKAGE_EVIDENCE_SCHEMA_VERSION,
   MAX_ARTIFACT_BYTES,
+  SECRET_FILE_RE,
+  assertNoPublishedSecrets,
   atomicCreateJson,
   buildPackageEvidence,
+  listFilesRecursively,
   main,
   npmCommandFor,
   parseArgs,

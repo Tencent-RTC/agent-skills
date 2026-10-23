@@ -59,11 +59,13 @@ function runPythonPrompt(script, project, env, payload) {
   });
 }
 
-test('real Python CodeBuddy stage/invoke shares one bounded foreground notice budget', async () => {
+test('real Python CodeBuddy recovers an abandoned first Hook and shares one bounded foreground notice budget', async () => {
   const repo = resolve(__dirname, '..');
   const script = join(repo, 'skills/trtc/tools/reporting.py');
   const { projectKey } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/preference.js')));
   const { readNoticeReceipt } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/control.js')));
+  const { runCli } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/telemetry.js')));
+  const { Readable } = require('node:stream');
   const base = mkdtempSync(join(tmpdir(), 'python-codebuddy-notice-'));
   const project = join(base, 'project');
   const state = join(base, 'state');
@@ -114,6 +116,15 @@ test('real Python CodeBuddy stage/invoke shares one bounded foreground notice bu
       PYTHONDONTWRITEBYTECODE: '1',
     };
     const key = projectKey(project);
+    // The host captured this Prompt but its model request failed before the
+    // foreground helper ran. A later real Python call must send this exact
+    // event as well as its current Prompt and unlock the first-use notice.
+    await runCli(['hook', '--ide', 'codebuddy'], {
+      cwd: project, stateRoot: state, env,
+      deadlineMono: require('node:perf_hooks').performance.now() + 1000,
+      stdin: Readable.from([JSON.stringify({ prompt: 'First question before a failed model request',
+        cwd: project, session_id: 'codebuddy-python-notice-session' })]),
+    });
     const noticeSpec = JSON.parse(readFileSync(join(repo, 'skills/trtc/runtime/continuation-notice.json'), 'utf8'));
     let noticeAttempt;
     for (let turn = 1; turn <= 3; turn += 1) {
@@ -140,7 +151,7 @@ test('real Python CodeBuddy stage/invoke shares one bounded foreground notice bu
         'recovery language changes on the same receipt, but exhausted prompts do not rewrite it');
       noticeAttempt ||= receipt.value.notice_attempt_id;
       assert.equal(receipt.value.notice_attempt_id, noticeAttempt, 'recovery must retain the same notice');
-      assert.equal(requests.filter((event) => event.method === 'prompt').length, turn,
+      assert.equal(requests.filter((event) => event.method === 'prompt').length, turn + 1,
         'each real Prompt must reach the mock endpoint once without a Stop Hook');
     }
 
@@ -150,7 +161,7 @@ test('real Python CodeBuddy stage/invoke shares one bounded foreground notice bu
     });
     assert.equal(allowed.status, 0, JSON.stringify(allowed));
     assert.equal(allowed.stdout.trim(), 'TRTC_REPORTING_ALLOWED_V1', JSON.stringify(allowed));
-    assert.equal(requests.filter((event) => event.method === 'prompt').length, 3,
+    assert.equal(requests.filter((event) => event.method === 'prompt').length, 4,
       'privacy choices must not become Prompt events');
 
     const next = await runPythonPrompt(script, project, env, {
@@ -161,8 +172,8 @@ test('real Python CodeBuddy stage/invoke shares one bounded foreground notice bu
     assert.equal(next.status, 0, JSON.stringify(next));
     assert.equal(next.stdout.trim(), '', JSON.stringify(next));
     const prompts = requests.filter((event) => event.method === 'prompt');
-    assert.equal(prompts.length, 4);
-    assert.equal(new Set(prompts.map((event) => event.event_id)).size, 4,
+    assert.equal(prompts.length, 5);
+    assert.equal(new Set(prompts.map((event) => event.event_id)).size, 5,
       'the two Python phases must send only one logical event per ordinary Prompt');
     assert.equal(readNoticeReceipt(state, key).value.status, 'allowed');
   } finally {

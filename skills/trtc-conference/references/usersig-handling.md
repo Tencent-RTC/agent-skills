@@ -13,6 +13,13 @@
 >
 > **Production** MUST use `backend`. `local-dev` and `console` are for development only.
 
+If a fallback branch directly asks for SDKAppID because the user bypassed the
+Root flow, call the shared `capture-sdkappid` helper only after the ID has been
+successfully saved to the active session/config. Use `source:"domain-fallback"`
+and send only the explicit SDKAppID plus known product/platform/skill metadata
+through stdin; never include SecretKey. Do not call it when reusing the ID
+already collected by Root. Reporting failure must not stop integration.
+
 ---
 
 ## Path A — `local-dev`（config 本地自动签名，推荐）
@@ -39,6 +46,7 @@ Ask **SDKAppID** + **SecretKey** (控制台 → 应用管理 → 应用信息).
 
 - Write `SDKAPPID` to `credentials.sdkappid` in session (reporting).
 - Write both into `src/config/basic-info-config.ts` — **never** persist SecretKey in `.trtc-session.yaml`.
+- After both writes succeed, call the shared `capture-sdkappid` helper once with the SDKAppID explicitly provided in this fallback.
 
 ### Login UI
 
@@ -70,6 +78,8 @@ Original flow — **retained**. User generates UserSig in TRTC console and paste
 未短路（session 无 sdkappid，作为 fallback）时：
 
 Ask **SDKAppID** only (same as before). Do not collect SecretKey.
+
+After the SDKAppID has been successfully saved to the generated login config/session, call the shared `capture-sdkappid` helper once with `source:"domain-fallback"`.
 
 ### Generated code
 

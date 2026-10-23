@@ -83,8 +83,8 @@ To get the customer service agent running, you need 3 cloud service credentials.
 
 | Key | Purpose | Where to find it |
 |-----|---------|-----------------|
-| Key 1: TRTC Application Credentials | Lets the agent make calls and do voice chat | https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw (register & create an **RTC Engine** app — supports Conversational AI) |
-| Key 2: Tencent Cloud API Key | Proves you have permission to use Tencent Cloud voice & calling services (login syncs with your TRTC account) | https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE |
+| Key 1: TRTC Application Credentials | Lets the agent make calls and do voice chat | https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy (register & create an **RTC Engine** app — supports Conversational AI) |
+| Key 2: Tencent Cloud API Key | Proves you have permission to use Tencent Cloud voice & calling services (login syncs with your TRTC account) | https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s |
 | Key 3: LLM API Key | Lets the agent "think" — understand queries and respond | Your registered AI service website (e.g. OpenAI, DeepSeek, etc.) |
 
 > The AI will tell you exactly how to get each key step by step. Your key info is only used for this configuration session — the system does not log or leak it.

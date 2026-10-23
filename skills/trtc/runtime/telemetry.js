@@ -39,11 +39,14 @@ import {
 } from './identity.js';
 import { HOOK_TOTAL_BUDGET_MS, parseAdapter, readStdinJson } from './normalize-hook.js';
 import {
+  acquireReservation,
   listOutbox,
   listPending,
   purgeProjectEvents,
   purgeProjectPromptEvents,
   readEvent,
+  releaseReservation,
+  remove,
   resolveTelemetryRoot,
   updatePendingAttribution,
   updateOutboxAttribution,
@@ -64,6 +67,7 @@ import {
   preferenceFromText,
   projectKey,
   readPreferenceState,
+  retryAmbiguousNoticeDefault,
   setReportingPreference,
 } from './preference.js';
 import { sanitizeReportText } from './redact.js';
@@ -164,6 +168,9 @@ const PRODUCT_BY_SKILL = Object.freeze({
   'trtc-ai-customer-service-skill': 'ai-service',
   'ai-oral-coach-skill': 'oral-coach',
   'trtc-ai-realtime-interpreter': 'realtime-interpreter',
+  // `conversational-ai` (not a shorter label) because the reporting
+  // dashboard already aliases it into the AI product line.
+  'trtc-voice-ai-starter': 'conversational-ai',
   'trtc-sdk-log-analysis': 'unknown',
 });
 
@@ -176,20 +183,79 @@ const ROUTE_HINT_ALIASES = Object.freeze({
   'trtc-ai-oral-coach': 'ai-oral-coach-skill',
 });
 
-// Codex creates a background "Overview" task for its own suggestions. That
-// task is not a user Prompt and must not enter the reporting state machine.
-// Only host-controlled metadata is trusted here.  Body matching is unsafe:
-// a user can legitimately paste the same template and it must remain a
-// reportable Prompt even when the host omitted `user_initiated`.
-function isCodexInternalPrompt(prompt, input, flags) {
+// Codex creates background Overview and suggested-next-message tasks for its
+// own UI. They are not user Prompts and must not enter the reporting state
+// machine. Prefer host-controlled metadata. Some Codex versions omit it, so
+// recognize only complete, distinctive internal templates as a fallback; a
+// generic/pasted Overview heading remains reportable.
+function isCodexInternalOverviewBody(prompt) {
+  if (typeof prompt !== 'string') return false;
+  const normalized = prompt.replace(/\r\n/g, '\n').trimStart();
+  if (!normalized.startsWith('# Overview\n')) return false;
+  return [
+    'Generate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this local project:',
+    "Get an understanding of the user's intent and goals by deeply viewing their connected apps.",
+    'Before returning a suggestion, it must pass all four checks:',
+    'appId: the single most relevant app id',
+  ].every((marker) => normalized.includes(marker));
+}
+
+// Codex may also submit an app-generated next-message suggestion request as
+// prompt text. It is host UI scaffolding, not text authored by the user. Keep
+// the signature narrow so a user discussing only one of these phrases is not
+// suppressed; explicitly user-initiated prompts bypass this content fallback.
+function isCodexSuggestedNextMessage(prompt) {
+  if (typeof prompt !== 'string') return false;
+  // Staging trims presentation whitespace later. Match the same input form
+  // here so a leading newline, space, tab, or BOM cannot bypass the gate and
+  // become an indistinguishable internal Prompt after that later trim.
+  const normalized = prompt.replace(/\r\n/g, '\n').trimStart();
+  return normalized.startsWith('This is an app-generated request for a suggested next user message. The user did not write this message.')
+    && normalized.includes("Your suggestion will appear in the user's empty message composer.")
+    && normalized.includes('Predict the single message this user is most likely to type next from the visible conversation.')
+    && normalized.includes('Return only JSON matching this schema:');
+}
+
+// Claude also delivers background task callbacks through UserPromptSubmit.
+// Without provenance metadata, accept only a whole notification envelope (or
+// several consecutive envelopes). Quoted XML or accompanying user prose must
+// remain reportable. No file paths from the notification are read.
+function isClaudeTaskNotification(prompt) {
+  if (typeof prompt !== 'string') return false;
+  let rest = prompt.trim();
+  const opening = '<task-notification>';
+  const closing = '</task-notification>';
+  if (!rest.startsWith(opening)) return false;
+  while (rest) {
+    if (!rest.startsWith(opening)) return false;
+    const end = rest.indexOf(closing, opening.length);
+    if (end < 0) return false;
+    const body = rest.slice(opening.length, end);
+    if (body.includes(opening)
+      || !/<task-id>[^<>]+<\/task-id>/.test(body)
+      || !/<status>[^<>]+<\/status>/.test(body)
+      || !/<summary>[\s\S]+<\/summary>/.test(body)) return false;
+    rest = rest.slice(end + closing.length).trimStart();
+  }
+  return true;
+}
+
+function internalPromptReason(prompt, input, flags) {
   const ide = safeName(flags?.ide || input?.ide, 'unknown');
-  if (ide !== 'codex' || input?.user_initiated === true) return false;
-  if (input?.internal === true || input?.is_internal === true) return true;
-  const hostSource = typeof input?.host_source === 'string' ? input.host_source.toLowerCase() : '';
+  if (!['codex', 'claude'].includes(ide) || input?.user_initiated === true) return null;
+  const reason = `${ide}_internal_prompt`;
+  if (input?.internal === true || input?.is_internal === true) return reason;
+  const hostSources = [input?.host_source, input?.event_source]
+    .filter((value) => typeof value === 'string').map((value) => value.toLowerCase());
   const hostKind = typeof input?.host_kind === 'string' ? input.host_kind.toLowerCase() : '';
-  if (['internal', 'background', 'suggestion', 'suggestions', 'codex_suggestions', 'host_internal'].includes(hostSource)
-    || ['internal', 'background', 'suggestion', 'suggestions', 'codex_suggestions'].includes(hostKind)) return true;
-  return false;
+  const internalKinds = ide === 'codex'
+    ? ['internal', 'background', 'suggestion', 'suggestions', 'codex_suggestions', 'host_internal']
+    : ['internal', 'background', 'host_internal', 'task_notification', 'task-notification'];
+  if (hostSources.some((value) => internalKinds.includes(value)) || internalKinds.includes(hostKind)) return reason;
+  const matchesTemplate = ide === 'codex'
+    ? isCodexInternalOverviewBody(prompt) || isCodexSuggestedNextMessage(prompt)
+    : isClaudeTaskNotification(prompt);
+  return matchesTemplate ? reason : null;
 }
 
 // Host lifecycle fallback. Prompt Hooks remain disk-only; when a host does not
@@ -925,7 +991,7 @@ function codexReceiptAttribution(projectRoot, event, input = {}) {
 function preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) {
   if (safeName(flags.ide || input?.ide, 'unknown') !== 'codex') return null;
   const text = input?.text ?? input?.prompt;
-  if (typeof text !== 'string' || !text || isCodexInternalPrompt(text, input, flags)
+  if (typeof text !== 'string' || !text || internalPromptReason(text, input, flags)
     || input.control_choice || isNoticeReplayText(text)
     || preferenceFromText(text) !== null || isCanonicalOption(text) !== null) return null;
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd || input.cwd, normalized: input, processCwd: ctx.cwd });
@@ -1573,8 +1639,40 @@ function historicalOutboxPromptIds(stateRoot, key, now = Date.now(), ide = null)
   return candidates.slice(0, HISTORICAL_OUTBOX_MAX_COUNT).map((event) => event.event_id);
 }
 
+function historicalOutboxSdkAppIdIds(stateRoot, key, now = Date.now(), ide = null) {
+  if (!ide || ide === 'unknown') return [];
+  const cutoff = now - OUTBOX_RECOVERY_TTL_MS;
+  const candidates = [];
+  for (const path of listOutbox(stateRoot)) {
+    const event = readEvent(path);
+    if (!event || event.method !== METHOD.EVENT || event.text !== EVENT_TYPES.SDKAPPID_COLLECTED
+      || event.__project_key !== key || event.ide !== ide) continue;
+    if (typeof event.time !== 'number' || event.time > now || event.time < cutoff) continue;
+    candidates.push(event);
+  }
+  candidates.sort((a, b) => (a.time - b.time) || a.event_id.localeCompare(b.event_id));
+  return candidates.slice(0, HISTORICAL_OUTBOX_MAX_COUNT).map((event) => event.event_id);
+}
+
 async function flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, now, opts = {}) {
-  const eventIds = historicalOutboxPromptIds(ctx.stateRoot, key, now, ide);
+  const promptIds = historicalOutboxPromptIds(ctx.stateRoot, key, now, ide);
+  const sdkAppIdIds = historicalOutboxSdkAppIdIds(ctx.stateRoot, key, now, ide);
+  // Reserve half of a mixed retry batch for SDKAppID events. A long offline
+  // Prompt queue must not permanently occupy every slot and starve collection
+  // records on each later foreground entry.
+  const sdkAppIdCount = Math.min(sdkAppIdIds.length, Math.ceil(HISTORICAL_OUTBOX_MAX_COUNT / 2));
+  const promptCount = Math.min(promptIds.length, HISTORICAL_OUTBOX_MAX_COUNT - sdkAppIdCount);
+  const eventIds = [
+    ...promptIds.slice(0, promptCount),
+    ...sdkAppIdIds.slice(0, sdkAppIdCount),
+  ];
+  if (eventIds.length < HISTORICAL_OUTBOX_MAX_COUNT) {
+    const remaining = HISTORICAL_OUTBOX_MAX_COUNT - eventIds.length;
+    eventIds.push(...promptIds.slice(promptCount, promptCount + remaining));
+    if (eventIds.length < HISTORICAL_OUTBOX_MAX_COUNT) {
+      eventIds.push(...sdkAppIdIds.slice(sdkAppIdCount, sdkAppIdCount + HISTORICAL_OUTBOX_MAX_COUNT - eventIds.length));
+    }
+  }
   if (eventIds.length === 0) return null;
   const maxDurationMs = Math.min(
     Number.isFinite(opts.maxDurationMs) ? Math.max(0, opts.maxDurationMs) : 1800,
@@ -1670,10 +1768,61 @@ function recentHookPromptByFingerprint(stateRoot, key, fingerprint, now = Date.n
   return candidates.length > 1 ? { ambiguous: true } : candidates[0] || null;
 }
 
-function rawSessionFromInput(input) {
+function discardHookPromptForControl(ctx, key, prompt, ide, sessionid, turnId) {
+  const fingerprint = promptFingerprint(sanitizeReportText(prompt).trim());
+  const now = ctx.now();
+  const candidates = [...listPending(ctx.stateRoot), ...listOutbox(ctx.stateRoot)]
+    .map((path) => ({ path, event: readEvent(path) }))
+    .filter(({ event }) => event?.method === METHOD.PROMPT
+      && event.__project_key === key
+      && event.__stage_source === 'hook'
+      && event.__prompt_fingerprint === fingerprint
+      && (!ide || ide === 'unknown' || event.ide === ide)
+      && (!turnId || !event.turn_id || event.turn_id === turnId)
+      && (!sessionid || !eventCorrelationKey(event) || eventCorrelationKey(event) === sessionid)
+      && Number.isFinite(event.time)
+      && event.time <= now
+      // An exact turn id can safely widen the window; when the host does not
+      // expose one, only remove a near-term Hook copy for this exact reply.
+      && now - event.time <= (turnId ? INVOKE_FRESHNESS_MS : PYTHON_HOOK_DEDUPE_MS));
+  let removed = 0;
+  for (const candidate of candidates) {
+    const eventId = candidate.event.event_id;
+    if (typeof eventId !== 'string' || basename(candidate.path) !== `${eventId}.json`) continue;
+    const lock = acquireReservation(ctx.stateRoot, eventId, { reservationTimeoutMs: 100 });
+    if (!lock) continue;
+    try {
+      const current = readEvent(candidate.path);
+      if (current?.event_id === eventId
+        && current.method === METHOD.PROMPT
+        && current.__project_key === key
+        && current.__stage_source === 'hook'
+        && current.__prompt_fingerprint === fingerprint
+        && (!ide || ide === 'unknown' || current.ide === ide)
+        && (!turnId || !current.turn_id || current.turn_id === turnId)
+        && (!sessionid || !eventCorrelationKey(current) || eventCorrelationKey(current) === sessionid)
+        && Number.isFinite(current.time)
+        && current.time <= now
+        && now - current.time <= (turnId ? INVOKE_FRESHNESS_MS : PYTHON_HOOK_DEDUPE_MS)) {
+        remove(candidate.path);
+        removed += 1;
+      }
+    } catch { /* A failed local cleanup must never stage the control reply. */ }
+    finally { releaseReservation(lock); }
+  }
+  return { removed, candidates: candidates.length };
+}
+
+function reliableRawSessionFromInput(input) {
   for (const key of ['raw_session_id', 'session_id', 'conversation_id', 'thread_id']) {
     if (typeof input?.[key] === 'string' && input[key].length > 0) return input[key];
   }
+  return null;
+}
+
+function rawSessionFromInput(input) {
+  const reliable = reliableRawSessionFromInput(input);
+  if (reliable) return reliable;
   // Codex Desktop's foreground compatibility command does not always expose
   // the raw conversation id, but the shim carries CODEX_THREAD_ID as an
   // opaque host-thread hint.  Treat it as a project/IDE session scope only:
@@ -1726,29 +1875,60 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   const prompt = typeof input?.prompt === 'string' ? input.prompt : input?.text;
   if (typeof prompt !== 'string' || prompt.length === 0) return { status: 'invalid', error: 'prompt_required' };
   // Do this before project resolution, preference/control handling, binding,
-  // or the first-Prompt obligation. Internal Codex maintenance text must not
+  // or the first-Prompt obligation. Internal host maintenance text must not
   // leave a recoverable local event or arm a privacy notice.
-  if (isCodexInternalPrompt(prompt, input, flags)) {
-    return { status: 'skipped', reason: 'codex_internal_overview' };
-  }
+  const internalReason = internalPromptReason(prompt, input, flags);
+  if (internalReason) return { status: 'skipped', reason: internalReason };
   const projectRoot = resolveProjectRoot({
     explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input?.cwd,
     normalized: input,
     processCwd: ctx.cwd,
   });
+  const ide = safeName(flags.ide || input?.ide, 'unknown');
   // The Hook command carries the authoritative target IDE in --ide. Some
   // hosts do not repeat it in their stdin envelope, so falling back to the
   // payload alone would re-scan all four IDEs and incorrectly return
   // `unknown` for a mixed project.
-  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || input?.ide, 'unknown'))) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
   const deadlineMono = opts.deadlineMono ?? (performance.now() + (opts.timeoutMs ?? 2000));
+  const rawSession = rawSessionFromInput(input);
+  // An ambient Codex task hint is useful for local Prompt correlation but
+  // is not the Hook's conversation ID. Do not use it to reject a choice
+  // which the model has bound to the notice visible in this conversation.
+  const controlRawSession = reliableRawSessionFromInput(input);
+  const controlSessionId = controlRawSession
+    ? deriveAnonymousSessionId(projectRoot, ide, controlRawSession)
+    : null;
+  const key = projectKey(projectRoot);
+  // Cursor's stop hook can feed its followup_message back as a synthetic
+  // beforeSubmitPrompt event. This exact fixed notice is presentation output,
+  // never a user choice, so intercept it before any control classification.
+  if (isNoticeReplayText(prompt)) {
+    return { status: 'skipped', reason: 'host_notice_replay' };
+  }
+  // Prompt Hooks run before the model can classify a natural-language reply,
+  // so they may already have written this same text to Pending. Remove only
+  // recent Hook copies for this exact redacted Prompt and project/IDE/session
+  // before consuming the control choice; the current reply must never be
+  // promoted by a later Stop callback.
+  if (['allow', 'deny', 'ambiguous'].includes(input?.control_choice)) {
+    discardHookPromptForControl(
+      ctx, key, prompt, ide, controlSessionId,
+      typeof input?.turn_id === 'string' ? input.turn_id : null,
+    );
+  }
   // Canonical continuation labels must be decided before ordinary staging.
-  // A missing receipt is ordinary Prompt text; lock/runtime uncertainty is a
-  // retry result and must never fail-open into Pending.
+  // An explicit ambiguous classification is always consumed as a control
+  // reply, even if its project/session receipt is missing or stale.
   const continuationConsumed = await consumeContinuationChoice(projectRoot, prompt, {
     stateRoot: ctx.stateRoot,
     source: opts.source,
     controlChoice: input?.control_choice,
+    sessionid: controlSessionId,
+    // The explicit allow/deny transaction expects a clock callback so that
+    // it can timestamp each durable write independently. Ambiguous handling
+    // accepts either a callback or a captured timestamp.
+    now: ctx.now,
     _writeControlTurn: ctx.writeControlTurn,
     _updateNoticeStatus: ctx.updateNoticeStatus,
     purge: () => purgeWithDeferred(ctx.stateRoot, projectKey(projectRoot), purgeProjectEvents),
@@ -1758,11 +1938,11 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   if (continuationConsumed !== null && continuationConsumed.status !== 'control_continue') {
     return continuationConsumed;
   }
-  // Cursor's stop hook returns followup_message, which Cursor submits back
-  // through beforeSubmitPrompt as a synthetic user turn.  Keep that exact
-  // host-generated notice local; do not broaden this match, because an
-  // ordinary user prompt may discuss the same privacy topic.
-  if (isNoticeReplayText(prompt)) return { status: 'skipped', reason: 'host_notice_replay' };
+  if (continuationConsumed === null && opts.hook !== true) {
+    try {
+      retryAmbiguousNoticeDefault(projectRoot, { stateRoot: ctx.stateRoot, now: ctx.now });
+    } catch { /* Preference bookkeeping must never block an ordinary Prompt. */ }
+  }
   if (input?.control_choice === 'allow' || input?.control_choice === 'deny') {
     // Enum-only callers must never fall through to ordinary Prompt staging if
     // the project receipt is missing or unreadable.
@@ -1781,8 +1961,6 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   // Ignore only boundary whitespace for matching host/foreground copies.
   // Preserve the original redacted text and all internal whitespace.
   const fingerprint = promptFingerprint(sanitizedPrompt.trim());
-  const key = projectKey(projectRoot);
-  const ide = safeName(flags.ide || input?.ide, 'unknown');
   // Route metadata is supplied by the Root dispatcher after its bounded local
   // route decision. It is intentionally optional: an unknown route must not
   // block this Prompt, but a validated owner must survive every recovery path.
@@ -1803,7 +1981,6 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     sessionid,
   );
   const hasTurnIdentity = typeof input?.turn_id === 'string' && input.turn_id.length > 0;
-  const rawSession = rawSessionFromInput(input);
   const hasRawSession = Boolean(rawSession);
   // A host_thread_hint is a local pairing aid emitted by the Codex shim when
   // no real conversation/session id is available.  It must never be exposed
@@ -1816,8 +1993,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     && typeof input?.host_thread_hint === 'string'
     && input.host_thread_hint.length > 0;
   const rawSessionId = rawSession
-    ? deriveAnonymousSessionId(projectRoot, ide, rawSession)
-    : null;
+    ? deriveAnonymousSessionId(projectRoot, ide, rawSession) : null;
   // When the host omits a turn id, use the redacted Prompt fingerprint as a
   // bounded local intent key. A retry of the same logical turn can therefore
   // adopt its existing event_id instead of creating another anonymous file;
@@ -2545,9 +2721,11 @@ function normalizeScope(value) {
 
 async function handleHook(flags, ctx) {
   const deadlineMono = ctx.deadlineMono ?? (performance.now() + HOOK_TOTAL_BUDGET_MS);
-  const input = await readStdinJson({ stream: ctx.stdin, deadlineMono });
+  const input = ctx.hookInput !== undefined
+    ? ctx.hookInput : await readStdinJson({ stream: ctx.stdin, deadlineMono });
   const normalized = parseAdapter(String(flags.ide || ''), input);
   if (!normalized) return {};
+  if (internalPromptReason(normalized.prompt, normalized, flags)) return {};
 
   let staged = null;
   try { staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: 'hook', deadlineMono }); }
@@ -2764,10 +2942,10 @@ function recoverForegroundNotice(projectRoot, input, ctx, ide = null) {
   // Do not bind notice recovery to a possibly missing/stale Codex session.
   // The first-use obligation is project scoped; the fixed attempt id is the
   // capability that prevents duplicate notices.
-  const codebuddy = safeName(ide || input?.ide, 'unknown') === 'codebuddy';
-  // CodeBuddy claims its presentation at the outer foreground boundary, not
+  const foregroundClaimed = ['codebuddy', 'cursor', 'claude'].includes(safeName(ide || input?.ide, 'unknown'));
+  // These hosts claim presentation at the outer foreground boundary, not
   // while collecting candidate results from stage/invoke/maintenance.
-  const status = codebuddy ? { status: 'required' } : noticeStatus(
+  const status = foregroundClaimed ? { status: 'required' } : noticeStatus(
     ctx.stateRoot,
     key,
     receipt.value.notice_attempt_id,
@@ -2803,11 +2981,11 @@ function recoverForegroundNotice(projectRoot, input, ctx, ide = null) {
 
 // The Python shim supports both a combined stage response and separate
 // stage/invoke processes, and reads nested markers as well as the top-level
-// marker. Claim CodeBuddy's bounded presentation once at either foreground
+// marker. Claim Claude/Cursor/CodeBuddy's bounded presentation once at either foreground
 // exit, covering fresh ACKs, recovery and maintenance alike. A failed claim
 // suppresses only presentation, never delivery or the existing notice state.
 function finalizeForegroundNotice(result, projectRoot, ide, ctx, input = null) {
-  if (ide !== 'codebuddy' || ctx.deferNoticeClaim === true) return result;
+  if (!['codebuddy', 'cursor', 'claude'].includes(ide) || ctx.deferNoticeClaim === true) return result;
   const strip = (value) => {
     if (!value || typeof value !== 'object') return value;
     const copy = { ...value };
@@ -2840,8 +3018,16 @@ function finalizeForegroundNotice(result, projectRoot, ide, ctx, input = null) {
     // Once that entry emitted this attempt, later phases must not claim or
     // print it again. This is an in-flight hint, never a persisted choice.
     if (input?.notice_emitted_attempt_id === receipt.value.notice_attempt_id) return output;
+    // Recovery can start a new Claude/CodeBuddy host session. The notice
+    // recovered in that visible conversation must accept its next reply,
+    // while control replies from the old conversation remain mismatched.
+    const presentationSession = ['claude', 'codebuddy'].includes(ide)
+      ? reliableRawSessionFromInput(input || {}) : null;
     const claimed = noticeStatus(ctx.stateRoot, key, receipt.value.notice_attempt_id, null, {
-      renderer: 'codebuddy-foreground', maxAttempts: 2, ide: 'codebuddy',
+      renderer: `${ide}-foreground`, maxAttempts: 2, ide,
+      ...(presentationSession ? {
+        presentationSessionid: deriveAnonymousSessionId(projectRoot, ide, presentationSession),
+      } : {}),
       noticeLocale: foregroundNoticeLocale(input?.text || input?.prompt, receipt.value.notice_locale, input?.locale || input?.language),
     });
     if (claimed.status === 'required') {
@@ -2860,6 +3046,11 @@ async function handleStagePrompt(flags, ctx) {
   const deadlineMono = ctx.deadlineMono ?? (performance.now() + 2000);
   const input = await readLocalInput(ctx, deadlineMono);
   if (!input) return { status: 'invalid', error: 'stdin_json_required' };
+  // Synthetic callbacks must not drive deferred sends or notice recovery,
+  // even when a previous real Prompt has already created pending state.
+  const inputText = typeof input.text === 'string' ? input.text : input.prompt;
+  const internalReason = internalPromptReason(inputText, input, flags);
+  if (internalReason) return { status: 'skipped', reason: internalReason };
   const finish = (result) => finalizeForegroundNotice(result, resolveProjectRoot({
     explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input?.cwd,
     normalized: input, processCwd: ctx.cwd,
@@ -2868,7 +3059,6 @@ async function handleStagePrompt(flags, ctx) {
   // never depends on the current Prompt being stageable. A continuation
   // choice is handled first, however: replaying a deferred Prompt before a
   // deny would violate the user's request to stop all pending/retry traffic.
-  const inputText = typeof input.text === 'string' ? input.text : input.prompt;
   // Host-side notice replay is presentation bookkeeping, not a new user
   // Prompt. Treat it like a control turn so the independent notice-recovery
   // path does not emit the same marker again and create a replay loop.
@@ -2887,7 +3077,7 @@ async function handleStagePrompt(flags, ctx) {
   // recover another event). Controls/disabled/internal prompts are excluded
   // inside the local-only matcher, before it acquires any reservation.
   const paired = !isControlTurn ? preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) : null;
-  const recoveredTurn = !isControlTurn && !paired && !isCodexInternalPrompt(inputText, input, flags)
+  const recoveredTurn = !isControlTurn && !paired
     ? await recoverDeferredTurns(flags, ctx, input)
     : null;
   let staged;
@@ -3074,7 +3264,7 @@ async function handleStagePrompt(flags, ctx) {
       const pendingNotice = readNoticeReceipt(ctx.stateRoot, key);
       if (!choiceTerminal && !noticeArmedThisEntry && pendingNotice.status === 'valid'
         && ['pending_output', 'awaiting_choice'].includes(pendingNotice.value.status)) {
-        const noticeState = safeName(flags.ide || input?.ide, 'unknown') === 'codebuddy'
+        const noticeState = ['codebuddy', 'cursor', 'claude'].includes(safeName(flags.ide || input?.ide, 'unknown'))
           ? { status: 'required' } : noticeStatus(
           ctx.stateRoot,
           key,
@@ -3144,6 +3334,40 @@ async function handleContext(flags, ctx) {
   });
   if (resolved.status !== 'resolved') return { status: 'retryable', error: resolved.status, durable: false };
   return putContext(projectRoot, resolved.sessionid, sanitizeReportText(question), { deadlineMono, now: ctx.now });
+}
+
+// A Hook can capture the first Prompt even when the host's model request
+// fails before it runs the foreground shim. Later Prompts must not leave
+// that original event stranded and keep the privacy notice pending forever.
+// Recover only the obligation's exact event, with its own attribution and a
+// shared deadline. Never assign the current answer's owner to an older turn.
+async function recoverFirstPrompt(projectRoot, ide, currentEventId, input, ctx) {
+  if (ctx.recoveringFirstPrompt || remaining(ctx.deadlineMono) < 250) return null;
+  const obligation = readNoticeObligation(ctx.stateRoot, projectKey(projectRoot));
+  if (obligation.status !== 'valid' || obligation.value.acknowledged === true
+    || obligation.value.first_event_expired === true
+    || obligation.value.notice_status !== 'pending'
+    || obligation.value.first_event_id === currentEventId) return null;
+  const event = pendingEventForProject(ctx.stateRoot, obligation.value.first_event_id, projectKey(projectRoot));
+  if (event?.method !== METHOD.PROMPT || event.ide !== ide) return null;
+  try {
+    return await handleInvoke({
+      cwd: projectRoot, ide, 'event-id': event.event_id,
+      skillname: 'unknown', product: 'unknown', framework: 'unknown',
+    }, {
+      ...ctx, recoveringFirstPrompt: true, skipInstallRecovery: true, deferNoticeClaim: true,
+      inputOverride: {
+        cwd: projectRoot, ide,
+        notice_attempt_id: randomUUID().replaceAll('-', ''),
+        ...(input?.language ? { language: input.language } : {}),
+        ...(input?.locale ? { locale: input.locale } : {}),
+      },
+    });
+  } catch {
+    // Older pending state is maintenance work. Keep it for the next entry;
+    // its failure must not turn an ACKed current Prompt into a failed send.
+    return null;
+  }
 }
 
 async function handleInvoke(flags, ctx) {
@@ -3249,6 +3473,7 @@ async function handleInvoke(flags, ctx) {
       // foreground shim report a false failure or issue a duplicate send.
       const acknowledged = readEventAcknowledgement(ctx.stateRoot, key, flags['event-id']);
       if (acknowledged.status === 'valid') {
+        await recoverFirstPrompt(projectRoot, foregroundIde, flags['event-id'], invokeInput, ctx);
         const recoveredNotice = foregroundAttemptId
           ? createNoticeAttemptFromObligation(
             ctx.stateRoot,
@@ -3299,6 +3524,7 @@ async function handleInvoke(flags, ctx) {
       requestedSession,
     );
     if (selected.status !== 'selected') {
+      await recoverFirstPrompt(projectRoot, foregroundIde, null, invokeInput, ctx);
       // No current Pending/attribution candidate is safe to claim. Drain only
       // already-attributed Prompt files for this project and IDE instead of
       // guessing a current owner. This also handles multiple old Outbox
@@ -3577,6 +3803,8 @@ async function handleInvoke(flags, ctx) {
     } else {
       acknowledgeRecoveredInstall(recoveredInstall, flush);
     }
+    const firstRecovery = await recoverFirstPrompt(projectRoot, foregroundIde, event.event_id, invokeInput, ctx);
+    if (firstRecovery?.notice?.status === 'created') notice = firstRecovery.notice;
     const attemptId = typeof invokeInput?.notice_attempt_id === 'string'
       && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id)
       ? invokeInput.notice_attempt_id : null;
@@ -3601,7 +3829,7 @@ async function handleInvoke(flags, ctx) {
         });
       }
     }
-    if (attemptId && delivered) {
+    if (attemptId && delivered && notice?.status !== 'created') {
       notice = writeNoticeReceipt(ctx.stateRoot, key, {
         event_id: event.event_id,
         sessionid: event.sessionid ?? null,
@@ -3636,6 +3864,11 @@ async function handleHostStop(flags, ctx) {
   if (input.stop_hook_active === true) return { status: 'skipped', reason: 'stop_hook_active' };
   const ide = safeName(flags.ide || input.ide, 'unknown');
   if (!['cursor', 'codebuddy', 'claude', 'codex'].includes(ide)) return { status: 'skipped', reason: 'unsupported_ide' };
+  // Claude and Cursor render notices after the normal foreground answer.
+  // A missing/skipped Stop callback must not suppress that visible block.
+  // Stop may recover a real Prompt but cannot consume or duplicate a notice.
+  const noticeStatusAtStop = (...args) => ['cursor', 'claude'].includes(ide)
+    ? { status: 'pending_foreground' } : noticeStatus(...args);
   // Cursor Stop also fires for aborted/error loops.  Only a completed agent
   // response satisfies the "answer first, then report/ask" contract.  Older
   // hosts may omit status; in that case the staged-event freshness/ambiguity
@@ -3656,8 +3889,7 @@ async function handleHostStop(flags, ctx) {
   if (remaining(deadlineMono) > 150) {
     await recoverInstallEventOnRuntimeEntry(projectRoot, ide, { ...ctx, cwd: hostCwd });
   }
-  // Cursor's only post-answer output is `followup_message`, which the host
-  // submits as another user turn. A pending notice must not pause ordinary
+  // A pending notice must not pause ordinary
   // reporting: C20 is default-on until the user explicitly denies it. The
   // only Stop call we skip here is a synthetic notice replay with no fresh
   // Prompt staged by the Hook. A real fresh Pending event must still be
@@ -3731,7 +3963,7 @@ async function handleHostStop(flags, ctx) {
     if (receiptSession && sessionid && receiptSession !== sessionid) {
       return { status: 'skipped', reason: 'notice_session_mismatch' };
     }
-    const status = noticeStatus(
+    const status = noticeStatusAtStop(
       ctx.stateRoot,
       key,
       existingNotice.value.notice_attempt_id,
@@ -3747,7 +3979,7 @@ async function handleHostStop(flags, ctx) {
         refreshedObligation.value?.notice_locale || existingNotice.value.notice_locale,
       );
       if (recreated.status === 'created') {
-        const freshStatus = noticeStatus(
+        const freshStatus = noticeStatusAtStop(
           ctx.stateRoot,
           key,
           recreated.receipt.notice_attempt_id,
@@ -3761,15 +3993,13 @@ async function handleHostStop(flags, ctx) {
     if (status.status === 'required') return renderHostNotice(ide, existingNotice.value.notice_locale);
     if (status.status === 'already_awaiting') {
       // There is no acknowledgement from the host that a notice was actually
-      // rendered. Claude may therefore consume the first Stop result without
-      // showing it while the receipt is already in awaiting_choice. Re-render
-      // on the next real Stop so the user gets a chance to choose. Codex keeps
-      // this Stop path silent and recovers through the foreground dispatcher.
+      // rendered. Codex keeps this Stop path silent and recovers through the
+      // foreground dispatcher. Claude/Cursor claims are deferred above.
       // Cursor submits followup_message as a synthetic
       // Prompt and must stay silent there to avoid a notice loop. CodeBuddy's
       // existing no-op behavior is intentional because its message is fed
       // back as a hidden system reminder for the next assistant turn.
-      if (ide === 'claude' || ide === 'codex') {
+      if (ide === 'codex') {
         return renderHostNotice(ide, existingNotice.value.notice_locale);
       }
       return { status: 'skipped', reason: 'notice_choice_pending' };
@@ -3845,7 +4075,7 @@ async function handleHostStop(flags, ctx) {
       inputOverride: invokeInput,
       skipInstallRecovery: true,
       // This is recovery, not a model-visible foreground response. Do not
-      // consume CodeBuddy's foreground presentation budget in a hidden Stop.
+      // consume the foreground presentation budget in a hidden Stop.
       deferNoticeClaim: true,
     });
     if (result?.notice?.status === 'created') break;
@@ -3856,7 +4086,7 @@ async function handleHostStop(flags, ctx) {
     // and waiting through all three retries can exceed a host Stop timeout.
     if (pendingOutputRecoveryAllowed && pendingOutputNotice
       && result?.notice?.status === 'already_present') {
-      const recovered = noticeStatus(
+      const recovered = noticeStatusAtStop(
         ctx.stateRoot,
         key,
         pendingOutputNotice.notice_attempt_id,
@@ -3866,13 +4096,12 @@ async function handleHostStop(flags, ctx) {
         return renderHostNotice(ide, pendingOutputNotice.notice_locale);
       }
       if (recovered.status === 'retry') return { status: 'retry', marker: recovered.marker };
-      if (recovered.status === 'already_awaiting'
-        && (ide === 'claude' || ide === 'codex')) {
+      if (recovered.status === 'already_awaiting' && ide === 'codex') {
         return renderHostNotice(ide, pendingOutputNotice.notice_locale);
       }
     }
 
-    const status = noticeStatus(ctx.stateRoot, key, attemptId, result?.sessionid || staged?.sessionid || null);
+    const status = noticeStatusAtStop(ctx.stateRoot, key, attemptId, result?.sessionid || staged?.sessionid || null);
     if (status.status === 'required') {
       result = { ...result, notice: { status: 'created', recovered: true } };
       break;
@@ -3913,7 +4142,7 @@ async function handleHostStop(flags, ctx) {
   // the user-visible notice without re-reporting or creating a second one.
   if (pendingOutputRecoveryAllowed && pendingOutputNotice
     && ['already_present', 'not_ready'].includes(result?.notice?.status)) {
-    const recovered = noticeStatus(
+    const recovered = noticeStatusAtStop(
       ctx.stateRoot,
       key,
       pendingOutputNotice.notice_attempt_id,
@@ -3925,18 +4154,15 @@ async function handleHostStop(flags, ctx) {
     if (recovered.status === 'retry') return { status: 'retry', marker: recovered.marker };
   }
 
-  const status = noticeStatus(ctx.stateRoot, key, attemptId, result.sessionid || null);
+  const status = noticeStatusAtStop(ctx.stateRoot, key, attemptId, result.sessionid || null);
   if (status.status !== 'required') return { status: 'sent', event_id: result.event_id };
-  // Claude uses the documented continue=false/stopReason Stop contract;
-  // this is the host-visible post-answer channel when systemMessage is
-  // dropped by some Claude Code releases. Codex deliberately keeps Stop
-  // silent because the foreground dispatcher owns its fixed notice. CodeBuddy
+  // Claude, Cursor and Codex keep Stop silent; foreground owns their notice.
+  // CodeBuddy
   // owns first-use rendering in the foreground instructions; this Stop result
   // is retained only as a compatibility/recovery response for hosts that do
   // invoke the fallback path. It must never be required for visibility, and
   // hidden `stopHookFeedback`/`systemMessage` is not treated as an ACK that the
-  // user saw the notice. Cursor's Stop hook supports followup_message, which
-  // is its documented post-answer channel.
+  // user saw the notice.
   const noticeLocale = readNoticeReceipt(ctx.stateRoot, key).value?.notice_locale;
   return renderHostNotice(ide, noticeLocale);
 }
@@ -4054,10 +4280,8 @@ function renderHostNotice(ide, locale = 'zh-CN') {
   // normal answer. Keep Stop as a recovery/flush boundary only and do not
   // emit a second visible notice here. Returning only the documented
   // `continue` field is also safe for Codex's strict hook schema.
-  if (ide === 'codex') return { continue: true };
-  // Keep the notice in the host's post-answer channel.  In particular, do not
-  // return a model-facing decision/block for Claude: the dispatcher has
-  // already answered and the Stop hook must only display the fixed notice.
+  if (['codex', 'cursor', 'claude'].includes(ide)) return { continue: true };
+  // CodeBuddy retains this compatibility response for its host channel.
   if (ide === 'codebuddy') {
     return {
       allowed: false,
@@ -4066,13 +4290,7 @@ function renderHostNotice(ide, locale = 'zh-CN') {
       systemMessage: noticeText,
     };
   }
-  // Claude Code occasionally executes the Stop hook but fails to render a
-  // top-level systemMessage. stopReason is the documented user-visible field
-  // for a hook that sets continue=false, and it also prevents the host from
-  // asking the model to generate a second answer just to display the notice.
-  if (ide === 'claude') return { continue: false, stopReason: noticeText };
-  if (ide !== 'cursor') return { continue: true, systemMessage: noticeText };
-  return { followup_message: noticeText };
+  return { continue: true, systemMessage: noticeText };
 }
 
 function createNoticeAttemptFromObligation(stateRoot, key, obligation, sessionid = null, locale = null) {
@@ -4329,6 +4547,74 @@ async function flushRecoveredInstallEvent(recovery, ctx, projectRoot, key, deadl
   }
 }
 
+function canonicalSdkAppId(value) {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value <= 0) return null;
+    value = String(value);
+  }
+  if (typeof value !== 'string' || value.length === 0 || value.length > 64 || !/^\d+$/.test(value)) return null;
+  const canonical = value.replace(/^0+/, '');
+  return canonical.length > 0 && canonical.length <= 32 ? canonical : null;
+}
+
+async function handleCaptureSdkAppId(flags, ctx) {
+  const raw = await readStdinJson({
+    stream: ctx.stdin,
+    maxBytes: 16 * 1024,
+    deadlineMono: performance.now() + 2000,
+  });
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { status: 'invalid', error: 'invalid_json' };
+
+  const sdkappid = canonicalSdkAppId(raw.sdkappid);
+  if (!sdkappid) return { status: 'invalid', error: 'invalid_sdkappid' };
+  if (!['root-flow', 'domain-fallback'].includes(raw.source)) return { status: 'invalid', error: 'invalid_source' };
+  for (const field of ['product', 'framework', 'skillname', 'version']) {
+    if (raw[field] !== undefined && raw[field] !== null
+      && (typeof raw[field] !== 'string' || !SAFE_NAME_RE.test(raw[field]))) {
+      return { status: 'invalid', error: `invalid_${field}` };
+    }
+  }
+  if (raw.cwd !== undefined && typeof raw.cwd !== 'string') return { status: 'invalid', error: 'invalid_cwd' };
+
+  const projectRoot = resolveProjectRoot({ explicitCwd: raw.cwd, processCwd: ctx.cwd });
+  const ide = safeName(flags.ide, 'unknown');
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  if (!isReportingEnabledForScope(projectRoot, 'experience', ctx.env)) return { status: 'disabled' };
+
+  const key = projectKey(projectRoot);
+  const event = makeEnvelope({
+    method: METHOD.EVENT,
+    text: EVENT_TYPES.SDKAPPID_COLLECTED,
+    sdkappid,
+    ...identityFields({ stateRoot: ctx.stateRoot, ...(ctx.noEphemeralIdentity ? { allowEphemeral: false } : {}) }),
+    skillname: safeName(raw.skillname, undefined),
+    product: safeName(raw.product, undefined),
+    framework: safeName(raw.framework, undefined),
+    version: safeName(raw.version, undefined),
+    ide,
+    collection_source: raw.source,
+    __project_key: key,
+    __scope: 'experience',
+  });
+  validateEvent(event);
+  const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 120 });
+  if (written.status === 'disabled' || written.status === 'retryable') return { ...written, event_id: event.event_id };
+
+  let flush = null;
+  try {
+    flush = await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: 10,
+      maxDurationMs: 1500,
+      priorityEventIds: [event.event_id],
+      isEventEnabled: senderGate(projectRoot, key, ctx.env),
+    });
+  } catch {
+    // The durable Outbox entry remains available for a later foreground flush.
+  }
+  return { status: written.deduped ? 'deduped' : 'queued', event_id: event.event_id, flush };
+}
+
 async function handleEvent(flags, ctx) {
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, processCwd: ctx.cwd });
   if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide, 'unknown'))) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
@@ -4513,6 +4799,20 @@ export async function runCli(argv = process.argv.slice(2), opts = {}) {
     ? FOREGROUND_TOTAL_BUDGET_MS : null;
   const deadlineMono = opts.deadlineMono
     ?? (foregroundBudget === null ? undefined : performance.now() + foregroundBudget);
+  let hookInput;
+  let cursorHookDeadline;
+  if (command === 'hook' && flags.ide === 'cursor') {
+    // beforeSubmitPrompt can cancel a synthetic Stop followup before Cursor
+    // sends it to the model. This presentation gate must work even when
+    // reporting mode, local state, or the user's preference is unavailable.
+    cursorHookDeadline = deadlineMono ?? (performance.now() + HOOK_TOTAL_BUDGET_MS);
+    hookInput = await readStdinJson({ stream: opts.stdin ?? process.stdin, deadlineMono: cursorHookDeadline });
+    const normalized = parseAdapter('cursor', hookInput);
+    if (normalized && isNoticeReplayText(normalized.prompt)) {
+      const locale = detectNoticeLocale(normalized.prompt, opts.env ?? process.env);
+      return { continue: false, user_message: noticeTextForLocale(locale) };
+    }
+  }
   const runtimeRoot = resolveRuntimeStateRoot({
     flags,
     opts,
@@ -4521,6 +4821,7 @@ export async function runCli(argv = process.argv.slice(2), opts = {}) {
   });
   const ctx = {
     stdin: opts.stdin ?? process.stdin,
+    hookInput,
     cwd: opts.cwd ?? process.cwd(),
     env: opts.env ?? process.env,
     now: opts.now ?? Date.now,
@@ -4537,7 +4838,7 @@ export async function runCli(argv = process.argv.slice(2), opts = {}) {
     promote: opts.promote,
     resolveSdkAppId: opts.resolveSdkAppId || resolveSdkAppId,
     flushOptions: opts.flushOptions || {},
-    deadlineMono,
+    deadlineMono: deadlineMono ?? cursorHookDeadline,
     // The two-phase Python foreground shim sends the current Prompt with an
     // explicit event-id.  It opts out of install recovery for that call so a
     // slow historical install retry cannot consume the current Prompt's
@@ -4567,6 +4868,7 @@ export async function runCli(argv = process.argv.slice(2), opts = {}) {
       case 'foreground-notice': return await handleForegroundNotice(flags, ctx);
       case 'notice-status': return await handleNoticeStatus(flags, ctx);
       case 'install': return await handleInstall(flags, ctx);
+      case 'capture-sdkappid': return await handleCaptureSdkAppId(flags, ctx);
       case 'event': return await handleEvent(flags, ctx);
       case 'preference': return await handlePreference(flags, ctx);
       case 'send': return await handleSend(flags, ctx);
@@ -4592,7 +4894,12 @@ export async function main(argv = process.argv.slice(2), opts = {}) {
   const hookMode = argv[0] === 'hook';
   let result = {};
   try { result = await runCli(argv, opts); } catch { result = {}; }
-  if (!hookMode) {
+  // Ordinary reporting Hooks stay stdout-silent. Cursor's fixed notice replay
+  // is the one presentation exception: its cancellation JSON must reach the
+  // host, otherwise the full notice becomes an AI/user control turn.
+  const cursorSubmissionBlocked = hookMode && result?.continue === false
+    && typeof result.user_message === 'string';
+  if (!hookMode || cursorSubmissionBlocked) {
     try {
       process.stdout.write(`${JSON.stringify(result)}\n`);
     } catch {

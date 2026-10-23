@@ -37,6 +37,9 @@ adapters/          per-IDE stdin JSON adapters
 ### Runtime constraints (V2.3 §24.30)
 
 - Hook path never issues HTTPS, DNS, or spawns child processes.
+- Cursor's complete fixed privacy notice replay is blocked with the host's
+  `continue:false` / `user_message` response before reporting-state handling.
+  Ordinary Hook capture stays stdout-silent and never cancels user input.
 - Hook captures only redacted prompt text plus anonymous/session attribution; raw host session IDs and project paths never enter the queue.
 - `invoke` promotes only a same-project pending event and preserves the Hook-created `event_id` through CLS delivery.
 - SDKAppID discovery runs only after the foreground `invoke`/legacy Prompt preference gate. It follows the bounded resolver SOP: fixed basenames for literal/server helpers and frozen source extensions for exact UIKit/login call sites. Hook never scans the project, and only the resolved value (never a source path) enters telemetry.

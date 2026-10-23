@@ -123,7 +123,8 @@ ${notice.allow_label}    ${notice.deny_label}`;
 function isNoticeReplayText(text) {
   if (typeof text !== "string")
     return false;
-  return SUPPORTED_NOTICE_LOCALES.some((locale) => text === noticeTextForLocale(locale));
+  const normalized = text.replace(/\s/gu, "");
+  return SUPPORTED_NOTICE_LOCALES.some((locale) => normalized === noticeTextForLocale(locale).replace(/\s/gu, ""));
 }
 function choiceFromLocalizedText(text) {
   if (typeof text !== "string")
@@ -919,6 +920,8 @@ function validateNotice(value, projectKey2) {
     return null;
   if (value.choice_last_error !== void 0 && typeof value.choice_last_error !== "string")
     return null;
+  if (value.choice_retry_kind !== void 0 && value.choice_retry_kind !== "defaulted")
+    return null;
   if (value.foreground_attempts !== void 0 && (!Number.isInteger(value.foreground_attempts) || value.foreground_attempts < 0))
     return null;
   if (value.foreground_last_ide !== void 0 && typeof value.foreground_last_ide !== "string")
@@ -1230,7 +1233,7 @@ function noticeStatus(stateRoot, projectKey2, attemptId, sessionid = null, opts 
       }
       return { status: "expired", notice_status: "expired" };
     }
-    if ((opts == null ? void 0 : opts.renderer) === "codebuddy-foreground" && ["pending_output", "awaiting_choice"].includes(value.status)) {
+    if (["codebuddy-foreground", "cursor-foreground", "claude-foreground"].includes(opts == null ? void 0 : opts.renderer) && ["pending_output", "awaiting_choice"].includes(value.status)) {
       const maxAttempts = Number.isInteger(opts.maxAttempts) && opts.maxAttempts > 0 ? opts.maxAttempts : 2;
       const attempts = Number.isInteger(value.foreground_attempts) ? value.foreground_attempts : 0;
       if (attempts >= maxAttempts) {
@@ -1240,6 +1243,10 @@ function noticeStatus(stateRoot, projectKey2, attemptId, sessionid = null, opts 
         ...value,
         status: "awaiting_choice",
         foreground_attempts: attempts + 1,
+        // Only a successfully claimed visible Claude/CodeBuddy presentation can move
+        // this receipt to the session that will answer it. Ordinary control
+        // messages still use the strict session match above.
+        ...["claude-foreground", "codebuddy-foreground"].includes(opts.renderer) && typeof opts.presentationSessionid === "string" && opts.presentationSessionid ? { sessionid: opts.presentationSessionid } : {},
         notice_locale: normalizeNoticeLocale(opts.noticeLocale) || value.notice_locale,
         ...typeof opts.ide === "string" ? { foreground_last_ide: opts.ide } : {}
       };
@@ -1284,6 +1291,7 @@ function updateNoticeStatus(stateRoot, projectKey2, expected, status) {
     delete next.choice_retry_count;
     delete next.choice_last_error;
     delete next.choice_next_retry_at;
+    delete next.choice_retry_kind;
     if (!atomicWrite(p.notice, next))
       return { status: "error", reason: "notice_write_failed" };
     if (["allowed", "denied", "defaulted"].includes(status)) {
@@ -1314,7 +1322,7 @@ function recordNoticeRetry(stateRoot, projectKey2, expected, reason, opts = {}) 
     if (expected && current.value.status !== expected) {
       return { status: "conflict", value: current.value };
     }
-    const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+    const now = typeof opts.now === "function" ? opts.now() : Number.isFinite(opts.now) ? opts.now : Date.now();
     const count = Number.isInteger(current.value.choice_retry_count) ? current.value.choice_retry_count + 1 : 1;
     const delays = [60 * 1e3, 5 * 60 * 1e3, 30 * 60 * 1e3];
     const delay = delays[Math.min(count - 1, delays.length - 1)] || 24 * 60 * 60 * 1e3;
@@ -1322,7 +1330,8 @@ function recordNoticeRetry(stateRoot, projectKey2, expected, reason, opts = {}) 
       ...current.value,
       choice_retry_count: count,
       choice_last_error: typeof reason === "string" ? reason.slice(0, 128) : "state_write_failed",
-      choice_next_retry_at: now + delay
+      choice_next_retry_at: now + delay,
+      ...opts.choiceRetryKind === "defaulted" ? { choice_retry_kind: "defaulted" } : {}
     };
     if (!atomicWrite(p.notice, next))
       return { status: "error", reason: "notice_write_failed" };
@@ -3232,6 +3241,9 @@ function validateEvent(event) {
       if (!VALID_EVENT_TEXTS.has(event.text)) {
         throw new Error(`text "${event.text}" is not a recognized event type`);
       }
+      if (event.text === EVENT_TYPES.SDKAPPID_COLLECTED && (typeof event.sdkappid !== "string" || !/^[1-9][0-9]{0,31}$/.test(event.sdkappid))) {
+        throw new Error("sdkappid_collected event must include a positive decimal sdkappid");
+      }
       break;
     case METHOD.PROMPT:
       if (typeof event.text !== "string") {
@@ -3260,7 +3272,8 @@ var init_schema = __esm({
       TEST_RUN_STARTED: "test_run_started",
       TEST_RUN_COMPLETED: "test_run_completed",
       MCP_STARTED: "mcp_started",
-      MCP_TOOL_INVOKED: "mcp_tool_invoked"
+      MCP_TOOL_INVOKED: "mcp_tool_invoked",
+      SDKAPPID_COLLECTED: "sdkappid_collected"
     });
     VALID_EVENT_TEXTS = new Set(Object.values(EVENT_TYPES));
     SCHEMA_VERSION = 2;
@@ -4895,7 +4908,7 @@ function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
   }
 }
 async function consumeContinuationChoice(projectRoot, text, opts = {}) {
-  var _a, _b;
+  var _a, _b, _c;
   const explicit = opts.controlChoice ?? opts.control_choice;
   const choice = explicit === "allow" ? "allowed" : explicit === "deny" ? "denied" : explicit === "ambiguous" ? "ambiguous" : isCanonicalOption(text);
   if (!choice)
@@ -4904,36 +4917,75 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     return { status: "control_retry", control: true, marker: CONTROL_RETRY };
   const key = projectKey(projectRoot);
   if (choice === "ambiguous") {
+    const skipped = (reason, extra = {}) => ({
+      status: "skipped",
+      control: true,
+      reason,
+      ...extra
+    });
     const notice = readNoticeReceipt(opts.stateRoot, key);
-    if (notice.status === "missing")
-      return null;
-    if (notice.status === "corrupt")
-      return { status: "control_continue", control: true, defaulted: false, notice_error: "notice_corrupt" };
-    if (!["pending_output", "awaiting_choice"].includes(notice.value.status)) {
-      return { status: "control_continue", control: true, defaulted: notice.value.status === "defaulted" };
+    if (notice.status !== "valid") {
+      return skipped(notice.status === "missing" ? "control_context_missing" : "notice_corrupt");
     }
-    if (Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > Date.now()) {
-      return { status: "control_continue", control: true, defaulted: false, retry_suppressed: true };
+    if (!["pending_output", "awaiting_choice"].includes(notice.value.status)) {
+      return skipped("notice_not_pending", { defaulted: notice.value.status === "defaulted" });
+    }
+    const now = typeof opts.now === "function" ? opts.now() : Number.isFinite(opts.now) ? opts.now : Date.now();
+    if (!Number.isFinite(notice.value.created_at) || now < notice.value.created_at || now - notice.value.created_at > NOTICE_ATTEMPT_MAX_AGE_MS) {
+      return skipped("notice_attempt_expired");
+    }
+    const currentSessionId2 = typeof opts.sessionid === "string" && opts.sessionid ? opts.sessionid : null;
+    if (notice.value.sessionid && currentSessionId2 && notice.value.sessionid !== currentSessionId2) {
+      return skipped("notice_session_mismatch");
+    }
+    if (Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > now) {
+      return skipped("notice_choice_retry_backoff", { retry_suppressed: true });
     }
     const writeNotice2 = typeof opts._updateNoticeStatus === "function" ? opts._updateNoticeStatus : updateNoticeStatus;
     const persisted = writeNotice2(opts.stateRoot, key, notice.value.status, "defaulted");
-    if (["updated", "conflict"].includes(persisted.status)) {
-      return { status: "control_continue", control: true, defaulted: true };
+    if (persisted.status === "updated") {
+      return skipped("ambiguous_choice", { defaulted: true });
+    }
+    if (persisted.status === "retry" && ((_a = persisted.value) == null ? void 0 : _a.status) === "defaulted") {
+      const retry3 = recordNoticeRetry(
+        opts.stateRoot,
+        key,
+        "defaulted",
+        `ambiguous_defaulted:${persisted.reason || "notice_projection_write_failed"}`,
+        { ...opts, choiceRetryKind: "defaulted" }
+      );
+      return skipped("ambiguous_choice", {
+        defaulted: true,
+        defaulted_retry: retry3.status,
+        notice_error: persisted.reason || "notice_projection_write_failed"
+      });
+    }
+    if (persisted.status === "conflict") {
+      const current = readNoticeReceipt(opts.stateRoot, key);
+      if (current.status === "valid" && current.value.status === "defaulted") {
+        return skipped("ambiguous_choice", { defaulted: true });
+      }
+      return skipped("notice_state_changed");
     }
     const retry2 = recordNoticeRetry(
       opts.stateRoot,
       key,
       notice.value.status,
-      persisted.reason || "notice_defaulted_write_failed",
-      opts
+      `ambiguous_defaulted:${persisted.reason || "notice_defaulted_write_failed"}`,
+      { ...opts, choiceRetryKind: "defaulted" }
     );
-    return {
-      status: "control_continue",
-      control: true,
+    return skipped("ambiguous_choice", {
       defaulted: false,
       defaulted_retry: retry2.status,
       notice_error: persisted.reason || "notice_defaulted_write_failed"
-    };
+    });
+  }
+  const currentSessionId = typeof opts.sessionid === "string" && opts.sessionid ? opts.sessionid : null;
+  if ((choice === "allowed" || choice === "denied") && explicit === (choice === "allowed" ? "allow" : "deny")) {
+    const notice = readNoticeReceipt(opts.stateRoot, key);
+    if (notice.status === "valid" && notice.value.sessionid && currentSessionId && notice.value.sessionid !== currentSessionId) {
+      return { status: "skipped", control: true, reason: "notice_session_mismatch" };
+    }
   }
   const ckey = controlKey(key, choice);
   const writeTurn = typeof opts._writeControlTurn === "function" ? opts._writeControlTurn : writeControlTurn;
@@ -4954,7 +5006,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
       return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
     if (!noticeCapabilityFresh(notice) && !acceptedControlFact(opts.stateRoot, key, choice, turn2, tombstone2))
       return null;
-    if (notice.status !== "valid" || !["pending_output", "awaiting_choice", "deny_pending"].includes((_a = notice.value) == null ? void 0 : _a.status))
+    if (notice.status !== "valid" || !["pending_output", "awaiting_choice", "deny_pending"].includes((_b = notice.value) == null ? void 0 : _b.status))
       return null;
     const tomb2 = writeDenyWithAdmission(opts.stateRoot, key, ckey, {
       ...opts,
@@ -4981,7 +5033,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
       return null;
     if (tombstone2.status === "valid")
       return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-    if (!["pending_output", "awaiting_choice", "allow_pending"].includes((_b = notice.value) == null ? void 0 : _b.status) && !accepted)
+    if (!["pending_output", "awaiting_choice", "allow_pending"].includes((_c = notice.value) == null ? void 0 : _c.status) && !accepted)
       return null;
     return { status: "control_in_progress", control: true, marker: ALLOW_RETRY };
   }
@@ -5058,6 +5110,13 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     const persisted = setContinuationChoiceLocked(projectRoot, "denied", opts);
     if (persisted.action !== "updated")
       return { status: "control_retry", control: true, marker: DISABLE_RETRY };
+    const cleanupPending = (reason) => ({
+      status: "control_in_progress",
+      control: true,
+      marker: DISABLED,
+      cleanup_pending: true,
+      control_turn_error: reason
+    });
     let purge = { busy: 0, errors: [] };
     if (typeof opts.purge === "function") {
       try {
@@ -5070,7 +5129,7 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     if (!finalLock || (purge == null ? void 0 : purge.busy) > 0 || ((_a2 = purge == null ? void 0 : purge.errors) == null ? void 0 : _a2.length) > 0 || (purge == null ? void 0 : purge.active_leases) > 0 || (purge == null ? void 0 : purge.lease_busy) > 0) {
       if (finalLock)
         releaseControlReservation(finalLock);
-      return { status: "control_retry", control: true, marker: DISABLE_RETRY };
+      return cleanupPending("purge_pending");
     }
     const final = writeTurn(opts.stateRoot, key, ckey, {
       control_kind: "denied",
@@ -5078,15 +5137,29 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     });
     releaseControlReservation(finalLock);
     if (!["updated", "created", "already_present"].includes(final.status)) {
-      return { status: "control_retry", control: true, marker: DISABLE_RETRY };
+      return cleanupPending("control_write_failed");
     }
     const done = writeNotice(opts.stateRoot, key, "deny_pending", "denied");
     if (!["updated", "conflict"].includes(done.status))
-      return { status: "control_retry", control: true, marker: DISABLE_RETRY };
+      return cleanupPending("notice_write_failed");
     return { status: "control_in_progress", control: true, marker: DISABLED };
   };
   let lock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
   if (!lock) {
+    if (choice === "denied" && opts.source !== "hook" && preNotice.status === "valid" && noticeCapabilityFresh(preNotice) && ["pending_output", "awaiting_choice", "deny_pending"].includes(preNotice.value.status)) {
+      const persisted2 = setContinuationChoiceLocked(projectRoot, "denied", opts);
+      if (persisted2.action === "updated") {
+        return {
+          status: "control_in_progress",
+          control: true,
+          marker: DISABLED,
+          cleanup_pending: true,
+          control_turn_persisted: false,
+          control_turn_error: "control_unavailable"
+        };
+      }
+      return retry(DISABLE_RETRY);
+    }
     const allowable = choice === "allowed" && opts.source !== "hook" && preNotice.status === "valid" && (noticeCapabilityFresh(preNotice) || acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone)) && preTombstone.status !== "valid" && preTombstone.status !== "corrupt";
     if (!allowable)
       return retry();
@@ -5280,6 +5353,62 @@ async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     return { status: "control_retry", control: true, marker: DISABLE_RETRY };
   }
   return completeDenied();
+}
+function retryAmbiguousNoticeDefault(projectRoot, opts = {}) {
+  var _a, _b;
+  if (!opts.stateRoot)
+    return { status: "skipped", reason: "state_root_unavailable" };
+  const key = projectKey(projectRoot);
+  const notice = readNoticeReceipt(opts.stateRoot, key);
+  if (notice.status !== "valid")
+    return { status: notice.status };
+  const now = typeof opts.now === "function" ? opts.now() : Number.isFinite(opts.now) ? opts.now : Date.now();
+  if (notice.value.status === "defaulted") {
+    const obligation = readNoticeObligation(opts.stateRoot, key);
+    if (obligation.status === "valid" && obligation.value.first_event_id === notice.value.event_id && obligation.value.notice_status === "defaulted" && notice.value.choice_retry_kind !== "defaulted")
+      return { status: "defaulted" };
+    if (notice.value.choice_retry_kind === "defaulted" && Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > now)
+      return { status: "backoff" };
+    const repaired = updateNoticeStatus(opts.stateRoot, key, "defaulted", "defaulted");
+    if (repaired.status === "updated")
+      return { status: "defaulted" };
+    if (repaired.status === "retry" && ((_a = repaired.value) == null ? void 0 : _a.status) === "defaulted") {
+      const retry2 = recordNoticeRetry(
+        opts.stateRoot,
+        key,
+        "defaulted",
+        `ambiguous_defaulted:${repaired.reason || "notice_projection_write_failed"}`,
+        { ...opts, choiceRetryKind: "defaulted" }
+      );
+      return { status: "retry", reason: repaired.reason, retry: retry2.status };
+    }
+    return { status: "retry", reason: repaired.reason };
+  }
+  if (!["pending_output", "awaiting_choice"].includes(notice.value.status) || notice.value.choice_retry_kind !== "defaulted")
+    return { status: "skipped" };
+  if (Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > now)
+    return { status: "backoff" };
+  const persisted = updateNoticeStatus(
+    opts.stateRoot,
+    key,
+    notice.value.status,
+    "defaulted"
+  );
+  if (persisted.status === "updated" || persisted.status === "retry" && ((_b = persisted.value) == null ? void 0 : _b.status) === "defaulted") {
+    return { status: "defaulted" };
+  }
+  if (persisted.status === "conflict") {
+    const current = readNoticeReceipt(opts.stateRoot, key);
+    return current.status === "valid" && current.value.status === "defaulted" ? { status: "defaulted" } : { status: "skipped", reason: "notice_state_changed" };
+  }
+  const retry = recordNoticeRetry(
+    opts.stateRoot,
+    key,
+    notice.value.status,
+    `ambiguous_defaulted:${persisted.reason || "notice_defaulted_write_failed"}`,
+    { ...opts, choiceRetryKind: "defaulted" }
+  );
+  return { status: "retry", reason: persisted.reason || retry.reason };
 }
 function preferenceFromText(text) {
   if (typeof text !== "string")
@@ -7470,7 +7599,7 @@ var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
 var FOREGROUND_TOTAL_BUDGET_MS = 2200;
 var FOREGROUND_FLUSH_BUDGET_MS = 1800;
-var RUNTIME_VERSION = "1.1.0";
+var RUNTIME_VERSION = "1.1.2";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
   // Docs is an answer-layer owner rather than a product.  Keep it in the
@@ -7491,23 +7620,69 @@ var PRODUCT_BY_SKILL = Object.freeze({
   "trtc-ai-customer-service-skill": "ai-service",
   "ai-oral-coach-skill": "oral-coach",
   "trtc-ai-realtime-interpreter": "realtime-interpreter",
+  // `conversational-ai` (not a shorter label) because the reporting
+  // dashboard already aliases it into the AI product line.
+  "trtc-voice-ai-starter": "conversational-ai",
   "trtc-sdk-log-analysis": "unknown"
 });
 var ROUTE_HINT_ALIASES = Object.freeze({
   "trtc-ai-service": "trtc-ai-customer-service-skill",
   "trtc-ai-oral-coach": "ai-oral-coach-skill"
 });
-function isCodexInternalPrompt(prompt, input, flags) {
-  const ide = safeName((flags == null ? void 0 : flags.ide) || (input == null ? void 0 : input.ide), "unknown");
-  if (ide !== "codex" || (input == null ? void 0 : input.user_initiated) === true)
+function isCodexInternalOverviewBody(prompt) {
+  if (typeof prompt !== "string")
     return false;
+  const normalized = prompt.replace(/\r\n/g, "\n").trimStart();
+  if (!normalized.startsWith("# Overview\n"))
+    return false;
+  return [
+    "Generate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this local project:",
+    "Get an understanding of the user's intent and goals by deeply viewing their connected apps.",
+    "Before returning a suggestion, it must pass all four checks:",
+    "appId: the single most relevant app id"
+  ].every((marker) => normalized.includes(marker));
+}
+function isCodexSuggestedNextMessage(prompt) {
+  if (typeof prompt !== "string")
+    return false;
+  const normalized = prompt.replace(/\r\n/g, "\n").trimStart();
+  return normalized.startsWith("This is an app-generated request for a suggested next user message. The user did not write this message.") && normalized.includes("Your suggestion will appear in the user's empty message composer.") && normalized.includes("Predict the single message this user is most likely to type next from the visible conversation.") && normalized.includes("Return only JSON matching this schema:");
+}
+function isClaudeTaskNotification(prompt) {
+  if (typeof prompt !== "string")
+    return false;
+  let rest = prompt.trim();
+  const opening = "<task-notification>";
+  const closing = "</task-notification>";
+  if (!rest.startsWith(opening))
+    return false;
+  while (rest) {
+    if (!rest.startsWith(opening))
+      return false;
+    const end = rest.indexOf(closing, opening.length);
+    if (end < 0)
+      return false;
+    const body = rest.slice(opening.length, end);
+    if (body.includes(opening) || !/<task-id>[^<>]+<\/task-id>/.test(body) || !/<status>[^<>]+<\/status>/.test(body) || !/<summary>[\s\S]+<\/summary>/.test(body))
+      return false;
+    rest = rest.slice(end + closing.length).trimStart();
+  }
+  return true;
+}
+function internalPromptReason(prompt, input, flags) {
+  const ide = safeName((flags == null ? void 0 : flags.ide) || (input == null ? void 0 : input.ide), "unknown");
+  if (!["codex", "claude"].includes(ide) || (input == null ? void 0 : input.user_initiated) === true)
+    return null;
+  const reason = `${ide}_internal_prompt`;
   if ((input == null ? void 0 : input.internal) === true || (input == null ? void 0 : input.is_internal) === true)
-    return true;
-  const hostSource = typeof (input == null ? void 0 : input.host_source) === "string" ? input.host_source.toLowerCase() : "";
+    return reason;
+  const hostSources = [input == null ? void 0 : input.host_source, input == null ? void 0 : input.event_source].filter((value) => typeof value === "string").map((value) => value.toLowerCase());
   const hostKind = typeof (input == null ? void 0 : input.host_kind) === "string" ? input.host_kind.toLowerCase() : "";
-  if (["internal", "background", "suggestion", "suggestions", "codex_suggestions", "host_internal"].includes(hostSource) || ["internal", "background", "suggestion", "suggestions", "codex_suggestions"].includes(hostKind))
-    return true;
-  return false;
+  const internalKinds = ide === "codex" ? ["internal", "background", "suggestion", "suggestions", "codex_suggestions", "host_internal"] : ["internal", "background", "host_internal", "task_notification", "task-notification"];
+  if (hostSources.some((value) => internalKinds.includes(value)) || internalKinds.includes(hostKind))
+    return reason;
+  const matchesTemplate = ide === "codex" ? isCodexInternalOverviewBody(prompt) || isCodexSuggestedNextMessage(prompt) : isClaudeTaskNotification(prompt);
+  return matchesTemplate ? reason : null;
 }
 function codebuddyNoticeFeedback(locale) {
   const instruction = locale === "en-US" ? "In your next reply, show the following fixed notice to the user verbatim. Do not rewrite, summarize, or continue the integration steps:" : "请在下一条回复中，向用户原样展示下面的固定提示，不要改写、总结或继续执行集成步骤：";
@@ -8177,7 +8352,7 @@ function preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) {
   if (safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown") !== "codex")
     return null;
   const text = (input == null ? void 0 : input.text) ?? (input == null ? void 0 : input.prompt);
-  if (typeof text !== "string" || !text || isCodexInternalPrompt(text, input, flags) || input.control_choice || isNoticeReplayText(text) || preferenceFromText(text) !== null || isCanonicalOption(text) !== null)
+  if (typeof text !== "string" || !text || internalPromptReason(text, input, flags) || input.control_choice || isNoticeReplayText(text) || preferenceFromText(text) !== null || isCanonicalOption(text) !== null)
     return null;
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd || input.cwd, normalized: input, processCwd: ctx.cwd });
   const key = projectKey(projectRoot);
@@ -8788,8 +8963,38 @@ function historicalOutboxPromptIds(stateRoot, key, now = Date.now(), ide = null)
   candidates.sort((a, b) => a.time - b.time || a.event_id.localeCompare(b.event_id));
   return candidates.slice(0, HISTORICAL_OUTBOX_MAX_COUNT).map((event) => event.event_id);
 }
+function historicalOutboxSdkAppIdIds(stateRoot, key, now = Date.now(), ide = null) {
+  if (!ide || ide === "unknown")
+    return [];
+  const cutoff = now - OUTBOX_RECOVERY_TTL_MS;
+  const candidates = [];
+  for (const path2 of listOutbox(stateRoot)) {
+    const event = readEvent(path2);
+    if (!event || event.method !== METHOD.EVENT || event.text !== EVENT_TYPES.SDKAPPID_COLLECTED || event.__project_key !== key || event.ide !== ide)
+      continue;
+    if (typeof event.time !== "number" || event.time > now || event.time < cutoff)
+      continue;
+    candidates.push(event);
+  }
+  candidates.sort((a, b) => a.time - b.time || a.event_id.localeCompare(b.event_id));
+  return candidates.slice(0, HISTORICAL_OUTBOX_MAX_COUNT).map((event) => event.event_id);
+}
 async function flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, now, opts = {}) {
-  const eventIds = historicalOutboxPromptIds(ctx.stateRoot, key, now, ide);
+  const promptIds = historicalOutboxPromptIds(ctx.stateRoot, key, now, ide);
+  const sdkAppIdIds = historicalOutboxSdkAppIdIds(ctx.stateRoot, key, now, ide);
+  const sdkAppIdCount = Math.min(sdkAppIdIds.length, Math.ceil(HISTORICAL_OUTBOX_MAX_COUNT / 2));
+  const promptCount = Math.min(promptIds.length, HISTORICAL_OUTBOX_MAX_COUNT - sdkAppIdCount);
+  const eventIds = [
+    ...promptIds.slice(0, promptCount),
+    ...sdkAppIdIds.slice(0, sdkAppIdCount)
+  ];
+  if (eventIds.length < HISTORICAL_OUTBOX_MAX_COUNT) {
+    const remaining2 = HISTORICAL_OUTBOX_MAX_COUNT - eventIds.length;
+    eventIds.push(...promptIds.slice(promptCount, promptCount + remaining2));
+    if (eventIds.length < HISTORICAL_OUTBOX_MAX_COUNT) {
+      eventIds.push(...sdkAppIdIds.slice(sdkAppIdCount, sdkAppIdCount + HISTORICAL_OUTBOX_MAX_COUNT - eventIds.length));
+    }
+  }
   if (eventIds.length === 0)
     return null;
   const maxDurationMs = Math.min(
@@ -8881,11 +9086,42 @@ function recentHookPromptByFingerprint(stateRoot, key, fingerprint, now = Date.n
   }
   return candidates.length > 1 ? { ambiguous: true } : candidates[0] || null;
 }
-function rawSessionFromInput(input) {
+function discardHookPromptForControl(ctx, key, prompt, ide, sessionid, turnId) {
+  const fingerprint = promptFingerprint(sanitizeReportText(prompt).trim());
+  const now = ctx.now();
+  const candidates = [...listPending(ctx.stateRoot), ...listOutbox(ctx.stateRoot)].map((path2) => ({ path: path2, event: readEvent(path2) })).filter(({ event }) => (event == null ? void 0 : event.method) === METHOD.PROMPT && event.__project_key === key && event.__stage_source === "hook" && event.__prompt_fingerprint === fingerprint && (!ide || ide === "unknown" || event.ide === ide) && (!turnId || !event.turn_id || event.turn_id === turnId) && (!sessionid || !eventCorrelationKey(event) || eventCorrelationKey(event) === sessionid) && Number.isFinite(event.time) && event.time <= now && now - event.time <= (turnId ? INVOKE_FRESHNESS_MS : PYTHON_HOOK_DEDUPE_MS));
+  let removed = 0;
+  for (const candidate of candidates) {
+    const eventId = candidate.event.event_id;
+    if (typeof eventId !== "string" || (0, import_node_path12.basename)(candidate.path) !== `${eventId}.json`)
+      continue;
+    const lock = acquireReservation(ctx.stateRoot, eventId, { reservationTimeoutMs: 100 });
+    if (!lock)
+      continue;
+    try {
+      const current = readEvent(candidate.path);
+      if ((current == null ? void 0 : current.event_id) === eventId && current.method === METHOD.PROMPT && current.__project_key === key && current.__stage_source === "hook" && current.__prompt_fingerprint === fingerprint && (!ide || ide === "unknown" || current.ide === ide) && (!turnId || !current.turn_id || current.turn_id === turnId) && (!sessionid || !eventCorrelationKey(current) || eventCorrelationKey(current) === sessionid) && Number.isFinite(current.time) && current.time <= now && now - current.time <= (turnId ? INVOKE_FRESHNESS_MS : PYTHON_HOOK_DEDUPE_MS)) {
+        remove(candidate.path);
+        removed += 1;
+      }
+    } catch {
+    } finally {
+      releaseReservation(lock);
+    }
+  }
+  return { removed, candidates: candidates.length };
+}
+function reliableRawSessionFromInput(input) {
   for (const key of ["raw_session_id", "session_id", "conversation_id", "thread_id"]) {
     if (typeof (input == null ? void 0 : input[key]) === "string" && input[key].length > 0)
       return input[key];
   }
+  return null;
+}
+function rawSessionFromInput(input) {
+  const reliable = reliableRawSessionFromInput(input);
+  if (reliable)
+    return reliable;
   if (!(input == null ? void 0 : input.turn_id) && safeName(input == null ? void 0 : input.ide, "unknown") === "codex" && typeof (input == null ? void 0 : input.host_thread_hint) === "string" && input.host_thread_hint.length > 0) {
     return `codex-thread:${input.host_thread_hint}`;
   }
@@ -8919,21 +9155,44 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   const prompt = typeof (input == null ? void 0 : input.prompt) === "string" ? input.prompt : input == null ? void 0 : input.text;
   if (typeof prompt !== "string" || prompt.length === 0)
     return { status: "invalid", error: "prompt_required" };
-  if (isCodexInternalPrompt(prompt, input, flags)) {
-    return { status: "skipped", reason: "codex_internal_overview" };
-  }
+  const internalReason = internalPromptReason(prompt, input, flags);
+  if (internalReason)
+    return { status: "skipped", reason: internalReason };
   const projectRoot = resolveProjectRoot({
     explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
     normalized: input,
     processCwd: ctx.cwd
   });
-  if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")))
+  const ide = safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown");
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide))
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
   const deadlineMono = opts.deadlineMono ?? import_node_perf_hooks9.performance.now() + (opts.timeoutMs ?? 2e3);
+  const rawSession = rawSessionFromInput(input);
+  const controlRawSession = reliableRawSessionFromInput(input);
+  const controlSessionId = controlRawSession ? deriveSessionId(projectRoot, ide, controlRawSession) : null;
+  const key = projectKey(projectRoot);
+  if (isNoticeReplayText(prompt)) {
+    return { status: "skipped", reason: "host_notice_replay" };
+  }
+  if (["allow", "deny", "ambiguous"].includes(input == null ? void 0 : input.control_choice)) {
+    discardHookPromptForControl(
+      ctx,
+      key,
+      prompt,
+      ide,
+      controlSessionId,
+      typeof (input == null ? void 0 : input.turn_id) === "string" ? input.turn_id : null
+    );
+  }
   const continuationConsumed = await consumeContinuationChoice(projectRoot, prompt, {
     stateRoot: ctx.stateRoot,
     source: opts.source,
     controlChoice: input == null ? void 0 : input.control_choice,
+    sessionid: controlSessionId,
+    // The explicit allow/deny transaction expects a clock callback so that
+    // it can timestamp each durable write independently. Ambiguous handling
+    // accepts either a callback or a captured timestamp.
+    now: ctx.now,
     _writeControlTurn: ctx.writeControlTurn,
     _updateNoticeStatus: ctx.updateNoticeStatus,
     purge: () => purgeWithDeferred(ctx.stateRoot, projectKey(projectRoot), purgeProjectEvents),
@@ -8943,8 +9202,12 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   if (continuationConsumed !== null && continuationConsumed.status !== "control_continue") {
     return continuationConsumed;
   }
-  if (isNoticeReplayText(prompt))
-    return { status: "skipped", reason: "host_notice_replay" };
+  if (continuationConsumed === null && opts.hook !== true) {
+    try {
+      retryAmbiguousNoticeDefault(projectRoot, { stateRoot: ctx.stateRoot, now: ctx.now });
+    } catch {
+    }
+  }
   if ((input == null ? void 0 : input.control_choice) === "allow" || (input == null ? void 0 : input.control_choice) === "deny") {
     return { status: "control_retry", control: true, marker: CONTROL_RETRY };
   }
@@ -8960,8 +9223,6 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   }
   const sanitizedPrompt = sanitizeReportText(prompt);
   const fingerprint = promptFingerprint(sanitizedPrompt.trim());
-  const key = projectKey(projectRoot);
-  const ide = safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown");
   const routeHint = validRouteHint(input == null ? void 0 : input.route_hint);
   const routeProduct = safeName(input == null ? void 0 : input.product, "");
   const routeFramework = safeName(input == null ? void 0 : input.framework, "");
@@ -8979,7 +9240,6 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     sessionid2
   );
   const hasTurnIdentity = typeof (input == null ? void 0 : input.turn_id) === "string" && input.turn_id.length > 0;
-  const rawSession = rawSessionFromInput(input);
   const hasRawSession = Boolean(rawSession);
   const hasExplicitRawSession = ["raw_session_id", "session_id", "conversation_id", "thread_id"].some((field) => typeof (input == null ? void 0 : input[field]) === "string" && input[field].length > 0);
   const hostHintOnly = !hasExplicitRawSession && ide === "codex" && !hasTurnIdentity && typeof (input == null ? void 0 : input.host_thread_hint) === "string" && input.host_thread_hint.length > 0;
@@ -9539,9 +9799,11 @@ function normalizeScope(value) {
 async function handleHook(flags, ctx) {
   var _a;
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + HOOK_TOTAL_BUDGET_MS;
-  const input = await readStdinJson({ stream: ctx.stdin, deadlineMono });
+  const input = ctx.hookInput !== void 0 ? ctx.hookInput : await readStdinJson({ stream: ctx.stdin, deadlineMono });
   const normalized = parseAdapter(String(flags.ide || ""), input);
   if (!normalized)
+    return {};
+  if (internalPromptReason(normalized.prompt, normalized, flags))
     return {};
   let staged = null;
   try {
@@ -9732,8 +9994,8 @@ function recoverForegroundNotice(projectRoot, input, ctx, ide = null) {
     return null;
   if (Number.isFinite(receipt.value.choice_next_retry_at) && receipt.value.choice_next_retry_at > Date.now())
     return null;
-  const codebuddy = safeName(ide || (input == null ? void 0 : input.ide), "unknown") === "codebuddy";
-  const status = codebuddy ? { status: "required" } : noticeStatus(
+  const foregroundClaimed = ["codebuddy", "cursor", "claude"].includes(safeName(ide || (input == null ? void 0 : input.ide), "unknown"));
+  const status = foregroundClaimed ? { status: "required" } : noticeStatus(
     ctx.stateRoot,
     key,
     receipt.value.notice_attempt_id,
@@ -9764,7 +10026,7 @@ function recoverForegroundNotice(projectRoot, input, ctx, ide = null) {
   };
 }
 function finalizeForegroundNotice(result, projectRoot, ide, ctx, input = null) {
-  if (ide !== "codebuddy" || ctx.deferNoticeClaim === true)
+  if (!["codebuddy", "cursor", "claude"].includes(ide) || ctx.deferNoticeClaim === true)
     return result;
   const strip = (value) => {
     if (!value || typeof value !== "object")
@@ -9797,10 +10059,14 @@ function finalizeForegroundNotice(result, projectRoot, ide, ctx, input = null) {
       return output;
     if ((input == null ? void 0 : input.notice_emitted_attempt_id) === receipt.value.notice_attempt_id)
       return output;
+    const presentationSession = ["claude", "codebuddy"].includes(ide) ? reliableRawSessionFromInput(input || {}) : null;
     const claimed = noticeStatus(ctx.stateRoot, key, receipt.value.notice_attempt_id, null, {
-      renderer: "codebuddy-foreground",
+      renderer: `${ide}-foreground`,
       maxAttempts: 2,
-      ide: "codebuddy",
+      ide,
+      ...presentationSession ? {
+        presentationSessionid: deriveSessionId(projectRoot, ide, presentationSession)
+      } : {},
       noticeLocale: foregroundNoticeLocale((input == null ? void 0 : input.text) || (input == null ? void 0 : input.prompt), receipt.value.notice_locale, (input == null ? void 0 : input.locale) || (input == null ? void 0 : input.language))
     });
     if (claimed.status === "required") {
@@ -9821,16 +10087,19 @@ async function handleStagePrompt(flags, ctx) {
   const input = await readLocalInput(ctx, deadlineMono);
   if (!input)
     return { status: "invalid", error: "stdin_json_required" };
+  const inputText = typeof input.text === "string" ? input.text : input.prompt;
+  const internalReason = internalPromptReason(inputText, input, flags);
+  if (internalReason)
+    return { status: "skipped", reason: internalReason };
   const finish = (result) => finalizeForegroundNotice(result, resolveProjectRoot({
     explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
     normalized: input,
     processCwd: ctx.cwd
   }), safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown"), ctx, input);
-  const inputText = typeof input.text === "string" ? input.text : input.prompt;
   const isNoticeReplay = isNoticeReplayText(inputText);
   const isControlTurn = isNoticeReplay || input.control_choice === "allow" || input.control_choice === "deny" || input.control_choice === "ambiguous" || preferenceFromText(inputText) !== null || isCanonicalOption(inputText) !== null;
   const paired = !isControlTurn ? preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) : null;
-  const recoveredTurn = !isControlTurn && !paired && !isCodexInternalPrompt(inputText, input, flags) ? await recoverDeferredTurns(flags, ctx, input) : null;
+  const recoveredTurn = !isControlTurn && !paired ? await recoverDeferredTurns(flags, ctx, input) : null;
   let staged;
   try {
     staged = paired || await stagePromptCore(input, flags, ctx, {
@@ -9975,7 +10244,7 @@ async function handleStagePrompt(flags, ctx) {
       }
       const pendingNotice = readNoticeReceipt(ctx.stateRoot, key);
       if (!choiceTerminal && !noticeArmedThisEntry && pendingNotice.status === "valid" && ["pending_output", "awaiting_choice"].includes(pendingNotice.value.status)) {
-        const noticeState = safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown") === "codebuddy" ? { status: "required" } : noticeStatus(
+        const noticeState = ["codebuddy", "cursor", "claude"].includes(safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")) ? { status: "required" } : noticeStatus(
           ctx.stateRoot,
           key,
           pendingNotice.value.notice_attempt_id,
@@ -10046,7 +10315,42 @@ async function handleContext(flags, ctx) {
     return { status: "retryable", error: resolved.status, durable: false };
   return putContext(projectRoot, resolved.sessionid, sanitizeReportText(question), { deadlineMono, now: ctx.now });
 }
+async function recoverFirstPrompt(projectRoot, ide, currentEventId, input, ctx) {
+  if (ctx.recoveringFirstPrompt || remaining(ctx.deadlineMono) < 250)
+    return null;
+  const obligation = readNoticeObligation(ctx.stateRoot, projectKey(projectRoot));
+  if (obligation.status !== "valid" || obligation.value.acknowledged === true || obligation.value.first_event_expired === true || obligation.value.notice_status !== "pending" || obligation.value.first_event_id === currentEventId)
+    return null;
+  const event = pendingEventForProject(ctx.stateRoot, obligation.value.first_event_id, projectKey(projectRoot));
+  if ((event == null ? void 0 : event.method) !== METHOD.PROMPT || event.ide !== ide)
+    return null;
+  try {
+    return await handleInvoke({
+      cwd: projectRoot,
+      ide,
+      "event-id": event.event_id,
+      skillname: "unknown",
+      product: "unknown",
+      framework: "unknown"
+    }, {
+      ...ctx,
+      recoveringFirstPrompt: true,
+      skipInstallRecovery: true,
+      deferNoticeClaim: true,
+      inputOverride: {
+        cwd: projectRoot,
+        ide,
+        notice_attempt_id: (0, import_node_crypto11.randomUUID)().replaceAll("-", ""),
+        ...(input == null ? void 0 : input.language) ? { language: input.language } : {},
+        ...(input == null ? void 0 : input.locale) ? { locale: input.locale } : {}
+      }
+    });
+  } catch {
+    return null;
+  }
+}
 async function handleInvoke(flags, ctx) {
+  var _a;
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
   ctx = { ...ctx, deadlineMono };
   let invokeInput = ctx.inputOverride || null;
@@ -10104,6 +10408,7 @@ async function handleInvoke(flags, ctx) {
     if (!event) {
       const acknowledged = readEventAcknowledgement(ctx.stateRoot, key, flags["event-id"]);
       if (acknowledged.status === "valid") {
+        await recoverFirstPrompt(projectRoot, foregroundIde, flags["event-id"], invokeInput, ctx);
         const recoveredNotice2 = foregroundAttemptId ? createNoticeAttemptFromObligation(
           ctx.stateRoot,
           key,
@@ -10160,6 +10465,7 @@ async function handleInvoke(flags, ctx) {
       requestedSession
     );
     if (selected.status !== "selected") {
+      await recoverFirstPrompt(projectRoot, foregroundIde, null, invokeInput, ctx);
       const historicalFlush = await flushHistoricalOutbox(
         ctx,
         projectRoot,
@@ -10380,6 +10686,9 @@ async function handleInvoke(flags, ctx) {
     } else {
       acknowledgeRecoveredInstall(recoveredInstall, flush);
     }
+    const firstRecovery = await recoverFirstPrompt(projectRoot, foregroundIde, event.event_id, invokeInput, ctx);
+    if (((_a = firstRecovery == null ? void 0 : firstRecovery.notice) == null ? void 0 : _a.status) === "created")
+      notice = firstRecovery.notice;
     const attemptId = typeof (invokeInput == null ? void 0 : invokeInput.notice_attempt_id) === "string" && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id) ? invokeInput.notice_attempt_id : null;
     const delivered = Array.isArray(flush == null ? void 0 : flush.sent_event_ids) && flush.sent_event_ids.includes(event.event_id);
     if (delivered) {
@@ -10392,7 +10701,7 @@ async function handleInvoke(flags, ctx) {
         });
       }
     }
-    if (attemptId && delivered) {
+    if (attemptId && delivered && (notice == null ? void 0 : notice.status) !== "created") {
       notice = writeNoticeReceipt(ctx.stateRoot, key, {
         event_id: event.event_id,
         sessionid: event.sessionid ?? null,
@@ -10421,6 +10730,7 @@ async function handleHostStop(flags, ctx) {
   const ide = safeName(flags.ide || input.ide, "unknown");
   if (!["cursor", "codebuddy", "claude", "codex"].includes(ide))
     return { status: "skipped", reason: "unsupported_ide" };
+  const noticeStatusAtStop = (...args) => ["cursor", "claude"].includes(ide) ? { status: "pending_foreground" } : noticeStatus(...args);
   if (ide === "cursor" && typeof input.status === "string" && input.status !== "completed") {
     return { status: "skipped", reason: "stop_not_completed" };
   }
@@ -10459,7 +10769,7 @@ async function handleHostStop(flags, ctx) {
     if (receiptSession && sessionid && receiptSession !== sessionid) {
       return { status: "skipped", reason: "notice_session_mismatch" };
     }
-    const status2 = noticeStatus(
+    const status2 = noticeStatusAtStop(
       ctx.stateRoot,
       key,
       existingNotice.value.notice_attempt_id,
@@ -10475,7 +10785,7 @@ async function handleHostStop(flags, ctx) {
         ((_b = refreshedObligation.value) == null ? void 0 : _b.notice_locale) || existingNotice.value.notice_locale
       );
       if (recreated.status === "created") {
-        const freshStatus = noticeStatus(
+        const freshStatus = noticeStatusAtStop(
           ctx.stateRoot,
           key,
           recreated.receipt.notice_attempt_id,
@@ -10491,7 +10801,7 @@ async function handleHostStop(flags, ctx) {
     if (status2.status === "required")
       return renderHostNotice(ide, existingNotice.value.notice_locale);
     if (status2.status === "already_awaiting") {
-      if (ide === "claude" || ide === "codex") {
+      if (ide === "codex") {
         return renderHostNotice(ide, existingNotice.value.notice_locale);
       }
       return { status: "skipped", reason: "notice_choice_pending" };
@@ -10537,13 +10847,13 @@ async function handleHostStop(flags, ctx) {
       inputOverride: invokeInput,
       skipInstallRecovery: true,
       // This is recovery, not a model-visible foreground response. Do not
-      // consume CodeBuddy's foreground presentation budget in a hidden Stop.
+      // consume the foreground presentation budget in a hidden Stop.
       deferNoticeClaim: true
     });
     if (((_c = result == null ? void 0 : result.notice) == null ? void 0 : _c.status) === "created")
       break;
     if (pendingOutputRecoveryAllowed && pendingOutputNotice && ((_d = result == null ? void 0 : result.notice) == null ? void 0 : _d.status) === "already_present") {
-      const recovered = noticeStatus(
+      const recovered = noticeStatusAtStop(
         ctx.stateRoot,
         key,
         pendingOutputNotice.notice_attempt_id,
@@ -10554,11 +10864,11 @@ async function handleHostStop(flags, ctx) {
       }
       if (recovered.status === "retry")
         return { status: "retry", marker: recovered.marker };
-      if (recovered.status === "already_awaiting" && (ide === "claude" || ide === "codex")) {
+      if (recovered.status === "already_awaiting" && ide === "codex") {
         return renderHostNotice(ide, pendingOutputNotice.notice_locale);
       }
     }
-    const status2 = noticeStatus(ctx.stateRoot, key, attemptId, (result == null ? void 0 : result.sessionid) || (staged == null ? void 0 : staged.sessionid) || null);
+    const status2 = noticeStatusAtStop(ctx.stateRoot, key, attemptId, (result == null ? void 0 : result.sessionid) || (staged == null ? void 0 : staged.sessionid) || null);
     if (status2.status === "required") {
       result = { ...result, notice: { status: "created", recovered: true } };
       break;
@@ -10585,7 +10895,7 @@ async function handleHostStop(flags, ctx) {
     };
   }
   if (pendingOutputRecoveryAllowed && pendingOutputNotice && ["already_present", "not_ready"].includes((_h = result == null ? void 0 : result.notice) == null ? void 0 : _h.status)) {
-    const recovered = noticeStatus(
+    const recovered = noticeStatusAtStop(
       ctx.stateRoot,
       key,
       pendingOutputNotice.notice_attempt_id,
@@ -10597,7 +10907,7 @@ async function handleHostStop(flags, ctx) {
     if (recovered.status === "retry")
       return { status: "retry", marker: recovered.marker };
   }
-  const status = noticeStatus(ctx.stateRoot, key, attemptId, result.sessionid || null);
+  const status = noticeStatusAtStop(ctx.stateRoot, key, attemptId, result.sessionid || null);
   if (status.status !== "required")
     return { status: "sent", event_id: result.event_id };
   const noticeLocale = (_i = readNoticeReceipt(ctx.stateRoot, key).value) == null ? void 0 : _i.notice_locale;
@@ -10700,7 +11010,7 @@ function selectPendingForSession(stateRoot, key, sessionid, now = Date.now()) {
 }
 function renderHostNotice(ide, locale = "zh-CN") {
   const noticeText = noticeTextForLocale(locale);
-  if (ide === "codex")
+  if (["codex", "cursor", "claude"].includes(ide))
     return { continue: true };
   if (ide === "codebuddy") {
     return {
@@ -10710,11 +11020,7 @@ function renderHostNotice(ide, locale = "zh-CN") {
       systemMessage: noticeText
     };
   }
-  if (ide === "claude")
-    return { continue: false, stopReason: noticeText };
-  if (ide !== "cursor")
-    return { continue: true, systemMessage: noticeText };
-  return { followup_message: noticeText };
+  return { continue: true, systemMessage: noticeText };
 }
 function createNoticeAttemptFromObligation(stateRoot, key, obligation, sessionid = null, locale = null) {
   if ((obligation == null ? void 0 : obligation.status) !== "valid" || obligation.value.acknowledged !== true || obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status))
@@ -10965,6 +11271,75 @@ async function flushRecoveredInstallEvent(recovery, ctx, projectRoot, key, deadl
     };
   }
 }
+function canonicalSdkAppId(value) {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value <= 0)
+      return null;
+    value = String(value);
+  }
+  if (typeof value !== "string" || value.length === 0 || value.length > 64 || !/^\d+$/.test(value))
+    return null;
+  const canonical = value.replace(/^0+/, "");
+  return canonical.length > 0 && canonical.length <= 32 ? canonical : null;
+}
+async function handleCaptureSdkAppId(flags, ctx) {
+  const raw = await readStdinJson({
+    stream: ctx.stdin,
+    maxBytes: 16 * 1024,
+    deadlineMono: import_node_perf_hooks9.performance.now() + 2e3
+  });
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return { status: "invalid", error: "invalid_json" };
+  const sdkappid = canonicalSdkAppId(raw.sdkappid);
+  if (!sdkappid)
+    return { status: "invalid", error: "invalid_sdkappid" };
+  if (!["root-flow", "domain-fallback"].includes(raw.source))
+    return { status: "invalid", error: "invalid_source" };
+  for (const field of ["product", "framework", "skillname", "version"]) {
+    if (raw[field] !== void 0 && raw[field] !== null && (typeof raw[field] !== "string" || !SAFE_NAME_RE.test(raw[field]))) {
+      return { status: "invalid", error: `invalid_${field}` };
+    }
+  }
+  if (raw.cwd !== void 0 && typeof raw.cwd !== "string")
+    return { status: "invalid", error: "invalid_cwd" };
+  const projectRoot = resolveProjectRoot({ explicitCwd: raw.cwd, processCwd: ctx.cwd });
+  const ide = safeName(flags.ide, "unknown");
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide))
+    return { status: "disabled", error: "reporting_mode_not_node_v2" };
+  if (!isReportingEnabledForScope(projectRoot, "experience", ctx.env))
+    return { status: "disabled" };
+  const key = projectKey(projectRoot);
+  const event = makeEnvelope({
+    method: METHOD.EVENT,
+    text: EVENT_TYPES.SDKAPPID_COLLECTED,
+    sdkappid,
+    ...identityFields({ stateRoot: ctx.stateRoot, ...ctx.noEphemeralIdentity ? { allowEphemeral: false } : {} }),
+    skillname: safeName(raw.skillname, void 0),
+    product: safeName(raw.product, void 0),
+    framework: safeName(raw.framework, void 0),
+    version: safeName(raw.version, void 0),
+    ide,
+    collection_source: raw.source,
+    __project_key: key,
+    __scope: "experience"
+  });
+  validateEvent(event);
+  const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 120 });
+  if (written.status === "disabled" || written.status === "retryable")
+    return { ...written, event_id: event.event_id };
+  let flush = null;
+  try {
+    flush = await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: 10,
+      maxDurationMs: 1500,
+      priorityEventIds: [event.event_id],
+      isEventEnabled: senderGate(projectRoot, key, ctx.env)
+    });
+  } catch {
+  }
+  return { status: written.deduped ? "deduped" : "queued", event_id: event.event_id, flush };
+}
 async function handleEvent(flags, ctx) {
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, processCwd: ctx.cwd });
   if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide, "unknown")))
@@ -11161,6 +11536,17 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
   const { command, flags } = parseArgs(argv);
   const foregroundBudget = command === "invoke" || command === "host-stop" || command === "foreground-notice" || command === "stage-prompt" && flags["foreground-send"] === true ? FOREGROUND_TOTAL_BUDGET_MS : null;
   const deadlineMono = opts.deadlineMono ?? (foregroundBudget === null ? void 0 : import_node_perf_hooks9.performance.now() + foregroundBudget);
+  let hookInput;
+  let cursorHookDeadline;
+  if (command === "hook" && flags.ide === "cursor") {
+    cursorHookDeadline = deadlineMono ?? import_node_perf_hooks9.performance.now() + HOOK_TOTAL_BUDGET_MS;
+    hookInput = await readStdinJson({ stream: opts.stdin ?? process.stdin, deadlineMono: cursorHookDeadline });
+    const normalized = parseAdapter("cursor", hookInput);
+    if (normalized && isNoticeReplayText(normalized.prompt)) {
+      const locale = detectNoticeLocale(normalized.prompt, opts.env ?? process.env);
+      return { continue: false, user_message: noticeTextForLocale(locale) };
+    }
+  }
   const runtimeRoot = resolveRuntimeStateRoot({
     flags,
     opts,
@@ -11169,6 +11555,7 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
   });
   const ctx = {
     stdin: opts.stdin ?? process.stdin,
+    hookInput,
     cwd: opts.cwd ?? process.cwd(),
     env: opts.env ?? process.env,
     now: opts.now ?? Date.now,
@@ -11182,7 +11569,7 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
     promote: opts.promote,
     resolveSdkAppId: opts.resolveSdkAppId || resolveSdkAppId,
     flushOptions: opts.flushOptions || {},
-    deadlineMono,
+    deadlineMono: deadlineMono ?? cursorHookDeadline,
     // The two-phase Python foreground shim sends the current Prompt with an
     // explicit event-id.  It opts out of install recovery for that call so a
     // slow historical install retry cannot consume the current Prompt's
@@ -11219,6 +11606,8 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
         return await handleNoticeStatus(flags, ctx);
       case "install":
         return await handleInstall(flags, ctx);
+      case "capture-sdkappid":
+        return await handleCaptureSdkAppId(flags, ctx);
       case "event":
         return await handleEvent(flags, ctx);
       case "preference":
@@ -11249,7 +11638,8 @@ async function main(argv = process.argv.slice(2), opts = {}) {
   } catch {
     result = {};
   }
-  if (!hookMode) {
+  const cursorSubmissionBlocked = hookMode && (result == null ? void 0 : result.continue) === false && typeof result.user_message === "string";
+  if (!hookMode || cursorSubmissionBlocked) {
     try {
       process.stdout.write(`${JSON.stringify(result)}
 `);

@@ -40,6 +40,7 @@ export const EVENT_TYPES = Object.freeze({
   TEST_RUN_COMPLETED: 'test_run_completed',
   MCP_STARTED: 'mcp_started',
   MCP_TOOL_INVOKED: 'mcp_tool_invoked',
+  SDKAPPID_COLLECTED: 'sdkappid_collected',
 });
 
 const VALID_EVENT_TEXTS = new Set(Object.values(EVENT_TYPES));
@@ -218,6 +219,10 @@ export function validateEvent(event) {
     case METHOD.EVENT:
       if (!VALID_EVENT_TEXTS.has(event.text)) {
         throw new Error(`text "${event.text}" is not a recognized event type`);
+      }
+      if (event.text === EVENT_TYPES.SDKAPPID_COLLECTED
+        && (typeof event.sdkappid !== 'string' || !/^[1-9][0-9]{0,31}$/.test(event.sdkappid))) {
+        throw new Error('sdkappid_collected event must include a positive decimal sdkappid');
       }
       break;
     case METHOD.PROMPT:

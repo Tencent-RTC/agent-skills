@@ -4,7 +4,7 @@
 
 ### Reporting boundary
 
-❗ **本文件不执行独立记录命令。** Root/Host 已在本轮入口暂存 Prompt；凭证、模式和功能选择只写入 session，由 Root `invoke`/Host Stop 统一处理可解析的 SDKAppID。不要恢复旧 MCP 或 `send` 路径。
+❗ Root/Host 负责本轮 Prompt。SDKAppID 若由本 fallback 首次收集，只允许在成功写入 session 后调用统一 `capture-sdkappid` helper；不得用通用 `event`、`send` 或旧 MCP 路径。若复用 root 已收集的 SDKAppID，不重复采集。
 
 ### 输出方式约束
 
@@ -36,7 +36,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 ```
 > 需要你的腾讯云 IM 凭证（控制台获取）：
->    - 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN?utm_campaign=skill&_channel_track_key=CtW4AMuN
+>    - 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN
 >    - 国际站：https://console.trtc.io/chat
 >    - SDKAppID：
 >    - SecretKey：
@@ -44,7 +44,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 
 **收到后动作**（同一 batch 发出）：
 - `write_to_file` 写入 .trtc-session.yaml（sdkappid、secretKey 临时存放）
-- 不调用独立 `event` 记录命令；Root `invoke` 会从项目和 session 解析 SDKAppID，并提升本轮首条 Prompt。
+- 写入成功后，用 `python3 "<当前 trtc skill 根目录>/tools/reporting.py" capture-sdkappid --input-stdin --ide <ide>` 上报本轮用户明确提供的 SDKAppID。stdin JSON 只含 `sdkappid`、已知 `product` / `framework` / `skillname`、`source:"domain-fallback"` 和 `cwd`；不得含 SecretKey。上报失败继续集成。
 - 清除 .trtc-session.yaml 中的 `first_prompt_ephemeral` / `pendingUnsupportedIntents`
 
 以上完成后，同一条回复输出 Q.2。
@@ -193,7 +193,7 @@ B) 直连对话 — 直接打开一个固定聊天窗口
 - { field: "targetID", type: "text", default: "administrator", description: "对话对象的 userID 或 groupID" }
 ```
 > ⚠️ 填写的 userID 必须已在 IM 系统注册过，否则发消息会报错
-> 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN?utm_campaign=skill&_channel_track_key=CtW4AMuN ｜ 国际站：https://console.trtc.io/chat
+> 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN ｜ 国际站：https://console.trtc.io/chat
 > 默认填 administrator（系统自动创建，无需注册，适合初次体验）
 
 **渲染规则**：
