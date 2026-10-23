@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh.md)
 
-Build applications with TRTC, including video conferencing, audio and video calling, instant messaging, mobile offline push notifications, and Conversational AI experiences such as AI customer service agents, AI speaking coaches, and real-time translation. Works with Web, iOS, Android, and Flutter.
+Build applications with TRTC, including video conferencing, audio and video calling, instant messaging, mobile offline push notifications, and Conversational AI experiences such as general-purpose voice AI agents, AI customer service agents, AI speaking coaches, and real-time translation. Works with Web, iOS, Android, and Flutter.
 
 Describe what you want to build in plain language. The skill routes your request to the right integration path, asks a few clarifying questions, and walks you through implementation step by step — from first setup to production-ready code.
 
@@ -57,11 +57,12 @@ The skill activates automatically when you describe a real-time communication or
 
 ## Supported TRTC Products, Capabilities & AI Scenarios
 
-Supported TRTC capabilities and scenarios include **video conferencing**, **audio and video calling**, **instant messaging**, **mobile offline push notifications**, and **Conversational AI** experiences such as **AI customer service**, **AI speaking coach**, and **real-time translation** — across Web, iOS, Android, and Flutter.
+Supported TRTC capabilities and scenarios include **video conferencing**, **audio and video calling**, **instant messaging**, **mobile offline push notifications**, and **Conversational AI** experiences such as a **general-purpose voice AI agent**, **AI customer service**, **AI speaking coach**, and **real-time translation** — across Web, iOS, Android, and Flutter.
 
 | Product or scenario | Supported platforms | Guided capabilities | Sample prompts |
 |---|---|---|---|
 | **Conference** | Web (Vue 3 / React) | Demo setup, conference integration, screen sharing, in-meeting chat, feature extension, and troubleshooting | • *"Add video conferencing to my React app"*<br>• *"Walk me through building a complete conference room from scratch"*<br>• *"Conference is working — now add screen sharing"*<br>• *"Users get error 6206 when joining the room"* |
+| **Conversational AI: Voice AI Starter** | Web | Voice agent demo from scratch, live subtitles, LLM / STT / TTS provider switching, and integration with an existing project | • *"Build a voice AI agent with TRTC"*<br>• *"How do I integrate TRTC Conversational AI?"*<br>• *"Run a voice agent demo from scratch"*<br>• *"Switch the LLM of my voice agent to DeepSeek"* |
 | **Conversational AI: Customer Service** | Web | Voice agent setup, knowledge base, human handoff, tool calling, session summary, and integration with an existing backend | • *"Build an AI customer service agent with TRTC"*<br>• *"Add voice-based AI support to my website"*<br>• *"Connect AI customer service to my existing Node.js backend"*<br>• *"Add knowledge-base answers and human handoff to my voice agent"* |
 | **Conversational AI: Oral Coach** | Web | Scenario roleplay, quick correction, reply suggestions, ability reports, custom learning knowledge, and integration with an existing app | • *"Build an AI oral English coach with TRTC"*<br>• *"Add AI speaking practice to my existing app"* |
 | **Conversational AI: Realtime Interpreter** | Web | Realtime translation, multilingual meeting interpretation, bilingual subtitles, transcription, and meeting fanout | • *"Build a real-time AI interpreter with TRTC"*<br>• *"Add real-time translation to my meeting room"*<br>• *"Show bilingual subtitles during a video conference"* |

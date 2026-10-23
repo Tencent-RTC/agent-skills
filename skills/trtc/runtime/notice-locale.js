@@ -72,7 +72,12 @@ export function noticeTextForLocale(locale) {
 
 export function isNoticeReplayText(text) {
   if (typeof text !== 'string') return false;
-  return SUPPORTED_NOTICE_LOCALES.some((locale) => text === noticeTextForLocale(locale));
+  // Hosts may normalize line endings or wrap the fixed notice in the composer.
+  // Match the complete localized projection, ignoring presentation whitespace
+  // only; an option label, excerpt, or additional user reply is not a replay.
+  const normalized = text.replace(/\s/gu, '');
+  return SUPPORTED_NOTICE_LOCALES.some((locale) =>
+    normalized === noticeTextForLocale(locale).replace(/\s/gu, ''));
 }
 
 export function choiceFromLocalizedText(text) {

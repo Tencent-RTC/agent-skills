@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# credentials — never commit
+.env
+
+# build output
+dist/
+.vite/
+build/
+*.tsbuildinfo
+
+# runtime data
+server/data/
+
+# logs
+*.log
+/tmp/voice-ai-starter.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

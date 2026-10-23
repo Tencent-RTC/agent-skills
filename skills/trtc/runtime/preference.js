@@ -38,6 +38,7 @@ import {
   isCanonicalOption,
   readControlTurn,
   readDenyTombstone,
+  readNoticeObligation,
   readNoticeReceipt,
   recordNoticeRetry,
   quarantineDenyTombstone,
@@ -592,38 +593,94 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
   if (!opts.stateRoot) return { status: 'control_retry', control: true, marker: CONTROL_RETRY };
   const key = projectKey(projectRoot);
 
-  // Ambiguous intent is deliberately a local, non-blocking transition.  It
-  // never changes the reporting preference: the default remains enabled.  A
-  // successful transition closes the current notice so a later foreground
-  // entry does not ask the same question again.  If the single authoritative
-  // notice file cannot be updated, keep ordinary Prompt delivery flowing and
-  // retry the same-file transition after a bounded backoff.
+  // An ambiguous response is a control turn, never an ordinary Prompt.  It
+  // keeps the default-enabled reporting preference unchanged while closing
+  // this notice when possible.  Even a missing, stale, corrupt, or
+  // session-mismatched receipt must not make the response fall through to
+  // ordinary Prompt staging.
   if (choice === 'ambiguous') {
+    const skipped = (reason, extra = {}) => ({
+      status: 'skipped', control: true, reason, ...extra,
+    });
     const notice = readNoticeReceipt(opts.stateRoot, key);
-    if (notice.status === 'missing') return null;
-    if (notice.status === 'corrupt') return { status: 'control_continue', control: true, defaulted: false, notice_error: 'notice_corrupt' };
+    if (notice.status !== 'valid') {
+      return skipped(notice.status === 'missing' ? 'control_context_missing' : 'notice_corrupt');
+    }
     if (!['pending_output', 'awaiting_choice'].includes(notice.value.status)) {
-      return { status: 'control_continue', control: true, defaulted: notice.value.status === 'defaulted' };
+      return skipped('notice_not_pending', { defaulted: notice.value.status === 'defaulted' });
+    }
+    const now = typeof opts.now === 'function'
+      ? opts.now()
+      : Number.isFinite(opts.now) ? opts.now : Date.now();
+    if (!Number.isFinite(notice.value.created_at)
+      || now < notice.value.created_at
+      || now - notice.value.created_at > NOTICE_ATTEMPT_MAX_AGE_MS) {
+      return skipped('notice_attempt_expired');
+    }
+    const currentSessionId = typeof opts.sessionid === 'string' && opts.sessionid
+      ? opts.sessionid : null;
+    // Some hosts do not provide a stable session identifier to the runtime.
+    // In that case the caller may only set control_choice=ambiguous after
+    // confirming from the current conversation that the user is answering
+    // this notice. When both IDs exist, the receipt binding is authoritative.
+    if (notice.value.sessionid && currentSessionId
+      && notice.value.sessionid !== currentSessionId) {
+      return skipped('notice_session_mismatch');
     }
     if (Number.isFinite(notice.value.choice_next_retry_at)
-      && notice.value.choice_next_retry_at > Date.now()) {
-      return { status: 'control_continue', control: true, defaulted: false, retry_suppressed: true };
+      && notice.value.choice_next_retry_at > now) {
+      return skipped('notice_choice_retry_backoff', { retry_suppressed: true });
     }
     const writeNotice = typeof opts._updateNoticeStatus === 'function'
       ? opts._updateNoticeStatus : updateNoticeStatus;
     const persisted = writeNotice(opts.stateRoot, key, notice.value.status, 'defaulted');
-    if (['updated', 'conflict'].includes(persisted.status)) {
-      return { status: 'control_continue', control: true, defaulted: true };
+    if (persisted.status === 'updated') {
+      return skipped('ambiguous_choice', { defaulted: true });
+    }
+    if (persisted.status === 'retry' && persisted.value?.status === 'defaulted') {
+      const retry = recordNoticeRetry(
+        opts.stateRoot, key, 'defaulted',
+        `ambiguous_defaulted:${persisted.reason || 'notice_projection_write_failed'}`,
+        { ...opts, choiceRetryKind: 'defaulted' },
+      );
+      return skipped('ambiguous_choice', {
+        defaulted: true,
+        defaulted_retry: retry.status,
+        notice_error: persisted.reason || 'notice_projection_write_failed',
+      });
+    }
+    if (persisted.status === 'conflict') {
+      const current = readNoticeReceipt(opts.stateRoot, key);
+      if (current.status === 'valid' && current.value.status === 'defaulted') {
+        return skipped('ambiguous_choice', { defaulted: true });
+      }
+      return skipped('notice_state_changed');
     }
     const retry = recordNoticeRetry(
       opts.stateRoot, key, notice.value.status,
-      persisted.reason || 'notice_defaulted_write_failed', opts,
+      `ambiguous_defaulted:${persisted.reason || 'notice_defaulted_write_failed'}`,
+      { ...opts, choiceRetryKind: 'defaulted' },
     );
-    return {
-      status: 'control_continue', control: true, defaulted: false,
+    return skipped('ambiguous_choice', {
+      defaulted: false,
       defaulted_retry: retry.status,
       notice_error: persisted.reason || 'notice_defaulted_write_failed',
-    };
+    });
+  }
+  // Explicit natural-language classifications are bound to the receipt that
+  // was visible in the current conversation. When both sides expose a
+  // session ID, a stale notice from another IDE conversation cannot authorize
+  // changing this project's preference. Skip model-classified control turns;
+  // keep an unclassified fixed label on the ordinary Prompt path.
+  const currentSessionId = typeof opts.sessionid === 'string' && opts.sessionid
+    ? opts.sessionid : null;
+  if ((choice === 'allowed' || choice === 'denied')
+    && explicit === (choice === 'allowed' ? 'allow' : 'deny')) {
+    const notice = readNoticeReceipt(opts.stateRoot, key);
+    if (notice.status === 'valid' && notice.value.sessionid && currentSessionId
+      && notice.value.sessionid !== currentSessionId) {
+      return { status: 'skipped', control: true, reason: 'notice_session_mismatch' };
+    }
   }
   const ckey = controlKey(key, choice);
   // Test-only seam for deterministic write-failure coverage. Production
@@ -778,6 +835,12 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     }
     const persisted = setContinuationChoiceLocked(projectRoot, 'denied', opts);
     if (persisted.action !== 'updated') return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
+    // Once both the kill switch and the project preference are durable,
+    // global queue/replay cleanup cannot require another user decision.
+    const cleanupPending = (reason) => ({
+      status: 'control_in_progress', control: true, marker: DISABLED,
+      cleanup_pending: true, control_turn_error: reason,
+    });
     let purge = { busy: 0, errors: [] };
     if (typeof opts.purge === 'function') {
       try { purge = opts.purge(); } catch { purge = { busy: 1, errors: ['purge_failed'] }; }
@@ -786,21 +849,41 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     if (!finalLock || purge?.busy > 0 || purge?.errors?.length > 0
       || purge?.active_leases > 0 || purge?.lease_busy > 0) {
       if (finalLock) releaseControlReservation(finalLock);
-      return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
+      return cleanupPending('purge_pending');
     }
     const final = writeTurn(opts.stateRoot, key, ckey, {
       control_kind: 'denied', control_status: 'denied',
     });
     releaseControlReservation(finalLock);
     if (!['updated', 'created', 'already_present'].includes(final.status)) {
-      return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
+      return cleanupPending('control_write_failed');
     }
     const done = writeNotice(opts.stateRoot, key, 'deny_pending', 'denied');
-    if (!['updated', 'conflict'].includes(done.status)) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
+    if (!['updated', 'conflict'].includes(done.status)) return cleanupPending('notice_write_failed');
     return { status: 'control_in_progress', control: true, marker: DISABLED };
   };
   let lock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
   if (!lock) {
+    // Codex foreground commands may read the Hook's global receipt while
+    // their sandbox permits writes only in the project. A confirmed refusal
+    // must still close every channel immediately. The project preference is
+    // checked again by Sender at its network boundary; the next permitted
+    // invoke/Stop purges global queues. Never ask for the same choice again
+    // merely because auxiliary global bookkeeping cannot be written.
+    if (choice === 'denied' && opts.source !== 'hook'
+      && preNotice.status === 'valid'
+      && noticeCapabilityFresh(preNotice)
+      && ['pending_output', 'awaiting_choice', 'deny_pending'].includes(preNotice.value.status)) {
+      const persisted = setContinuationChoiceLocked(projectRoot, 'denied', opts);
+      if (persisted.action === 'updated') {
+        return {
+          status: 'control_in_progress', control: true, marker: DISABLED,
+          cleanup_pending: true, control_turn_persisted: false,
+          control_turn_error: 'control_unavailable',
+        };
+      }
+      return retry(DISABLE_RETRY);
+    }
     // The foreground allow is already backed by a fresh, project-scoped
     // notice receipt.  A short-lived control-lock collision must not turn a
     // successful user choice into an endless re-prompt (this is observable in
@@ -1022,6 +1105,70 @@ export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
     return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
   }
   return completeDenied();
+}
+
+/**
+ * Retry an ambiguous-response notice transition on a later foreground entry.
+ * The retry intent is stored on the authoritative notice receipt, so no
+ * second state file or prompt payload is needed. This never changes the
+ * project reporting preference and never blocks the ordinary Prompt path.
+ */
+export function retryAmbiguousNoticeDefault(projectRoot, opts = {}) {
+  if (!opts.stateRoot) return { status: 'skipped', reason: 'state_root_unavailable' };
+  const key = projectKey(projectRoot);
+  const notice = readNoticeReceipt(opts.stateRoot, key);
+  if (notice.status !== 'valid') return { status: notice.status };
+  const now = typeof opts.now === 'function'
+    ? opts.now()
+    : Number.isFinite(opts.now) ? opts.now : Date.now();
+  if (notice.value.status === 'defaulted') {
+    // updateNoticeStatus also repairs a project obligation if a previous
+    // attempt durably changed the receipt but failed while projecting the
+    // terminal status to the obligation.
+    const obligation = readNoticeObligation(opts.stateRoot, key);
+    if (obligation.status === 'valid'
+      && obligation.value.first_event_id === notice.value.event_id
+      && obligation.value.notice_status === 'defaulted'
+      && notice.value.choice_retry_kind !== 'defaulted') return { status: 'defaulted' };
+    if (notice.value.choice_retry_kind === 'defaulted'
+      && Number.isFinite(notice.value.choice_next_retry_at)
+      && notice.value.choice_next_retry_at > now) return { status: 'backoff' };
+    const repaired = updateNoticeStatus(opts.stateRoot, key, 'defaulted', 'defaulted');
+    if (repaired.status === 'updated') return { status: 'defaulted' };
+    if (repaired.status === 'retry' && repaired.value?.status === 'defaulted') {
+      const retry = recordNoticeRetry(
+        opts.stateRoot, key, 'defaulted',
+        `ambiguous_defaulted:${repaired.reason || 'notice_projection_write_failed'}`,
+        { ...opts, choiceRetryKind: 'defaulted' },
+      );
+      return { status: 'retry', reason: repaired.reason, retry: retry.status };
+    }
+    return { status: 'retry', reason: repaired.reason };
+  }
+  if (!['pending_output', 'awaiting_choice'].includes(notice.value.status)
+    || notice.value.choice_retry_kind !== 'defaulted') return { status: 'skipped' };
+  if (Number.isFinite(notice.value.choice_next_retry_at)
+    && notice.value.choice_next_retry_at > now) return { status: 'backoff' };
+
+  const persisted = updateNoticeStatus(
+    opts.stateRoot, key, notice.value.status, 'defaulted',
+  );
+  if (persisted.status === 'updated'
+    || (persisted.status === 'retry' && persisted.value?.status === 'defaulted')) {
+    return { status: 'defaulted' };
+  }
+  if (persisted.status === 'conflict') {
+    const current = readNoticeReceipt(opts.stateRoot, key);
+    return current.status === 'valid' && current.value.status === 'defaulted'
+      ? { status: 'defaulted' }
+      : { status: 'skipped', reason: 'notice_state_changed' };
+  }
+  const retry = recordNoticeRetry(
+    opts.stateRoot, key, notice.value.status,
+    `ambiguous_defaulted:${persisted.reason || 'notice_defaulted_write_failed'}`,
+    { ...opts, choiceRetryKind: 'defaulted' },
+  );
+  return { status: 'retry', reason: persisted.reason || retry.reason };
 }
 
 /** Recognize only narrow, explicit opt-in/out control messages. */

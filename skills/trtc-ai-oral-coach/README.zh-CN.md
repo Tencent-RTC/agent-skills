@@ -43,8 +43,8 @@ AI（全程自动处理）：
 
 | 钥匙 | 用途 | 在哪里获取 |
 |------|------|-----------|
-| 1: TRTC 应用凭据 | 教练的语音通道 | https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw |
-| 2: 腾讯云 API 密钥 | 后台权限（和 TRTC 同一套登录，不用重新注册） | https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE |
+| 1: TRTC 应用凭据 | 教练的语音通道 | 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje<br>海外站：https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy |
+| 2: 腾讯云 API 密钥 | 后台权限（和 TRTC 同一套登录，不用重新注册） | 国内站：https://console.cloud.tencent.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5-%E5%9B%BD%E5%86%85&utm_campaign=skill&_channel_track_key=hTRQ0ctd<br>海外站：https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s<br>（与密钥 1 使用同一站点） |
 | 3: LLM API Key | 教练的"大脑"——听懂你、纠正你、出报告 | 你的 AI 服务商（OpenAI、DeepSeek 等） |
 
 ## 教练有哪些能力？

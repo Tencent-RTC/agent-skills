@@ -1,0 +1,18 @@
+{
+  "name": "trtc-voice-ai",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "start": "concurrently --names \"server,web\" --prefix-colors \"blue,green\" \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
+    "verify": "node scripts/verify-credentials.mjs",
+    "switch-provider": "node scripts/switch-provider.mjs",
+    "typecheck": "pnpm --filter server exec tsc --noEmit && pnpm --filter server exec tsc --noEmit -p tsconfig.test.json && pnpm --filter web exec tsc --noEmit && pnpm --filter web exec tsc --noEmit -p tsconfig.test.json",
+    "test": "pnpm --filter server test && pnpm --filter web test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

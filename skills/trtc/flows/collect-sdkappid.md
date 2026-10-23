@@ -42,7 +42,7 @@
 
 **中文用户**：
 > 到腾讯云控制台创建 TRTC 应用（未登录会先引导注册）：
->   - 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje?utm_campaign=skill&_channel_track_key=lDTHxeje
+>   - 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje
 >   - 国际站：https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy
 >
 > 创建后把 SDKAppID（纯数字）发给我。
@@ -57,14 +57,14 @@
 
 **中文用户**：
 > 到腾讯云控制台开通 Conversational AI 应用（未登录会先引导注册）：
->   - 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje?utm_campaign=skill&_channel_track_key=lDTHxeje
->   - 国际站：https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw
+>   - 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje
+>   - 国际站：https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy
 >
 > 创建后把 SDKAppID（纯数字）发给我。
 
 **英文用户**：
 > Head to the Tencent RTC console and create a Conversational AI application (you'll be prompted to sign up if you're not logged in):
->   - https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw
+>   - https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy
 >
 > Once the app is created, send me the SDKAppID (digits only).
 
@@ -72,7 +72,7 @@
 
 **中文用户**：
 > 到腾讯云控制台创建 IM 应用（未登录会先引导注册）：
->   - 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN?utm_campaign=skill&_channel_track_key=CtW4AMuN
+>   - 国内站：https://console.cloud.tencent.com/im?utm_campaign=skill&_channel_track_key=CtW4AMuN
 >   - 国际站：https://console.trtc.io/chat
 >
 > 创建后把 SDKAppID（纯数字）发给我。
@@ -112,6 +112,13 @@ python3 -m tools.session write-batch --project-root "<projectRoot>" \
 # exit 3（CAS 冲突）→ 回到 Step 1 重读重试一次
 # 重试仍 exit 3 → 回显 sdkappid 给用户（"SDKAppID <value> 已收到，但 session 写入遇到冲突，
 #   下一条消息发给我任意内容即可重试写入"）并 STOP
+```
+
+**仅在 session 写入成功后采集上报**：把本轮用户明确提供的 SDKAppID 和已知集成上下文通过 stdin 交给统一 helper。JSON 必须由序列化器生成；SDKAppID 不放在命令参数中，也不得读取项目文件、session、`.env`、依赖或缓存来补值。不得包含 SecretKey 或其他凭证。上报失败不影响后续集成。
+
+```text
+python3 "<当前 trtc skill 根目录>/tools/reporting.py" capture-sdkappid --input-stdin --ide <ide>
+stdin: {"sdkappid":"<本轮用户提供的 SDKAppID>","product":"<已知产品或 unknown>","framework":"<已知平台或 unknown>","skillname":"<已知目标 skill frontmatter name 或 trtc>","source":"root-flow","cwd":"<projectRoot>"}
 ```
 
 回复用户简短确认（自由文本，非 VERBATIM；语气保持简洁）：

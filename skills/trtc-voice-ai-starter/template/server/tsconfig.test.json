@@ -1,0 +1,10 @@
+// Type-checks the server tests, which `tsconfig.json` excludes from the
+// build so they never land in dist/.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src"],
+  "exclude": []
+}

@@ -272,6 +272,7 @@ function validateNotice(value, projectKey) {
     && (!Number.isInteger(value.choice_retry_count) || value.choice_retry_count < 0)) return null;
   if (value.choice_next_retry_at !== undefined && !Number.isFinite(value.choice_next_retry_at)) return null;
   if (value.choice_last_error !== undefined && typeof value.choice_last_error !== 'string') return null;
+  if (value.choice_retry_kind !== undefined && value.choice_retry_kind !== 'defaulted') return null;
   // Foreground notice delivery bookkeeping lives in this existing receipt;
   // it is intentionally optional so receipts written by older releases keep
   // working.  The counter is local-only and is never copied to CLS.
@@ -631,12 +632,12 @@ export function noticeStatus(stateRoot, projectKey, attemptId, sessionid = null,
       }
       return { status: 'expired', notice_status: 'expired' };
     }
-    // CodeBuddy has no verified host-native visible notification channel.
-    // Its foreground bootstrap must therefore claim a bounded number of
+    // Claude, Cursor and CodeBuddy render through their foreground bootstrap.
+    // They must therefore claim a bounded number of
     // presentation attempts using this same notice-v1 receipt.  Do not mark
     // the notice terminal when the bound is exhausted: an explicit choice is
     // still required, and a later repair can inspect the pending state.
-    if (opts?.renderer === 'codebuddy-foreground'
+    if (['codebuddy-foreground', 'cursor-foreground', 'claude-foreground'].includes(opts?.renderer)
       && ['pending_output', 'awaiting_choice'].includes(value.status)) {
       const maxAttempts = Number.isInteger(opts.maxAttempts) && opts.maxAttempts > 0
         ? opts.maxAttempts : 2;
@@ -649,6 +650,12 @@ export function noticeStatus(stateRoot, projectKey, attemptId, sessionid = null,
         ...value,
         status: 'awaiting_choice',
         foreground_attempts: attempts + 1,
+        // Only a successfully claimed visible Claude/CodeBuddy presentation can move
+        // this receipt to the session that will answer it. Ordinary control
+        // messages still use the strict session match above.
+        ...(['claude-foreground', 'codebuddy-foreground'].includes(opts.renderer)
+          && typeof opts.presentationSessionid === 'string' && opts.presentationSessionid
+          ? { sessionid: opts.presentationSessionid } : {}),
         notice_locale: normalizeNoticeLocale(opts.noticeLocale) || value.notice_locale,
         ...(typeof opts.ide === 'string' ? { foreground_last_ide: opts.ide } : {}),
       };
@@ -683,6 +690,7 @@ export function updateNoticeStatus(stateRoot, projectKey, expected, status) {
     delete next.choice_retry_count;
     delete next.choice_last_error;
     delete next.choice_next_retry_at;
+    delete next.choice_retry_kind;
     if (!atomicWrite(p.notice, next)) return { status: 'error', reason: 'notice_write_failed' };
     if (['allowed', 'denied', 'defaulted'].includes(status)) {
       const obligation = readNoticeObligation(stateRoot, projectKey);
@@ -712,7 +720,9 @@ export function recordNoticeRetry(stateRoot, projectKey, expected, reason, opts 
     if (expected && current.value.status !== expected) {
       return { status: 'conflict', value: current.value };
     }
-    const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+    const now = typeof opts.now === 'function'
+      ? opts.now()
+      : Number.isFinite(opts.now) ? opts.now : Date.now();
     const count = Number.isInteger(current.value.choice_retry_count)
       ? current.value.choice_retry_count + 1 : 1;
     const delays = [60 * 1000, 5 * 60 * 1000, 30 * 60 * 1000];
@@ -722,6 +732,7 @@ export function recordNoticeRetry(stateRoot, projectKey, expected, reason, opts 
       choice_retry_count: count,
       choice_last_error: typeof reason === 'string' ? reason.slice(0, 128) : 'state_write_failed',
       choice_next_retry_at: now + delay,
+      ...(opts.choiceRetryKind === 'defaulted' ? { choice_retry_kind: 'defaulted' } : {}),
     };
     if (!atomicWrite(p.notice, next)) return { status: 'error', reason: 'notice_write_failed' };
     return { status: 'updated', value: next };

@@ -80,8 +80,8 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 
 | キー | 目的 | 入手先 |
 |-----|---------|-----------------|
-| キー 1：TRTC アプリケーション認証情報 | 通訳エージェントが音声通話を実行可能にします | https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw（登録して **RTC Engine** アプリを作成 — Conversational AI 対応） |
-| キー 2：Tencent Cloud API キー | Tencent Cloud 音声・通話サービスを使用する権限を証明します（TRTC アカウントとログインが同期されます） | https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE |
+| キー 1：TRTC アプリケーション認証情報 | 通訳エージェントが音声通話を実行可能にします | https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy（登録して **RTC Engine** アプリを作成 — Conversational AI 対応） |
+| キー 2：Tencent Cloud API キー | Tencent Cloud 音声・通話サービスを使用する権限を証明します（TRTC アカウントとログインが同期されます） | https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s |
 | キー 3：LLM API キー | 通訳エージェントの「頭脳」— 音声をリアルタイムで理解し翻訳します | 登録している AI サービスサイト（OpenAI、DeepSeek など） |
 
 > AI が各キーの取得方法をステップバイステップで詳しく説明します。キー情報はこの設定セッションでのみ使用され — システムが記録したり漏洩したりすることはありません。

@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  // Tests run under Node and are checked by tsconfig.test.json. Excluding them
+  // here keeps Node globals out of the browser sources on purpose.
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

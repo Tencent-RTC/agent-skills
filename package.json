@@ -1,6 +1,6 @@
 {
   "name": "@tencent-rtc/trtc-agent-skills",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Installer for the TRTC Agent Skills suite (Chat, Call, RTC Engine, Live, Conference) plus manual SDK runtime log troubleshooting and knowledge base, with one-command MCP setup for Claude Code / Cursor / CodeBuddy / Codex.",
   "bin": {
     "trtc-agent-skills": "bin/cli.js"
@@ -10,6 +10,7 @@
     "build:telemetry": "node scripts/build-telemetry.js",
     "check:telemetry-bundle": "node scripts/build-telemetry.js --check",
     "test:reporting": "node --test scripts/test-codex-attribution-permissions.test.js scripts/cli.test.js scripts/cli-reporting-install.test.js scripts/cli-c19-mode.test.js scripts/cli-c19-migration.test.js scripts/cli-runtime-binding.test.js scripts/test-reporting-python.test.js && node scripts/test-reporting-python.js",
+    "test:cli-copy-filter": "node --test tests/cli-copy-filter.test.js",
     "test:telemetry-bundle": "node --test tests/reporting-v2/integration/test_telemetry_bundle.js",
     "test:telemetry-node16": "node scripts/test-telemetry-node16.js",
     "test:reporting-package": "node scripts/test-reporting-package.js",
@@ -18,7 +19,7 @@
     "test:reporting-c20-6-local": "npm --prefix tests/reporting-v2 run test:c20-6-e2e",
     "test:reporting-c14-host": "node tests/reporting-v2/scripts/run-c14-host-matrix.js",
     "test:reporting-c14-ide-evidence": "node tests/reporting-v2/scripts/run-c14-ide-evidence.js",
-    "test:reporting-release": "npm run check:telemetry-bundle && npm --prefix tests/reporting-v2 run test:all && npm run test:reporting && npm run test:telemetry-bundle && npm run test:telemetry-node16 && npm run test:reporting-v2-hook-performance && npm run test:reporting-package && npm run test:reporting-c14-local",
+    "test:reporting-release": "npm run check:telemetry-bundle && npm --prefix tests/reporting-v2 run test:all && npm run test:reporting && npm run test:cli-copy-filter && npm run test:telemetry-bundle && npm run test:telemetry-node16 && npm run test:reporting-v2-hook-performance && npm run test:reporting-package && npm run test:reporting-c14-local",
     "test:sdk-log": "node --test skills/trtc-sdk-log-analysis/scripts/lib/*.test.js skills/trtc-sdk-log-analysis/scripts/*.test.js",
     "prepack": "npm run build:telemetry",
     "version": "node scripts/update-version.js",

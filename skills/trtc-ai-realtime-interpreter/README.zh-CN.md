@@ -80,8 +80,8 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 
 | 密钥 | 用途 | 获取地址 |
 |------|------|---------|
-| 密钥 1：TRTC 应用凭证 | 让翻译智能体能够进行语音通话 | https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw（注册并创建 **RTC Engine** 应用，支持 Conversational AI） |
-| 密钥 2：腾讯云 API 密钥 | 证明你有权限使用 TRTC 语音和通话服务（登录态与 TRTC 账号自动同步） | https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE |
+| 密钥 1：TRTC 应用凭证 | 让翻译智能体能够进行语音通话 | 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje<br>海外站：https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy<br>（注册并创建 **RTC Engine** 应用，支持 Conversational AI） |
+| 密钥 2：腾讯云 API 密钥 | 证明你有权限使用 TRTC 语音和通话服务（登录态与 TRTC 账号自动同步） | 国内站：https://console.cloud.tencent.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5-%E5%9B%BD%E5%86%85&utm_campaign=skill&_channel_track_key=hTRQ0ctd<br>海外站：https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s<br>（与密钥 1 使用同一站点） |
 | 密钥 3：LLM API 密钥 | 翻译智能体的"大脑"——实时听懂并翻译语音 | 你注册的 AI 服务网站（如 OpenAI、DeepSeek 等） |
 
 > AI 会一步步详细告诉你如何获取每个密钥。你的密钥信息仅用于本次配置会话——系统不会记录或泄露。

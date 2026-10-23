@@ -85,6 +85,7 @@ const SKILL_ALLOWLIST = new Set([
   "trtc-ai-service",
   "trtc-ai-oral-coach",
   "trtc-ai-realtime-interpreter",
+  "trtc-voice-ai-starter",
   "trtc-chat",
   "trtc-chat-android",
   "trtc-push",
@@ -555,8 +556,20 @@ const COPY_EXCLUDED_DIRECTORY_NAMES = new Set([
   "node_modules",
 ]);
 
+// Skill templates keep a real `.env` locally so the maintainer can run them.
+// npm never publishes it — a nested .gitignore keeps it out of the tarball —
+// but a copy-mode install reads the source working tree directly, so without
+// this the live TRTC / Tencent Cloud / LLM keys land in .claude/, .cursor/,
+// .codebuddy/ and .codex/: four copies inside the user's own project.
+// Match by exact name; `.env.example` is the shippable one and still copies.
+const COPY_EXCLUDED_FILE_NAMES = new Set([
+  ".env",
+]);
+
 function shouldCopySourcePath(src) {
-  return !COPY_EXCLUDED_DIRECTORY_NAMES.has(path.basename(src));
+  const base = path.basename(src);
+  return !COPY_EXCLUDED_DIRECTORY_NAMES.has(base)
+    && !COPY_EXCLUDED_FILE_NAMES.has(base);
 }
 
 function copyRecursiveFallback(src, dest) {
@@ -565,6 +578,7 @@ function copyRecursiveFallback(src, dest) {
     ensureDir(dest);
     for (const entry of fs.readdirSync(src)) {
       if (COPY_EXCLUDED_DIRECTORY_NAMES.has(entry)) continue;
+      if (COPY_EXCLUDED_FILE_NAMES.has(entry)) continue;
       copyRecursiveFallback(path.join(src, entry), path.join(dest, entry));
     }
   } else {
@@ -946,6 +960,7 @@ function listSkills() {
     "trtc-ai-service":    "AI customer service scenarios (TRTC Conversational AI)",
     "trtc-ai-oral-coach": "AI oral speaking coach / 口语陪练 (TRTC Conversational AI)",
     "trtc-ai-realtime-interpreter": "AI real-time interpretation / 实时翻译",
+    "trtc-voice-ai-starter": "Voice AI starter kit — unnamed conversational-AI intent (Web)",
     "trtc-chat":          "IM / Chat SDK integration",
     "trtc-push":          "TIMPush offline push integration (via trtc-push-mcp)",
     "trtc-sdk-log-analysis": "Manual SDK runtime log collection and offline analysis",
@@ -3400,6 +3415,8 @@ module.exports = {
   _releaseInstallerLock,
   parsePromptReportingValue,
   copyRecursive,
+  shouldCopySourcePath,
+  SKILL_ALLOWLIST,
   buildPromptHookCommand,
   resolveCodexStateRoot,
   writeHostStateRootBinding,

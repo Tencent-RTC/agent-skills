@@ -60,7 +60,7 @@ test -f "$SKILL_ROOT/capabilities/conversation-core/.env" && echo HAS_ENV || ech
 ```
 - `BAD_PY` → tell user to install Python ≥ 3.9 (https://www.python.org/downloads/). Do not proceed until satisfied.
 - `MISSING` (2nd check) → re-locate `SKILL_ROOT` using the `find` fallback from §0 and retry.
-- `NO_ENV` → first `cp "$SKILL_ROOT/capabilities/conversation-core/.env.example" "$SKILL_ROOT/capabilities/conversation-core/.env"`, then proceed to §5 to fill in keys; `HAS_ENV` → previously configured, can reuse, skip §5 (unless user wants to reconfigure).
+- `NO_ENV` → proceed to §5 (it creates `.env` from `.env.example`); `HAS_ENV` → run `cd "$SKILL_ROOT" && python3 scripts/verify-credentials.py --type all` first (the file may have been copied but not filled in). All ok → previously configured, can reuse, skip §5 (unless user wants to reconfigure); any failure → §5 (already-valid entries need not be refilled).
 
 > Architecture note (for the Agent): All capabilities in this Skill are **shipped with the repo**. The core `server.py` uses `try_load_capability` for pre-wiring — **directory present = auto-mounted**. Therefore Path A **does not need an assembly script** — just configure keys and start directly.
 
@@ -87,60 +87,46 @@ A → §6；B → §7. If `ask_followup_question` is not available, list both pa
 > 2. **Tencent Cloud API Key** — the "front desk" that issues temporary passes (voice runs on TRTC, credentials run on Tencent Cloud, accounts sync automatically — no separate registration);
 > 3. **LLM Key** — the coach's "brain" that understands you, corrects you, and generates reports.
 
-For each key, the guidance follows: ① explain what it does in one sentence; ② give a code block with placeholders for the user to **copy, fill in, and send back**; ③ Agent uses `write_to_file` to write to `.env`; ④ immediately run `verify-credentials.py`; ⑤ only reply "Received — format OK", **never echo the full key**.
+For the keys: **only the SDKAppID is collected in chat.** The SDKSecretKey, SecretId / SecretKey and the LLM key / URL / model are typed into `.env` **by the user**. Never ask for a secret in chat; if the user pastes one anyway, do not repeat it — ask them to put it in `.env`.
 
 > **⚠️ Link Usage Red Line (violation = defect)**:
-> The URLs below for each key are **full URLs with tracking parameters** (including `utm_source`, `utm_medium`, `utm_campaign`, `_channel_track_key`). When presenting these links to users, the Agent **MUST copy-paste the full URL verbatim — do not simplify, truncate, or strip query parameters**. These are marketing attribution entry points; simplifying the links causes tracking data loss.
+> The console URLs below are **full URLs with tracking parameters** (`utm_campaign`, `_channel_track_key`, …). When presenting these links to users, the Agent **MUST copy-paste the full URL verbatim — do not simplify, truncate, or strip query parameters**. These are marketing attribution entry points; simplifying the links causes tracking data loss.
 
-**Key 1 · TRTC App Credentials** (the voice channel):
+**Console links (VERBATIM)**:
 
-**Short-circuit**: If session already has root-collected `sdkappid` (non-zero int, from `trtc/flows/collect-sdkappid.md`), skip asking for SDKAppID.
+| Purpose | Chinese users (show both, China site first) | English users (show only this) |
+|---|---|---|
+| Key 1 · TRTC (SDKAppID + SDKSecretKey) | 国内站：https://console.cloud.tencent.com/trtc/app?utm_campaign=skill&_channel_track_key=lDTHxeje<br>海外站：https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy | https://console.trtc.io?utm_campaign=Agent-skills-general&_channel_track_key=tR91l0wy |
+| Key 2 · Tencent Cloud API | 国内站：https://console.cloud.tencent.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5-%E5%9B%BD%E5%86%85&utm_campaign=skill&_channel_track_key=hTRQ0ctd<br>海外站：https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s | https://console.tencentcloud.com/cam/capi?utm_term=cam%E5%AF%86%E9%92%A5&utm_campaign=skill&_channel_track_key=zb44We6s |
 
-**English users** — VERBATIM template (do not rewrite; substitute `<session.sdkappid>` with the actual value):
+Never show the 国内站 links to English users. Tell Chinese users to get Key 1 and Key 2 from the **same site**.
 
-```
-> Got your SDKAppID: <session.sdkappid>. I just need the SDKSecretKey now
-> (server-side, 64-char hex — TRTC console → Application → Server-side Integration; **not** STSecretKey).
->
-> Paste it here so I can write .env and verify:
-> TRTC_SDK_SECRET_KEY=
-```
-
-**中文用户** —— VERBATIM 模板（不改写，`<session.sdkappid>` 替换为实际值）：
-
-```
-> 已收到你的 SDKAppID：<session.sdkappid>。现在只需要 SDKSecretKey
-> （服务端 64 位 hex，控制台 → 应用 → 服务端集成；**不是** STSecretKey）。
->
-> 把值贴到下方发给我，我会写入 .env 并验证：
-> TRTC_SDK_SECRET_KEY=
+**Step 0 · Prepare `.env`.** Confirm `.env` is git-ignored if the project is a git repo (add it to `.gitignore` first if not), then:
+```bash
+cd "$SKILL_ROOT/capabilities/conversation-core" && (test -f .env || cp .env.example .env) && chmod 600 .env
 ```
 
-After the user replies: validate, `write_to_file` → `.env` (`TRTC_SDK_APP_ID=<session.sdkappid>` + `TRTC_SDK_SECRET_KEY=<user input>`), run `verify-credentials.py --type trtc`, proceed to Key 2. Skip the fallback instructions below.
+**Step 1 · Collect the SDKAppID (chat).**
 
-If no root-collected `sdkappid` (fallback), use the full flow below:
-> How to get them: Go to the TRTC console, create an **RTC Engine** app (supports Conversational AI):
-> 1. Open https://console.trtc.io/?quickclaim=engine_trial&utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=3WFHfiqw and sign up / log in;
+**Short-circuit**: If session already has root-collected `sdkappid` (non-zero int, from `trtc/flows/collect-sdkappid.md`), do not ask — just write it.
+
+Otherwise say (link per the table above):
+> Key 1 — TRTC App Credentials, the voice channel that lets the coach "speak":
+> 1. Open <Key 1 link> and sign up / log in;
 > 2. Create an **RTC Engine** app (supports Conversational AI — this is the coach's voice capability);
-> 3. Inside the app, find: **SDKAppID** (a number) and **SDKSecretKey** (under Server-side Integration);
-> 4. ⚠️ Note: don't use **STSecretKey** (client-side) — we need the server-side **SDKSecretKey**.
-```
-# Coach voice channel
-TRTC_SDK_APP_ID=yourSDKAppID          # A number
-TRTC_SDK_SECRET_KEY=yourSDKSecretKey  # Server-side SDKSecretKey, NOT client-side STSecretKey
-```
-> Verify: `python3 scripts/verify-credentials.py --type trtc`
+> 3. Inside the app, find the **SDKAppID** (a number) and **send me only the SDKAppID**.
 
-**Key 2 · Tencent Cloud API Key** (the "front desk"; open https://console.tencentcloud.com/cam/capi?utm_source=github&utm_medium=skill&utm_campaign=Twitter%20AI%20%E4%B8%93%E9%A1%B9%20-%20AI%20Oral%20Coach&_channel_track_key=v0K1Q0DSE — this link syncs your TRTC login session, no need to re-register):
-```
-# Front desk for issuing temporary passes
-TENCENT_CLOUD_SECRET_ID=yourSecretId
-TENCENT_CLOUD_SECRET_KEY=yourSecretKey
-```
-> Verify: `python3 scripts/verify-credentials.py --type tencent`
+After receiving it (or on short-circuit): check it is all digits, then edit only the `TRTC_SDK_APP_ID=` and `TRTC_REGION=` lines of `.env` (no secrets are in the file yet). `TRTC_REGION` is derived, never asked: SDKAppID starting with `14` or `16` → `cn`, any other valid SDKAppID → `intl`; keep an existing value the user set explicitly. On the non-short-circuit path, after the write call `python3 "<当前 trtc skill 根目录>/tools/reporting.py" capture-sdkappid --input-stdin --ide <ide>` with JSON stdin containing only the explicit SDKAppID, known `product` / `framework` / `skillname`, `source:"domain-fallback"`, and `cwd`; never include any secret. Reporting failure must not block integration.
 
-**Key 3 · LLM Key** (the coach's "brain"):
-> You need an API Key from an LLM provider. If you don't have one yet, pick a provider below, sign up, and get an API Key (direct links to each provider's key page included):
+**Step 2 · User fills in the rest of `.env`.** Give the absolute path of `$SKILL_ROOT/capabilities/conversation-core/.env` and ask the user to replace the placeholders below, save, and reply "done" / "填好了":
+
+| Field(s) | What it is |
+|---|---|
+| `TRTC_SDK_SECRET_KEY` | Rest of Key 1, on the same app page (Server-side Integration). ⚠️ The server-side **SDKSecretKey**, not the client-side STSecretKey |
+| `TENCENT_CLOUD_SECRET_ID` · `TENCENT_CLOUD_SECRET_KEY` | Key 2 — the "front desk" that issues temporary passes. Link per the table above, same site as Key 1 |
+| `LLM_API_KEY` · `LLM_API_URL` · `LLM_MODEL` | Key 3 — the coach's "brain". Any OpenAI-compatible provider the user already has; all three from the same provider. For OpenAI the default URL / model can stay |
+
+If the user asks where to get an LLM key, show this table (do not pick for them):
 
 | Provider | Model Series | Get API Key |
 |----------|-------------|-------------|
@@ -153,26 +139,15 @@ TENCENT_CLOUD_SECRET_KEY=yourSecretKey
 | Cohere | Enterprise AI | https://dashboard.cohere.com/api-keys |
 | Mistral AI | Mistral series | https://console.mistral.ai/api-keys |
 
-> After choosing a provider and getting your API Key, **copy and fill in the block below and send it back**:
-> - If using **OpenAI**, you can just delete the `LLM_API_URL` line (defaults to OpenAI endpoint);
-> - For other providers, you must fill in both `LLM_API_URL` and `LLM_MODEL` — check that provider's docs for exact values (search "API Base URL" and "Model Name").
-
-```
-# Coach brain
-LLM_API_KEY=yourAPIKey
-LLM_API_URL=yourAPIEndpoint        # Delete this line if using OpenAI
-LLM_MODEL=yourModelName
-```
-> Verify: `python3 scripts/verify-credentials.py --type llm`
-
-**Verification parsing**: After each write, run `cd "$SKILL_ROOT" && python3 scripts/verify-credentials.py --type <trtc|tencent|llm>`. Parse stdout JSON: `ok:true` → say in plain language "This one's good, on to the next"; `ok:false` → follow the `error` / `message` hint and ask the user to resend that key.
+**Step 3 · Verify.** After the user replies, run `cd "$SKILL_ROOT" && python3 scripts/verify-credentials.py --type all`. Parse stdout JSON: all `ok:true` → say in plain language "All three keys are good"; any `ok:false` → list every failing item with its `error` / `message` hint, ask the user to fix it **in `.env`** and reply again, then re-run.
 
 > Reports / corrections / suggestions reuse the same `LLM_*` group by default (leave `REPORT_LLM_*` empty in `.env` to fall back); only fill in `REPORT_LLM_*` if you want a cheaper evaluation model.
 
 ### 5.1 Security Red Lines (Violations Are Defects)
-- Keys are **only** written to `.env` via `write_to_file`, **never** passed as CLI arguments to scripts;
-- Never echo full keys in conversation (only confirm "Received — format OK"); no `cat .env` / `echo $SECRET`;
-- `chmod 600` the `.env` file after writing.
+- Never ask for a secret in chat — only the SDKAppID is collected there; the user types every secret into `.env`;
+- Keys are **never** passed as CLI arguments to scripts — `verify-credentials.py` reads `.env` itself;
+- Never echo keys in conversation and never read secret values out of `.env`; no `cat .env` / `echo $SECRET`;
+- `.env` is `chmod 600` (done in Step 0).
 
 ## 6. Path A: Quick Start
 
@@ -298,7 +273,7 @@ If the user's question involves specific model provider params (e.g., OpenAI, De
 | TTS speed | `TTS_SPEED` | Float, 0.5–2.0; configured per level in `LevelParams` (beginner / intermediate / advanced) |
 | VAD sensitivity | `VAD_LEVEL` | 0–5, 2 is recommended; too high filters English words as noise |
 
-**Security**: All parameter values must only be written to `.env` — no CLI plaintext pass-through (see §5.1).
+**Security**: All parameter values live only in `.env` — no CLI plaintext pass-through. Secrets (`*_API_KEY`) are filled in by the user; the Agent may write non-secret values (URL, model, voice, speed) (see §5.1).
 
 ---
 
