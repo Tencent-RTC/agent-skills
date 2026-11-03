@@ -24,32 +24,10 @@ import {
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
-import {
-  ALLOWED,
-  ALLOW_RETRY,
-  CONTROL_RETRY,
-  DISABLED,
-  DISABLE_RETRY,
-  NOTICE_ATTEMPT_MAX_AGE_MS,
-  acquireProjectAdmissionReservation,
-  acquireControlReservation,
-  controlKey,
-  isCanonicalOption,
-  readControlTurn,
-  readDenyTombstone,
-  readNoticeObligation,
-  readNoticeReceipt,
-  recordNoticeRetry,
-  quarantineDenyTombstone,
-  releaseControlReservation,
-  updateNoticeStatus,
-  writeControlTurn,
-  writeDenyTombstone,
-  writeDenyTombstoneFromHook,
-  releaseProjectAdmissionReservation,
-} from './control.js';
+import { ALLOWED, ALLOW_RETRY, DISABLED, DISABLE_RETRY, NOTICE_REQUIRED, isCanonicalOption } from './control.js';
 import { projectStateDirs, resolveProjectStateDir } from './project-state.js';
+import { CONSENT_TTL_MS, CONSENT_VERSION, claimConsentNotice, readConsentState, updateConsentState } from './consent.js';
+import { isRuntimeEvent } from './event-scope.js';
 
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'off', 'disabled']);
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
@@ -59,63 +37,6 @@ const LOCK_FILE = '.pref-owner.json';
 const LOCK_GRACE_FOREGROUND_MS = 5000;
 
 const VALID_CONTINUATION_CHOICES = new Set(['unanswered', 'allowed', 'denied']);
-
-function noticeCapabilityFresh(receipt) {
-  if (receipt?.status !== 'valid') return false;
-  const state = receipt.value?.status;
-  // Once a choice has been durably accepted, its transaction is a recovery
-  // obligation rather than a fresh authorization capability.  It remains
-  // resumable after the seven-day capability window so a crash or a failed
-  // preference/notice write cannot strand the project in a half-applied state.
-  if (['allow_pending', 'deny_pending'].includes(state)) return true;
-  if (!['pending_output', 'awaiting_choice'].includes(state)) return true;
-  return Number.isFinite(receipt.value.created_at)
-    && Date.now() - receipt.value.created_at <= NOTICE_ATTEMPT_MAX_AGE_MS;
-}
-
-function controlTurnAccepted(turn, choice) {
-  if (turn?.status !== 'valid' || turn.value?.control_kind !== choice) return false;
-  return choice === 'allowed'
-    ? ['allowed_pending', 'allowed', 'retryable'].includes(turn.value.control_status)
-    : ['deny_pending', 'denied', 'retryable'].includes(turn.value.control_status);
-}
-
-function acceptedControlFact(stateRoot, key, choice, turn = null, tombstone = null) {
-  if (controlTurnAccepted(turn || readControlTurn(stateRoot, key, controlKey(key, choice)), choice)) return true;
-  // The bounded Hook deny path can durably create the kill-switch tombstone
-  // before the foreground process writes its replay turn. Treat that as an
-  // accepted deny transaction even when the notice capability has expired.
-  return choice === 'denied'
-    && (tombstone || readDenyTombstone(stateRoot, key)).status === 'valid';
-}
-
-// A deny is a kill-switch transaction.  Serialize only the short tombstone
-// write with Prompt admission; do not hold this lock while preference writes,
-// queue purging, or network/sender work waits for existing producers.
-function writeDenyWithAdmission(stateRoot, key, controlKeyValue, opts = {}) {
-  const hook = opts.source === 'hook';
-  const requested = Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : (hook ? 25 : 120);
-  const deadlineMono = Number.isFinite(opts.deadlineMono)
-    ? opts.deadlineMono : performance.now() + requested;
-  const lock = acquireProjectAdmissionReservation(stateRoot, key, {
-    timeoutMs: Math.min(requested, Math.max(0, deadlineMono - performance.now())),
-    deadlineMono,
-    _hookMode: hook,
-  });
-  if (!lock) return { status: hook ? 'retryable' : 'error', reason: 'admission_busy' };
-  try {
-    const writerOpts = {
-      ...opts,
-      timeoutMs: Math.min(requested, Math.max(0, deadlineMono - performance.now())),
-      deadlineMono,
-    };
-    return hook
-      ? writeDenyTombstoneFromHook(stateRoot, key, controlKeyValue, writerOpts)
-      : writeDenyTombstone(stateRoot, key, controlKeyValue, writerOpts);
-  } finally {
-    releaseProjectAdmissionReservation(lock);
-  }
-}
 
 const OFF_TEXTS = new Set([
   '关闭体验上报', '停止体验上报', '关闭提示词上报', '停止提示词上报',
@@ -331,6 +252,12 @@ export function readPreferenceSourceAt(root, source) {
         (!Number.isSafeInteger(value.preference_revision) || value.preference_revision < 0)) {
       return { status: 'corrupt' };
     }
+    if (value.experience_consent_id !== undefined
+      && (typeof value.experience_consent_id !== 'string' || !/^[a-f0-9]{32}$/.test(value.experience_consent_id))) {
+      return { status: 'corrupt' };
+    }
+    if (value.continuation_choice === 'allowed' && value.continuation_choice_version === CONSENT_VERSION
+      && !value.experience_consent_id) return { status: 'corrupt' };
   } else {
     // legacy: validate only the two boolean fields
     for (const f of ['prompt_reporting_enabled', 'all_reporting_disabled']) {
@@ -373,6 +300,7 @@ function resolveEffectivePreference(projectRoot, env = process.env, scope = 'exp
   // 2. TRTC_PROMPT_REPORTING=off → false (non-runtime scope only)
   if (scope !== 'runtime' && envBoolean(env.TRTC_PROMPT_REPORTING) === false) return false;
   let promptPreference = null;
+  let explicitConsent = null;
   const allRoots = ancestors(projectRoot);
   // 3. Ancestor walk with authority aggregation
   for (let i = 0; i < allRoots.length; i++) {
@@ -408,20 +336,25 @@ function resolveEffectivePreference(projectRoot, env = process.env, scope = 'exp
         }
       }
     }
-    // continuation_choice='denied' → hard close (blocks even TRTC_REPORTING=on)
-    if ((prefValue.continuation_choice ?? 'unanswered') === 'denied') return false;
+    // V1 refusals also meant global opt-out. Preserve that historical
+    // boundary; V2 refusals affect experience data only.
+    if (prefValue.continuation_choice === 'denied'
+      && (scope !== 'runtime' || prefValue.continuation_choice_version !== CONSENT_VERSION)) return false;
     // all_reporting_disabled is unconditional — cannot be bypassed by any env var
     if (prefValue.all_reporting_disabled === true) return false;
     // cache prompt_reporting_enabled — runtime scope ignores this flag
     if (scope !== 'runtime' && promptPreference === null && typeof prefValue.prompt_reporting_enabled === 'boolean') {
       promptPreference = prefValue.prompt_reporting_enabled;
     }
+    if (explicitConsent === null && prefValue.continuation_choice === 'allowed') {
+      explicitConsent = prefValue;
+    }
   }
-  // 4. TRTC_PROMPT_REPORTING=on → true (non-runtime only, no hard-close reached)
-  if (scope !== 'runtime' && envBoolean(env.TRTC_PROMPT_REPORTING) === true) return true;
-  // 5. For runtime scope: default enabled if no hard-close above.
   if (scope === 'runtime') return true;
-  // 5. cached preference or default enabled
+  // A settings/env "on" is not consent. Eligibility to hold/show a notice
+  // is separate, so a first-time user can be asked with sending disabled.
+  if (scope !== 'eligibility' && !explicitConsent) return false;
+  if (envBoolean(env.TRTC_PROMPT_REPORTING) === true) return true;
   return promptPreference ?? true;
 }
 
@@ -451,6 +384,29 @@ export function isReportingEnabledForScope(projectRoot, scope = 'experience', en
   return resolveEffectivePreference(projectRoot, env, scope === 'runtime' ? 'runtime' : 'experience');
 }
 
+export function canRequestExperienceConsent(projectRoot, env = process.env) {
+  return resolveEffectivePreference(projectRoot, env, 'eligibility');
+}
+
+// Local-only authorization generation. Newly authorized projects must never
+// release a V1 default-on backlog. Existing explicit V1 agreements still work.
+export function consentFields(projectRoot) {
+  for (const root of ancestors(projectRoot)) {
+    const pref = readPreferenceSourceAt(root, 'preferred');
+    if (pref.status === 'valid' && pref.value.continuation_choice === 'allowed') {
+      return pref.value.experience_consent_id ? { __consent_id: pref.value.experience_consent_id } : {};
+    }
+  }
+  return {};
+}
+
+export function isEventReportingEnabled(projectRoot, event, env = process.env) {
+  if (isRuntimeEvent(event)) return isReportingEnabledForScope(projectRoot, 'runtime', env);
+  if (!isReportingEnabled(projectRoot, env)) return false;
+  const fields = consentFields(projectRoot);
+  return !fields.__consent_id || event?.__consent_id === fields.__consent_id;
+}
+
 /** Persist only preference data; never copy session/prompt state. */
 export function setReportingPreference(projectRoot, enabled, opts = {}) {
   const filePath = preferencePath(projectRoot);
@@ -466,11 +422,24 @@ export function setReportingPreference(projectRoot, enabled, opts = {}) {
     if (source.status === 'corrupt') {
       return { action: 'skip', reason: 'preference_corrupt', enabled: Boolean(enabled), all_reporting_disabled: false, path: filePath };
     }
-    const current = source.status === 'valid' ? source.value : {};
+    let current = source.status === 'valid' ? source.value : {};
+    if (source.status === 'missing') {
+      const legacy = readPreferenceSourceAt(canonicalRoot(projectRoot), 'legacy');
+      const fallback = legacy.status === 'missing' ? _readXdgLegacyCache(projectRoot, opts.env ?? process.env) : legacy;
+      if (fallback.status === 'corrupt') return { action: 'skip', reason: 'preference_corrupt', path: filePath };
+      if (fallback.status === 'valid') {
+        // Copy preferences only, never old prompt/session payloads. A soft
+        // settings write must not shadow an older global opt-out.
+        for (const field of ['all_reporting_disabled', 'continuation_choice', 'continuation_choice_version']) {
+          if (fallback.value[field] !== undefined) current[field] = fallback.value[field];
+        }
+      }
+    }
     const next = {
       ...current,
       prompt_reporting_enabled: Boolean(enabled),
-      prompt_reporting_updated_at: Math.floor((opts.now?.() ?? Date.now()) / 1000),
+      preference_revision: (current.preference_revision || 0) + 1,
+      prompt_reporting_updated_at: Math.floor((typeof opts.now === 'function' ? opts.now() : (opts.now ?? Date.now())) / 1000),
     };
     if (opts.purgePending !== undefined) next.purge_pending = Boolean(opts.purgePending);
     if (opts.allReportingDisabled !== undefined) {
@@ -503,7 +472,7 @@ export function continuationChoiceFromText(text) {
 /**
  * Atomically persist a continuation choice under the preference lock.
  * Returns { action: 'updated' | 'skip' | 'preference_corrupt', reason? }.
- * 'denied' also sets all_reporting_disabled=true.
+ * V2 'denied' disables experience only and preserves the global setting.
  * 'allowed' never widens a pre-existing all_reporting_disabled=true.
  * Corrupt preferred file → returns 'preference_corrupt', file bytes unchanged.
  */
@@ -545,21 +514,28 @@ export function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
         // XDG missing or no global-off → start fresh
       }
     }
-    const now = Math.floor((opts.now?.() ?? Date.now()) / 1000);
+    const now = Math.floor((typeof opts.now === 'function' ? opts.now() : (opts.now ?? Date.now())) / 1000);
+    if (opts.expectedRevision !== undefined && (current.preference_revision || 0) !== opts.expectedRevision) {
+      return { action: 'skip', reason: 'preference_changed' };
+    }
+    if (choice === 'allowed' && current.continuation_choice === 'denied') {
+      return { action: 'skip', reason: 'denied_precedence' };
+    }
     const revision = typeof current.preference_revision === 'number' ? current.preference_revision : 0;
     const next = {
       ...current,
       continuation_choice: choice,
-      continuation_choice_version: 1,
+      continuation_choice_version: CONSENT_VERSION,
       continuation_choice_updated_at: now,
       preference_revision: revision + 1,
     };
     if (choice === 'denied') {
-      next.all_reporting_disabled = true;
-      next.all_reporting_updated_at = now;
-      // Align all closely related fields so downstream readers see a consistent state.
       next.prompt_reporting_enabled = false;
       next.purge_pending = true;
+    }
+    if (choice === 'allowed') {
+      next.prompt_reporting_enabled = true;
+      next.experience_consent_id = current.experience_consent_id || randomBytes(16).toString('hex');
     }
     // 'allowed' never touches all_reporting_disabled (global-off preserved)
     const persisted = writeObjectAtomic(filePath, next);
@@ -569,606 +545,116 @@ export function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
   }
 }
 
-/**
- * Consume a continuation-choice response from the user.
- * Non-canonical text returns null and follows the ordinary Prompt path.
- * A canonical option is a control message only when the current project has
- * an applicable notice/control receipt.  Without one it remains ordinary
- * user text; this prevents a common onboarding phrase from being swallowed or
- * from changing reporting state in an unrelated conversation.
- */
+/** Consume only a reply bound to a current, project-local V2 notice. */
 export async function consumeContinuationChoice(projectRoot, text, opts = {}) {
   const explicit = opts.controlChoice ?? opts.control_choice;
-  const choice = explicit === 'allow'
-    ? 'allowed'
-    : explicit === 'deny'
-      ? 'denied'
-      : explicit === 'ambiguous'
-        ? 'ambiguous'
-        : isCanonicalOption(text);
-  // Non-control text remains on the ordinary Prompt path.  Canonical labels
-  // are checked against a project-scoped notice below; without that receipt
-  // they also remain ordinary Prompt text.
+  const choice = explicit === 'allow' ? 'allowed'
+    : explicit === 'deny' ? 'denied'
+      : explicit === 'ambiguous' ? 'ambiguous' : isCanonicalOption(text);
   if (!choice) return null;
-  if (!opts.stateRoot) return { status: 'control_retry', control: true, marker: CONTROL_RETRY };
   const key = projectKey(projectRoot);
-
-  // An ambiguous response is a control turn, never an ordinary Prompt.  It
-  // keeps the default-enabled reporting preference unchanged while closing
-  // this notice when possible.  Even a missing, stale, corrupt, or
-  // session-mismatched receipt must not make the response fall through to
-  // ordinary Prompt staging.
+  const receipt = readConsentState(projectRoot, key);
+  const skip = (reason) => ({ status: 'skipped', control: true, reason });
+  // Explicit classifications never fall through to ordinary staging, even
+  // with missing/corrupt/foreign/expired receipts.
+  const invalid = (reason) => explicit ? skip(reason) : null;
+  if (receipt.status !== 'valid' || receipt.value.notice_count === 0) return invalid('control_context_missing');
+  const now = typeof opts.now === 'function' ? opts.now() : (opts.now ?? Date.now());
+  if (now < receipt.value.created_at || now - receipt.value.created_at > CONSENT_TTL_MS) {
+    updateConsentState(projectRoot, key, (value) => ({ value }), { now });
+    return invalid('notice_attempt_expired');
+  }
+  if (receipt.value.notice_sessionid && opts.sessionid
+    && receipt.value.notice_sessionid !== opts.sessionid) return invalid('notice_session_mismatch');
+  if (receipt.value.notice_ide && opts.ide && receipt.value.notice_ide !== opts.ide) {
+    return invalid('notice_ide_mismatch');
+  }
+  const pref = readPreferenceState(projectRoot);
+  const previous = pref.status === 'valid' ? pref.value.continuation_choice : null;
+  if (['allowed', 'denied'].includes(previous)) {
+    return { status: 'control_in_progress', control: true, marker: previous === 'allowed' ? ALLOWED : DISABLED };
+  }
+  if (opts.source === 'hook') {
+    return { status: 'skipped', control: true, reason: 'foreground_choice_required' };
+  }
   if (choice === 'ambiguous') {
-    const skipped = (reason, extra = {}) => ({
-      status: 'skipped', control: true, reason, ...extra,
+    // Remain pending. One reminder is allowed, and this reply itself is never
+    // retained as a Prompt. No "defaulted" state can grant authorization.
+    const claim = claimConsentNotice(projectRoot, key, {
+      turn: opts.turn, sessionid: opts.sessionid || null, ide: opts.ide,
+      locale: receipt.value.notice_locale, now: opts.now || Date.now,
     });
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    if (notice.status !== 'valid') {
-      return skipped(notice.status === 'missing' ? 'control_context_missing' : 'notice_corrupt');
-    }
-    if (!['pending_output', 'awaiting_choice'].includes(notice.value.status)) {
-      return skipped('notice_not_pending', { defaulted: notice.value.status === 'defaulted' });
-    }
-    const now = typeof opts.now === 'function'
-      ? opts.now()
-      : Number.isFinite(opts.now) ? opts.now : Date.now();
-    if (!Number.isFinite(notice.value.created_at)
-      || now < notice.value.created_at
-      || now - notice.value.created_at > NOTICE_ATTEMPT_MAX_AGE_MS) {
-      return skipped('notice_attempt_expired');
-    }
-    const currentSessionId = typeof opts.sessionid === 'string' && opts.sessionid
-      ? opts.sessionid : null;
-    // Some hosts do not provide a stable session identifier to the runtime.
-    // In that case the caller may only set control_choice=ambiguous after
-    // confirming from the current conversation that the user is answering
-    // this notice. When both IDs exist, the receipt binding is authoritative.
-    if (notice.value.sessionid && currentSessionId
-      && notice.value.sessionid !== currentSessionId) {
-      return skipped('notice_session_mismatch');
-    }
-    if (Number.isFinite(notice.value.choice_next_retry_at)
-      && notice.value.choice_next_retry_at > now) {
-      return skipped('notice_choice_retry_backoff', { retry_suppressed: true });
-    }
-    const writeNotice = typeof opts._updateNoticeStatus === 'function'
-      ? opts._updateNoticeStatus : updateNoticeStatus;
-    const persisted = writeNotice(opts.stateRoot, key, notice.value.status, 'defaulted');
-    if (persisted.status === 'updated') {
-      return skipped('ambiguous_choice', { defaulted: true });
-    }
-    if (persisted.status === 'retry' && persisted.value?.status === 'defaulted') {
-      const retry = recordNoticeRetry(
-        opts.stateRoot, key, 'defaulted',
-        `ambiguous_defaulted:${persisted.reason || 'notice_projection_write_failed'}`,
-        { ...opts, choiceRetryKind: 'defaulted' },
-      );
-      return skipped('ambiguous_choice', {
-        defaulted: true,
-        defaulted_retry: retry.status,
-        notice_error: persisted.reason || 'notice_projection_write_failed',
-      });
-    }
-    if (persisted.status === 'conflict') {
-      const current = readNoticeReceipt(opts.stateRoot, key);
-      if (current.status === 'valid' && current.value.status === 'defaulted') {
-        return skipped('ambiguous_choice', { defaulted: true });
-      }
-      return skipped('notice_state_changed');
-    }
-    const retry = recordNoticeRetry(
-      opts.stateRoot, key, notice.value.status,
-      `ambiguous_defaulted:${persisted.reason || 'notice_defaulted_write_failed'}`,
-      { ...opts, choiceRetryKind: 'defaulted' },
-    );
-    return skipped('ambiguous_choice', {
-      defaulted: false,
-      defaulted_retry: retry.status,
-      notice_error: persisted.reason || 'notice_defaulted_write_failed',
-    });
+    return { ...skip('ambiguous_choice'), ...(claim.status === 'required'
+      ? { marker: NOTICE_REQUIRED, notice: claim } : { notice: { status: claim.status } }) };
   }
-  // Explicit natural-language classifications are bound to the receipt that
-  // was visible in the current conversation. When both sides expose a
-  // session ID, a stale notice from another IDE conversation cannot authorize
-  // changing this project's preference. Skip model-classified control turns;
-  // keep an unclassified fixed label on the ordinary Prompt path.
-  const currentSessionId = typeof opts.sessionid === 'string' && opts.sessionid
-    ? opts.sessionid : null;
-  if ((choice === 'allowed' || choice === 'denied')
-    && explicit === (choice === 'allowed' ? 'allow' : 'deny')) {
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    if (notice.status === 'valid' && notice.value.sessionid && currentSessionId
-      && notice.value.sessionid !== currentSessionId) {
-      return { status: 'skipped', control: true, reason: 'notice_session_mismatch' };
+  // Persist the accepted enum (never the reply text) before preference work.
+  // A failed preference write is resumable without another user decision.
+  const accepted = updateConsentState(projectRoot, key, (value) => {
+    if (!value) return { status: 'not_found' };
+    // A pending refusal wins over a racing allow replay.
+    const accepted = value.pending_choice === 'denied' ? 'denied' : choice;
+    if (!value.pending_choice || value.pending_choice !== accepted) {
+      value.choice_preference_revision = pref.status === 'valid' ? (pref.value.preference_revision || 0) : 0;
     }
-  }
-  const ckey = controlKey(key, choice);
-  // Test-only seam for deterministic write-failure coverage. Production
-  // callers leave this unset and use the shared control writer directly.
-  const writeTurn = typeof opts._writeControlTurn === 'function'
-    ? opts._writeControlTurn : writeControlTurn;
-  // The preference is the authoritative user-facing choice.  Control-turn
-  // and notice files are replay/transport bookkeeping and may be unavailable
-  // in a desktop sandbox.  Keep an injectable writer for deterministic
-  // failure tests, but never let a best-effort auxiliary write erase an
-  // already durable choice.
-  const writeNotice = typeof opts._updateNoticeStatus === 'function'
-    ? opts._updateNoticeStatus : updateNoticeStatus;
-  const retry = (marker = CONTROL_RETRY) => ({
-    status: 'control_retry', control: true, marker,
-  });
-  // Hook deny is a dedicated bounded hot path. It must not acquire the
-  // control/notice lock or inspect preference state; foreground replay will
-  // perform the complete deny transaction after this tombstone exists.
-  if (choice === 'denied' && opts.source === 'hook') {
-    const deadlineMono = Number.isFinite(opts.deadlineMono)
-      ? opts.deadlineMono : performance.now() + (opts.timeoutMs ?? 25);
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    const turn = readControlTurn(opts.stateRoot, key, ckey);
-    const tombstone = readDenyTombstone(opts.stateRoot, key);
-    if (performance.now() > deadlineMono) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-    if (tombstone.status === 'valid') return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
-    // A familiar phrase in an unrelated conversation is ordinary Prompt
-    // text. Only a live project-scoped notice can authorize the control path.
-    if (!noticeCapabilityFresh(notice) && !acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone)) return null;
-    if (notice.status !== 'valid'
-      || !['pending_output', 'awaiting_choice', 'deny_pending'].includes(notice.value?.status)) return null;
-    const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, {
-      ...opts,
-      source: 'hook',
-      timeoutMs: Math.max(0, Math.min(25, deadlineMono - performance.now())),
-      deadlineMono,
-    });
-    if (['pending', 'already_present'].includes(tomb.status)) {
-      return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
-    }
-    return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-  }
-  // Hook allow is also a best-effort hot path.  Do not acquire the control or
-  // preference locks here: durable allow writes can involve several fsyncs
-  // and routinely exceed the host Hook budget.  The following foreground
-  // Python shim replays the same option and performs finishAllowed().  With
-  // no applicable receipt this remains ordinary user text, just like the
-  // deny path.
-  if (choice === 'allowed' && opts.source === 'hook') {
-    const deadlineMono = Number.isFinite(opts.deadlineMono)
-      ? opts.deadlineMono : performance.now() + (opts.timeoutMs ?? 25);
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    const turn = readControlTurn(opts.stateRoot, key, ckey);
-    const tombstone = readDenyTombstone(opts.stateRoot, key);
-    if (performance.now() > deadlineMono) return { status: 'control_retry', control: true, marker: ALLOW_RETRY };
-    const accepted = acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone);
-    if (notice.status === 'corrupt' && !accepted) return { status: 'control_retry', control: true, marker: ALLOW_RETRY };
-    if (!noticeCapabilityFresh(notice) && !accepted) return null;
-    // A global deny always wins over a stale or in-flight allow replay.
-    if (tombstone.status === 'valid') return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
-    if (!['pending_output', 'awaiting_choice', 'allow_pending'].includes(notice.value?.status)
-      && !accepted) return null;
-    return { status: 'control_in_progress', control: true, marker: ALLOW_RETRY };
-  }
-  // Fast negative path for the overwhelmingly common case: no notice and no
-  // control turn for this project.  Do this before acquiring the control lock
-  // so a slow/contended lock cannot swallow a perfectly ordinary onboarding
-  // phrase such as the canonical allow label.  Reads are fixed project paths;
-  // no directory scan or mutation occurs here.
-  const preNotice = readNoticeReceipt(opts.stateRoot, key);
-  const preTurn = readControlTurn(opts.stateRoot, key, ckey);
-  const preTombstone = readDenyTombstone(opts.stateRoot, key);
-  if (preNotice.status === 'missing' && preTurn.status === 'missing'
-    && !(choice === 'denied' && preTombstone.status === 'valid')) return null;
-  if (preNotice.status === 'corrupt' || preTurn.status === 'corrupt') return retry();
-  // A notice attempt is a seven-day capability. An old localized label is
-  // ordinary user text (or an explicit enum control retry), never permission
-  // to change the current project preference.
-  if (preNotice.status === 'valid' && !noticeCapabilityFresh(preNotice)
-    && !acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone)) {
-    // A deny tombstone is the global kill switch even if a stale allow label
-    // is presented later; let the locked path return the disabled marker.
-    if (choice === 'allowed' && preTombstone.status === 'valid') return retry(DISABLE_RETRY);
-    return null;
-  }
-  if (preTurn.status === 'missing' && preNotice.status === 'valid'
-    && !['pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending'].includes(preNotice.value.status)) return null;
-  const finishAllowed = () => {
-    // `allowed_pending` is deliberately resumable.  It can be left behind by
-    // a crash or a failed preference write between the durable control-turn
-    // claim and the terminal preference/control writes.
-    const persisted = setContinuationChoiceLocked(projectRoot, 'allowed', opts);
-    if (persisted.action !== 'updated') return retry(ALLOW_RETRY);
-    const finalLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-    if (!finalLock) {
-      return {
-        status: 'control_in_progress', control: true, marker: ALLOWED,
-        control_turn_persisted: false,
-        control_turn_error: 'control_busy',
-      };
-    }
-    let committed = false;
-    try {
-      const final = writeTurn(opts.stateRoot, key, ckey, {
-        control_kind: 'allowed', control_status: 'allowed',
-      });
-      committed = ['updated', 'created', 'already_present'].includes(final.status);
-    } finally { releaseControlReservation(finalLock); }
-    // The preference above is the user-facing source of truth.  If the
-    // auxiliary replay turn cannot be finalized, do not turn a completed
-    // allow into an endless privacy prompt; report the diagnostic and let a
-    // later foreground entry repair the replay file.
-    const result = {
-      status: 'control_in_progress', control: true, marker: ALLOWED,
-      control_turn_persisted: committed,
-      ...(committed ? {} : { control_turn_error: 'control_write_failed' }),
-    };
-    // Do not hold the control reservation while the notice writer acquires
-    // it again. A failed notice update is also auxiliary: the durable
-    // preference must suppress all future re-prompts.
-    const currentNotice = readNoticeReceipt(opts.stateRoot, key);
-    const expected = currentNotice.status === 'valid'
-      ? currentNotice.value.status : null;
-    if (expected && !['pending_output', 'awaiting_choice', 'allow_pending', 'allowed'].includes(expected)) {
-      return {
-        ...result,
-        notice_persisted: false,
-        notice_error: 'notice_state_conflict',
-      };
-    }
-    if (expected && expected !== 'allowed') {
-      const done = writeNotice(opts.stateRoot, key, expected, 'allowed');
-      return {
-        ...result,
-        notice_persisted: ['updated', 'conflict'].includes(done.status),
-        ...(['updated', 'conflict'].includes(done.status)
-          ? {} : { notice_error: done.reason || 'notice_write_failed' }),
-      };
-    }
-    return { ...result, notice_persisted: true };
-  };
-  const completeDenied = () => {
-    // A Hook tombstone is intentionally only close-durable.  Before the
-    // foreground path can persist the disabled preference, purge queues, or
-    // emit the terminal marker, re-open the existing tombstone through the
-    // durable writer.  This fsyncs the file and its directory; a close-only
-    // artifact must never be treated as a completed deny.
-    const durableTombstone = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-    if (!['created', 'already_present'].includes(durableTombstone.status)) {
-      return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-    }
-    const persisted = setContinuationChoiceLocked(projectRoot, 'denied', opts);
-    if (persisted.action !== 'updated') return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-    // Once both the kill switch and the project preference are durable,
-    // global queue/replay cleanup cannot require another user decision.
-    const cleanupPending = (reason) => ({
-      status: 'control_in_progress', control: true, marker: DISABLED,
-      cleanup_pending: true, control_turn_error: reason,
-    });
-    let purge = { busy: 0, errors: [] };
-    if (typeof opts.purge === 'function') {
-      try { purge = opts.purge(); } catch { purge = { busy: 1, errors: ['purge_failed'] }; }
-    }
-    const finalLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-    if (!finalLock || purge?.busy > 0 || purge?.errors?.length > 0
-      || purge?.active_leases > 0 || purge?.lease_busy > 0) {
-      if (finalLock) releaseControlReservation(finalLock);
-      return cleanupPending('purge_pending');
-    }
-    const final = writeTurn(opts.stateRoot, key, ckey, {
-      control_kind: 'denied', control_status: 'denied',
-    });
-    releaseControlReservation(finalLock);
-    if (!['updated', 'created', 'already_present'].includes(final.status)) {
-      return cleanupPending('control_write_failed');
-    }
-    const done = writeNotice(opts.stateRoot, key, 'deny_pending', 'denied');
-    if (!['updated', 'conflict'].includes(done.status)) return cleanupPending('notice_write_failed');
-    return { status: 'control_in_progress', control: true, marker: DISABLED };
-  };
-  let lock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-  if (!lock) {
-    // Codex foreground commands may read the Hook's global receipt while
-    // their sandbox permits writes only in the project. A confirmed refusal
-    // must still close every channel immediately. The project preference is
-    // checked again by Sender at its network boundary; the next permitted
-    // invoke/Stop purges global queues. Never ask for the same choice again
-    // merely because auxiliary global bookkeeping cannot be written.
-    if (choice === 'denied' && opts.source !== 'hook'
-      && preNotice.status === 'valid'
-      && noticeCapabilityFresh(preNotice)
-      && ['pending_output', 'awaiting_choice', 'deny_pending'].includes(preNotice.value.status)) {
-      const persisted = setContinuationChoiceLocked(projectRoot, 'denied', opts);
-      if (persisted.action === 'updated') {
-        return {
-          status: 'control_in_progress', control: true, marker: DISABLED,
-          cleanup_pending: true, control_turn_persisted: false,
-          control_turn_error: 'control_unavailable',
-        };
-      }
-      return retry(DISABLE_RETRY);
-    }
-    // The foreground allow is already backed by a fresh, project-scoped
-    // notice receipt.  A short-lived control-lock collision must not turn a
-    // successful user choice into an endless re-prompt (this is observable in
-    // Codex when a Hook and the foreground shim finish at the same time).
-    // Persist the authoritative preference directly and treat the replay
-    // turn/notice close as auxiliary; the next foreground entry can repair
-    // those files.  Deny remains fail-closed while a tombstone is present.
-    const allowable = choice === 'allowed'
-      && opts.source !== 'hook'
-      && preNotice.status === 'valid'
-      && (noticeCapabilityFresh(preNotice)
-        || acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone))
-      && preTombstone.status !== 'valid'
-      && preTombstone.status !== 'corrupt';
-    if (!allowable) return retry();
-    const persisted = setContinuationChoiceLocked(projectRoot, 'allowed', opts);
-    if (persisted.action !== 'updated') return retry(ALLOW_RETRY);
-    const expected = preNotice.value.status;
-    const done = expected === 'allowed'
-      ? { status: 'conflict' }
-      : writeNotice(opts.stateRoot, key, expected, 'allowed');
-    return {
-      status: 'control_in_progress',
-      control: true,
-      marker: ALLOWED,
-      control_turn_persisted: false,
-      notice_persisted: ['updated', 'conflict'].includes(done.status),
-      ...(done.status === 'updated' || done.status === 'conflict'
-        ? {} : { notice_error: done.reason || 'notice_write_failed' }),
-      control_turn_error: 'control_busy',
-    };
-  }
-  let receipt;
-  let turn;
-  let tombstone;
-  try {
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    receipt = notice.status === 'valid' ? notice.value : null;
-    tombstone = readDenyTombstone(opts.stateRoot, key);
-    turn = readControlTurn(opts.stateRoot, key, ckey);
-    if (notice.status === 'valid' && !noticeCapabilityFresh(notice)
-      && !acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone)) {
-      if (choice === 'allowed' && tombstone.status === 'valid') {
-        return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
-      }
-      return null;
-    }
-    // Any deny fact wins over an allow replay.  A malformed/foreign
-    // tombstone is also fail-closed and must not be guessed around.
-    if (tombstone.status === 'valid' || tombstone.status === 'corrupt') {
-      if (choice === 'denied') {
-        if (tombstone.status === 'corrupt') {
-          // Keep the fail-closed gate while repairing an untrusted directory
-          // entry: persist disabled first, atomically quarantine the entry
-          // itself (including symlinks/special files), then recreate a
-          // durable valid tombstone. Never parse or unlink it directly.
-          releaseControlReservation(lock); lock = null;
-          const disabled = setContinuationChoiceLocked(projectRoot, 'denied', opts);
-          if (disabled.action !== 'updated') return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-          const quarantined = quarantineDenyTombstone(opts.stateRoot, key);
-          if (!['quarantined', 'missing'].includes(quarantined.status)) {
-            return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-          }
-          const recreated = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-          if (!['created', 'already_present'].includes(recreated.status)) {
-            return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-          }
-          return completeDenied();
-        }
-        if (turn.status === 'valid' && ['denied', 'deny_pending', 'retryable'].includes(turn.value.control_status)) {
-          if (turn.value.control_status === 'denied') return { status: 'control_in_progress', control: true, marker: DISABLED };
-          releaseControlReservation(lock); lock = null;
-          return completeDenied();
-        }
-        if (tombstone.status === 'valid' && turn.status === 'missing') {
-          // A Hook may have created only the bounded tombstone before the
-          // host process exited. Foreground replay must reconstruct the
-          // deny_pending control/notice phase instead of returning retry
-          // forever with no turn to advance.
-          releaseControlReservation(lock); lock = null;
-          const controlLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-          if (!controlLock) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-          let created = false;
-          try {
-            const result = writeTurn(opts.stateRoot, key, ckey, {
-              control_kind: 'denied', control_status: 'deny_pending',
-            }, { firstWriter: true });
-            created = ['created', 'already_present'].includes(result.status);
-          } finally { releaseControlReservation(controlLock); }
-          if (!created) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-          const currentNotice = readNoticeReceipt(opts.stateRoot, key);
-          if (currentNotice.status === 'valid' && currentNotice.value.status === 'awaiting_choice') {
-            const advanced = writeNotice(opts.stateRoot, key, 'awaiting_choice', 'deny_pending');
-            if (!['updated', 'conflict'].includes(advanced.status)) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-          }
-          return completeDenied();
-        }
-        return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-      }
-      return { status: 'control_in_progress', control: true, marker: tombstone.status === 'valid' ? DISABLED : CONTROL_RETRY };
-    }
-    // Replay receipt is the authoritative bridge between Hook and Python.
-    if (turn.status === 'corrupt') return retry();
-    if (turn.status === 'valid') {
-      const state = turn.value.control_status;
-      if (choice === 'allowed' && state === 'allowed') return { status: 'control_in_progress', control: true, marker: ALLOWED };
-      if (choice === 'denied' && state === 'denied') return { status: 'control_in_progress', control: true, marker: DISABLED };
-      if (choice === 'allowed' && state === 'allowed_pending') {
-        releaseControlReservation(lock); lock = null;
-        return finishAllowed();
-      }
-      if (state === 'allowed_pending' || state === 'deny_pending' || state === 'retryable') {
-        return { status: 'control_in_progress', control: true, marker: state === 'deny_pending' ? DISABLE_RETRY : CONTROL_RETRY };
-      }
-      // Opposite choice cannot overturn an existing control turn.
-      return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
-    }
-    if (!receipt) {
-      // No applicable notice means this familiar phrase is ordinary user
-      // text.  Do not swallow it or mutate reporting state globally.
-      return null;
-    }
-    if (!['pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending'].includes(receipt.status)) {
-      return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === 'allowed' && !['pending_output', 'awaiting_choice'].includes(receipt.status)) {
-      return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === 'denied' && !['pending_output', 'awaiting_choice'].includes(receipt.status)) {
-      return { status: 'control_in_progress', control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === 'allowed') {
-      // First writer wins for the project/fingerprint/version replay bridge.
-      const created = writeTurn(opts.stateRoot, key, ckey, {
-        control_kind: choice, control_status: 'allowed_pending',
-      }, { firstWriter: true });
-      if (!['created', 'already_present'].includes(created.status)) {
-        // The replay file is auxiliary to the actual user choice.  Some
-        // hosts can write the existing control directory but cannot create
-        // its first control-turns child (for example a desktop sandbox).
-        // Persist the choice and close the notice before returning so the
-        // user is not asked again every foreground turn.  A later entry can
-        // still recreate the replay file when the directory becomes
-        // writable.
-        releaseControlReservation(lock); lock = null;
-        const persisted = setContinuationChoiceLocked(projectRoot, 'allowed', opts);
-        if (persisted.action !== 'updated') return retry(ALLOW_RETRY);
-        const currentNotice = readNoticeReceipt(opts.stateRoot, key);
-        const expected = currentNotice.status === 'valid' ? currentNotice.value.status : null;
-        if (expected && expected !== 'allowed') {
-          const done = writeNotice(opts.stateRoot, key, expected, 'allowed');
-          // The project preference was already durably written.  A notice
-          // receipt that cannot be closed is recoverable bookkeeping, not a
-          // reason to ask the user again on every subsequent Prompt.
-          return {
-            status: 'control_in_progress',
-            control: true,
-            marker: ALLOWED,
-            control_turn_persisted: false,
-            notice_persisted: ['updated', 'conflict'].includes(done.status),
-            notice_error: ['updated', 'conflict'].includes(done.status) ? undefined : (done.reason || 'notice_write_failed'),
-            control_turn_error: created.reason || 'control_turn_unavailable',
-          };
-        }
-        return {
-          status: 'control_in_progress',
-          control: true,
-          marker: ALLOWED,
-          control_turn_persisted: false,
-          control_turn_error: created.reason || 'control_turn_unavailable',
-        };
-      }
-      releaseControlReservation(lock); lock = null;
-      // Do not advance to allow_pending before the authoritative preference
-      // is written.  `finishAllowed()` persists the choice first, then
-      // closes the auxiliary replay/notice records best-effort.
-    } else {
-      // Deny is ordered tombstone → replay control → notice.  This ensures a
-      // crash after the kill switch is durable can always be resumed.
-      releaseControlReservation(lock); lock = null;
-      const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-      if (!(opts.source === 'hook' ? ['pending', 'already_present'].includes(tomb.status) : ['created', 'already_present'].includes(tomb.status))) {
-        return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-      }
-      // Hook stops at the bounded tombstone close. Control turn, notice,
-      // preference and purge are foreground-only maintenance work.
-      if (opts.source === 'hook') return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
-      const controlLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-      if (!controlLock) return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-      try {
-        const created = writeTurn(opts.stateRoot, key, ckey, {
-          control_kind: choice, control_status: 'deny_pending',
-        }, { firstWriter: true });
-        if (!['created', 'already_present'].includes(created.status)) {
-          return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-        }
-      } finally { releaseControlReservation(controlLock); }
-      const advanced = writeNotice(opts.stateRoot, key, receipt.status, 'deny_pending');
-      if (!['updated', 'conflict'].includes(advanced.status)) {
-        return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-      }
-    }
-  } finally {
-    // The control reservation must never be held while preference/purge work
-    // executes; those operations have their own lock and may be retried.
-    releaseControlReservation(lock);
-  }
-
-  if (choice === 'allowed') {
-    return finishAllowed();
-  }
-
-  // Hook only establishes the kill switch and leaves foreground cleanup to
-  // the Python shim.  This keeps the hot path bounded while making replay
-  // deterministic and preventing the choice from entering telemetry.
-  if (opts.source === 'hook') return { status: 'control_in_progress', control: true, marker: DISABLE_RETRY };
-  const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-  if (!['created', 'already_present'].includes(tomb.status)) {
-    return { status: 'control_retry', control: true, marker: DISABLE_RETRY };
-  }
-  return completeDenied();
+    value.pending_choice = accepted;
+    return { value };
+  }, { now });
+  if (accepted.status !== 'updated') return { status: 'control_retry', control: true,
+    marker: choice === 'allowed' ? ALLOW_RETRY : DISABLE_RETRY };
+  return retryPendingConsentChoice(projectRoot, opts);
 }
 
-/**
- * Retry an ambiguous-response notice transition on a later foreground entry.
- * The retry intent is stored on the authoritative notice receipt, so no
- * second state file or prompt payload is needed. This never changes the
- * project reporting preference and never blocks the ordinary Prompt path.
- */
-export function retryAmbiguousNoticeDefault(projectRoot, opts = {}) {
-  if (!opts.stateRoot) return { status: 'skipped', reason: 'state_root_unavailable' };
+export function retryPendingConsentChoice(projectRoot, opts = {}) {
   const key = projectKey(projectRoot);
-  const notice = readNoticeReceipt(opts.stateRoot, key);
-  if (notice.status !== 'valid') return { status: notice.status };
-  const now = typeof opts.now === 'function'
-    ? opts.now()
-    : Number.isFinite(opts.now) ? opts.now : Date.now();
-  if (notice.value.status === 'defaulted') {
-    // updateNoticeStatus also repairs a project obligation if a previous
-    // attempt durably changed the receipt but failed while projecting the
-    // terminal status to the obligation.
-    const obligation = readNoticeObligation(opts.stateRoot, key);
-    if (obligation.status === 'valid'
-      && obligation.value.first_event_id === notice.value.event_id
-      && obligation.value.notice_status === 'defaulted'
-      && notice.value.choice_retry_kind !== 'defaulted') return { status: 'defaulted' };
-    if (notice.value.choice_retry_kind === 'defaulted'
-      && Number.isFinite(notice.value.choice_next_retry_at)
-      && notice.value.choice_next_retry_at > now) return { status: 'backoff' };
-    const repaired = updateNoticeStatus(opts.stateRoot, key, 'defaulted', 'defaulted');
-    if (repaired.status === 'updated') return { status: 'defaulted' };
-    if (repaired.status === 'retry' && repaired.value?.status === 'defaulted') {
-      const retry = recordNoticeRetry(
-        opts.stateRoot, key, 'defaulted',
-        `ambiguous_defaulted:${repaired.reason || 'notice_projection_write_failed'}`,
-        { ...opts, choiceRetryKind: 'defaulted' },
-      );
-      return { status: 'retry', reason: repaired.reason, retry: retry.status };
-    }
-    return { status: 'retry', reason: repaired.reason };
+  const receipt = readConsentState(projectRoot, key);
+  const now = typeof opts.now === 'function' ? opts.now() : (opts.now ?? Date.now());
+  if (receipt.status !== 'valid' || !receipt.value.pending_choice) return null;
+  const choice = receipt.value.pending_choice;
+  const retry = () => ({ status: 'control_retry', control: true,
+    marker: choice === 'allowed' ? ALLOW_RETRY : DISABLE_RETRY });
+  // pending_choice was accepted while its notice was valid. Resume that
+  // transaction after a long offline period; new expired replies still fail
+  // validation in consumeContinuationChoice. The held payload expires normally.
+  if (receipt.value.choice_retry_at > now) return { ...retry(), retry_suppressed: true };
+  const current = readPreferenceState(projectRoot);
+  const revision = current.status === 'valid' ? (current.value.preference_revision || 0) : 0;
+  // A later settings/opt-out transaction wins over an earlier failed choice.
+  // Also covers a successful preference write whose auxiliary cleanup failed.
+  if (revision !== receipt.value.choice_preference_revision) {
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value) return { status: 'not_found' };
+      delete value.pending_choice; delete value.choice_preference_revision;
+      delete value.choice_retry_at; delete value.choice_retry_count;
+      return { value };
+    }, { now });
+    return { status: 'skipped', control: true, reason: 'preference_changed' };
   }
-  if (!['pending_output', 'awaiting_choice'].includes(notice.value.status)
-    || notice.value.choice_retry_kind !== 'defaulted') return { status: 'skipped' };
-  if (Number.isFinite(notice.value.choice_next_retry_at)
-    && notice.value.choice_next_retry_at > now) return { status: 'backoff' };
+  const persisted = setContinuationChoiceLocked(projectRoot, choice, {
+    ...opts, expectedRevision: receipt.value.choice_preference_revision,
+  });
+  if (persisted.action !== 'updated') {
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value) return { status: 'not_found' };
+      value.choice_retry_count = Math.min((value.choice_retry_count || 0) + 1, 7);
+      value.choice_retry_at = now + Math.min(60_000, 1000 * 2 ** (value.choice_retry_count - 1));
+      return { value };
+    }, { now });
+    return retry();
+  }
+  updateConsentState(projectRoot, key, (value) => {
+    if (!value) return { status: 'not_found' };
+    delete value.pending_choice; delete value.choice_preference_revision;
+    delete value.choice_retry_at; delete value.choice_retry_count;
+    if (choice === 'denied') { delete value.first_event; value.first_status = 'discarded'; }
+    return { value };
+  }, { now });
+  if (choice === 'denied' && typeof opts.purge === 'function') try { opts.purge(); } catch { /* retry later */ }
+  return { status: 'control_in_progress', control: true, marker: choice === 'allowed' ? ALLOWED : DISABLED };
+}
 
-  const persisted = updateNoticeStatus(
-    opts.stateRoot, key, notice.value.status, 'defaulted',
-  );
-  if (persisted.status === 'updated'
-    || (persisted.status === 'retry' && persisted.value?.status === 'defaulted')) {
-    return { status: 'defaulted' };
-  }
-  if (persisted.status === 'conflict') {
-    const current = readNoticeReceipt(opts.stateRoot, key);
-    return current.status === 'valid' && current.value.status === 'defaulted'
-      ? { status: 'defaulted' }
-      : { status: 'skipped', reason: 'notice_state_changed' };
-  }
-  const retry = recordNoticeRetry(
-    opts.stateRoot, key, notice.value.status,
-    `ambiguous_defaulted:${persisted.reason || 'notice_defaulted_write_failed'}`,
-    { ...opts, choiceRetryKind: 'defaulted' },
-  );
-  return { status: 'retry', reason: persisted.reason || retry.reason };
+/** Compatibility export: V1 defaulting can never authorize or mutate V2. */
+export function retryAmbiguousNoticeDefault() {
+  return { status: 'skipped', reason: 'explicit_consent_required' };
 }
 
 /** Recognize only narrow, explicit opt-in/out control messages. */

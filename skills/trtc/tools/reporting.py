@@ -575,6 +575,14 @@ def _ambient_ide() -> str | None:
     safe as ``unknown``.  Source-checkout paths intentionally return None and
     keep their existing fallback behavior.
     """
+    # A project-installed Cursor entry is authoritative even when its terminal
+    # inherited another IDE's launcher environment. Keep other hosts' existing
+    # environment precedence unchanged.
+    try:
+        if any(parent.name == ".cursor" for parent in Path(__file__).resolve().parents):
+            return "cursor"
+    except OSError:
+        pass
     for env_name, ide in (("CODEX_PROJECT_DIR", "codex"), ("CLAUDE_PROJECT_DIR", "claude"),
                           ("CURSOR_PROJECT_DIR", "cursor"), ("CODEBUDDY_PROJECT_DIR", "codebuddy")):
         if os.environ.get(env_name):
@@ -652,14 +660,14 @@ def _prompt_stdin_payload(
         if safe_roots:
             payload["workspace_roots"] = safe_roots
     explicit_thread_id = isinstance(value.get("thread_id"), str) and bool(value.get("thread_id"))
-    # CodeBuddy sends its host identity in the JSON envelope, while some
+    # Cursor/CodeBuddy send host identity in the JSON envelope, while some
     # desktop launchers leave a stale CODEX_PROJECT_DIR/CODEX_THREAD_ID in
-    # the child environment.  Preserve only the explicit CodeBuddy identity
+    # the child environment. Preserve their explicit identity
     # when no CLI flag is present; otherwise the stale ambient host can make
-    # the runtime report successfully but suppress CodeBuddy's visible notice
+    # the runtime report successfully but suppress the visible notice
     # body (leaving only the marker on stdout).  Other IDEs retain the
     # historical ambient resolution until they provide an explicit flag.
-    prompt_ide = "codebuddy" if ide is None and value.get("ide") == "codebuddy" else ide
+    prompt_ide = value["ide"] if ide is None and value.get("ide") in ("codebuddy", "cursor") else ide
     result = _ambient_payload(payload, prompt_ide)
     if prompt_ide:
         # The CLI flag is the host-owned target and must win over a stale or
@@ -673,7 +681,74 @@ def _prompt_stdin_payload(
         ambient_thread = result.pop("thread_id", None)
         if isinstance(ambient_thread, str) and ambient_thread:
             result.setdefault("host_thread_hint", ambient_thread)
+    if (prompt_ide or result.get("ide")) == "cursor":
+        _cursor_attach_turn(result)
     return result
+
+
+def _cursor_attach_turn(payload: dict[str, Any]) -> None:
+    """Reuse the latest matching real Hook turn, including after its ACK.
+
+    This project-local metadata contains a hash and host IDs, never Prompt
+    text or consent. It cannot authorize reporting. Explicit host IDs win.
+    """
+    if payload.get("turn_id") or any(payload.get(key) for key in (
+        "session_id", "conversation_id", "raw_session_id", "thread_id",
+    )):
+        return
+    try:
+        root = Path(payload.get("cwd") or _ambient_project_cwd()).resolve()
+        directory, safe = _runtime_state_dir(root)
+        path = directory / "cursor-foreground-turn.json"
+        if not safe or path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+            return
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            return
+        age = time.time() * 1000 - value.get("created_at", 0)
+        text = payload.get("text")
+        if not isinstance(text, str):
+            return
+        digest = hashlib.sha256(text.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+        if (value.get("version") != 1 or value.get("ide") != "cursor"
+                or Path(value.get("project_root", "")).resolve() != root
+                or not 0 <= age <= 30 * 60 * 1000
+                or value.get("prompt_sha256") != digest):
+            return
+        turn = value.get("turn_id")
+        session = value.get("session_id")
+        if not all(isinstance(item, str) and 0 < len(item) <= 512 for item in (turn, session)):
+            return
+        payload["turn_id"] = turn
+        payload["session_id"] = session
+    except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
+        return  # Hooks are optional; retain the existing foreground fallback.
+
+
+def _cursor_outcome(operation: str, status: str, *, event_id: str | None = None,
+                    reason: str | None = None) -> int:
+    """Local CLI result only; never part of a CLS event or a consent marker."""
+    value: dict[str, Any] = {"operation": operation, "status": status,
+                             "continue_business": True}
+    if event_id and _safe_event_id(event_id):
+        value["event_id"] = event_id
+    if reason:
+        value["reason"] = reason
+    print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+def _cursor_prompt_outcome(event_id: str, result: dict[str, Any]) -> int:
+    if result.get("status") == "disabled":
+        return _cursor_outcome("prompt", "disabled", event_id=event_id)
+    flush = result.get("flush")
+    sent_ids = flush.get("sent_event_ids") if isinstance(flush, dict) else None
+    acknowledged = (result.get("status") == "already_acked" and result.get("event_id") == event_id
+                    or isinstance(sent_ids, list) and event_id in sent_ids)
+    return _cursor_outcome("prompt", "acknowledged" if acknowledged else "queued",
+                           event_id=event_id, reason=None if acknowledged else (
+                               (flush.get("deferred") if isinstance(flush, dict) else None)
+                               or result.get("status", "deferred")))
 
 
 def _read_hook_input() -> dict[str, Any]:
@@ -1046,6 +1121,7 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--debug", action="store_true")
     invoke = sub.add_parser("invoke"); invoke.add_argument("--skillname", required=True); invoke.add_argument("--product"); invoke.add_argument("--framework"); invoke.add_argument("--ide", choices=("claude", "cursor", "codebuddy", "codex")); invoke.add_argument("--debug", action="store_true")
     pref = sub.add_parser("preference"); pref.add_argument("--enabled", required=True, choices=("on", "off")); pref.add_argument("--debug", action="store_true")
+    pref.add_argument("--scope", choices=("experience", "all"), default="experience")
     send = sub.add_parser("send")
     for name in ("json", "product", "framework", "version", "sdkappid", "sessionid", "method", "text", "answer", "feedback"):
         send.add_argument("--" + name)
@@ -1075,7 +1151,11 @@ def main(argv: list[str] | None = None) -> int:
             payload = _ambient_payload({"question": args.question, "options": args.options})
             ok, result = _run_node("context", payload=payload, debug=debug)
             if not ok or result.get("status") in _RUNTIME_FAILURE_STATUSES:
+                if foreground_ide in {"cursor", "codex"}:
+                    return _cursor_outcome("context", "deferred", reason=result.get("status", "runtime_failed"))
                 return _foreground_runtime_failure(result)
+            if foreground_ide in {"cursor", "codex"}:
+                return _cursor_outcome("context", "completed", reason=result.get("status"))
         elif args.cmd == "capture-sdkappid":
             raw = _read_hook_input()
             if not raw:
@@ -1142,16 +1222,18 @@ def main(argv: list[str] | None = None) -> int:
                 # Second NUL check: catches JSON-escaped NUL that survives raw-string scan
                 if chr(0) in _obj["text"]:
                     return _invalid_prompt_input("nul_byte_in_text", require_input=require_input, debug=debug)
-                # CodeBuddy carries its host identity in the JSON envelope.
+                # Cursor/CodeBuddy carry host identity in the JSON envelope.
                 # Prefer that explicit value over a stale ambient Codex
                 # variable before resolving the runtime or rendering a
                 # foreground notice.  Keep the compatibility behavior for
                 # other hosts unchanged.
                 prompt_ide = args.ide
-                if prompt_ide is None and _obj.get("ide") == "codebuddy":
-                    prompt_ide = "codebuddy"
-                if prompt_ide == "codebuddy":
-                    foreground_ide = "codebuddy"
+                if prompt_ide is None and _obj.get("ide") in ("codebuddy", "cursor"):
+                    prompt_ide = _obj["ide"]
+                if prompt_ide is None and foreground_ide == "cursor":
+                    prompt_ide = "cursor"
+                if prompt_ide in {"codebuddy", "cursor"}:
+                    foreground_ide = prompt_ide
                 # A foreground Prompt has two distinct durability phases:
                 # stage first (the runtime must return a fixed event_id), then
                 # invoke that exact event for promotion/flush.  This prevents
@@ -1206,6 +1288,10 @@ def main(argv: list[str] | None = None) -> int:
                         if debug:
                             print(json.dumps(stage_result, ensure_ascii=False), file=sys.stderr)
                         return 0
+                    if (foreground_ide in {"cursor", "codex"} and "control_choice" not in stage_payload
+                            and stage_result.get("durable") is True
+                            and _safe_event_id(stage_result.get("event_id"))):
+                        return _cursor_outcome("prompt", "queued", event_id=stage_result["event_id"], reason=stage_status)
                     # No durable event_id has crossed the boundary.  A stage
                     # timeout is therefore a real reporting failure, not a
                     # network timeout that can be silently queued.
@@ -1215,7 +1301,7 @@ def main(argv: list[str] | None = None) -> int:
                     # preserve the historical fail-open host contract.  Any
                     # other status is an unexpected runtime result and must
                     # not be presented as a successful Prompt report.
-                    if stage_status in {"disabled", "skipped", "control_retry", "control_in_progress", "enabled"}:
+                    if stage_status in {"disabled", "skipped", "control_retry", "control_in_progress", "enabled", "awaiting_consent"}:
                         if debug:
                             print(json.dumps(stage_result, ensure_ascii=False), file=sys.stderr)
                         return 0
@@ -1228,13 +1314,15 @@ def main(argv: list[str] | None = None) -> int:
                         {"status": "runtime_failed", "error": "stage_event_id_missing"},
                         debug=debug,
                     )
+                if foreground_ide in {"cursor", "codex"} and stage_result.get("already_acked") is True:
+                    # The exact Hook generation already has a durable ACK.
+                    # Do not spend another Node/network/SDK-scan transaction.
+                    return _cursor_outcome("prompt", "acknowledged", event_id=event_id)
 
                 send_payload = dict(stage_payload)
                 _carry_emitted_notice(send_payload, emitted_notices)
-                # The notice attempt is disposable and is created only after
-                # this exact event receives its ACK.  Reusing the same payload
-                # also preserves host metadata for the explicit event-id
-                # invoke without allowing a second event to be selected.
+                # Reuse host metadata for this exact event-id invoke. Notice
+                # eligibility remains runtime-owned and independent of ACKs.
                 send_payload["notice_attempt_id"] = secrets.token_hex(16)
                 send_timeout = _foreground_remaining_ms(foreground_deadline)
                 if send_timeout <= 0:
@@ -1266,12 +1354,16 @@ def main(argv: list[str] | None = None) -> int:
                     # The event_id is durable, so only this network/process
                     # phase may fail open.  A later runtime entry retries the
                     # same Outbox record and event_id.
+                    if foreground_ide in {"cursor", "codex"}:
+                        return _cursor_prompt_outcome(event_id, send_result)
                     return _foreground_runtime_failure(
                         send_result,
                         fail_open_timeout=True,
                         debug=debug,
                     )
                 if not send_ok:
+                    if foreground_ide in {"cursor", "codex"}:
+                        return _cursor_prompt_outcome(event_id, send_result)
                     return _foreground_runtime_failure(
                         send_result,
                         fail_open_timeout=True,
@@ -1313,6 +1405,8 @@ def main(argv: list[str] | None = None) -> int:
                     if recovery_result is not None:
                         combined["recovery"] = recovery_result
                     print(json.dumps(combined, ensure_ascii=False), file=sys.stderr)
+                if foreground_ide in {"cursor", "codex"}:
+                    return _cursor_prompt_outcome(event_id, send_result)
                 return 0
             # --text is retained for older installed Skills, but the raw text
             # is sent to Node over stdin by _run_node and never appended to
@@ -1368,6 +1462,8 @@ def main(argv: list[str] | None = None) -> int:
                 and result.get("current_event") is False
             )
             if not ok or (result.get("status") in _RUNTIME_FAILURE_STATUSES and not no_current_event):
+                if foreground_ide in {"cursor", "codex"}:
+                    return _cursor_outcome("invoke", "deferred", reason=result.get("status", "runtime_failed"))
                 return _foreground_runtime_failure(result)
             # Runtime owns the CodeBuddy foreground presentation budget.
             # A created receipt is not permission to render: the attempt
@@ -1396,8 +1492,10 @@ def main(argv: list[str] | None = None) -> int:
                 print("TRTC_REPORTING_ROOT_INVOKE_REJECTED_V1")
             elif invoke_marker:
                 _emit_foreground_marker(result, invoke_marker, foreground_ide, emitted_notices)
+            elif foreground_ide in {"cursor", "codex"} and not debug:
+                return _cursor_outcome("invoke", "completed", reason=result.get("status"))
         elif args.cmd == "preference":
-            ok, result = _run_node("preference", ["--enabled", args.enabled], debug=debug)
+            ok, result = _run_node("preference", ["--enabled", args.enabled, "--scope", args.scope], debug=debug)
             if not ok or result.get("status") in _RUNTIME_FAILURE_STATUSES:
                 return _foreground_runtime_failure(result)
             # Compatibility with older installed instructions: if the Node

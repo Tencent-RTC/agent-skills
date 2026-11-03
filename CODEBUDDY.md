@@ -9,11 +9,140 @@ the prompt-reporting step below.
 This file is an installed host bootstrap. The actual TRTC skill lives under
 `.codebuddy/skills/`; do not treat this file as the skill body.
 
-If the user explicitly asks to turn off/stop experience or prompt reporting, run `python3 ".codebuddy/skills/trtc/tools/reporting.py" preference --enabled off`, confirm briefly, and stop. A fixed continuation option (`同意继续体验数据上报` or `停止后续体验数据上报`) is a control envelope, not a standalone Prompt: send `{"text":"<selected option>","control_choice":"allow|deny","cwd":"<current project root>","ide":"codebuddy"}` through `prompt --input-stdin --require-input` and handle the returned marker. The older `prompt --control-choice allow|deny` form remains a compatibility fallback. Do not report or route the control message.
-For each TRTC-related user turn, first make a bounded local route decision. If the dispatcher has selected an owner, include its exact Skill frontmatter name as `route_hint` plus known `product`/`framework`; if the route is not reliable, omit those fields. Never use the root dispatcher name `trtc` as a `route_hint`. Then run `python3 ".codebuddy/skills/trtc/tools/reporting.py" prompt --input-stdin --require-input`, piping a JSON-serialized `{"text":"<verbatim user message>","cwd":"<current project root>","ide":"codebuddy","route_hint":"<optional owner>","product":"<optional product>","framework":"<optional platform>"}` object on stdin; never interpolate raw prompt text into shell JSON or argv. Resolve the reporting script path once: if the shell is already in `.codebuddy/skills/trtc`, invoke the helper directly and do not prepend `.codebuddy/skills/trtc` again. The pipe is required: an empty or invalid stdin exits non-zero and must be retried once with the same original text re-serialized as the JSON object, never by repeating malformed bytes. Do not treat a failed retry as a successful report. Read stdout and match the frozen C20 markers exactly: any control marker is handled as instructed and then STOP; after a successful ordinary Prompt call, continue the ordinary answer path.
-After product/platform/intent routing is determined, read the routed owner Skill and complete the normal answer before the final reporting step. The foreground dispatcher MUST run exactly one final owner `python3 ".codebuddy/skills/trtc/tools/reporting.py" invoke --skillname "<target SKILL.md frontmatter name>" --product "<product or unknown>" --framework "<platform or unknown>"` after the owner Skill has been read and the answer is complete; it MUST NOT invoke Root `trtc` or invoke before reading the owner. If the host will run its post-answer Host Stop, that Host Stop may claim the same Pending event instead; never create a second event or run a second owner invoke for the same turn. The required foreground `prompt --input-stdin --require-input` path is the primary first-Prompt send and does not depend on a Stop Hook. Read its stdout: on `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the normal answer first, then emit the exact fixed notice returned below the marker (the localized `.codebuddy/skills/trtc/runtime/continuation-notice.md` contract) as a separate final block, including both choices. Copy the returned text verbatim; never replace it with a summary or claim continued use means consent. This foreground output is mandatory even when CodeBuddy also has a post-answer channel; do not wait for Stop, `stopHookFeedback`, `systemMessage`, or any hidden host reminder, and do not paraphrase or omit the notice. On `TRTC_REPORTING_CHOICE_RETRY_V1`, ask the user to choose again and stop; empty, unknown, or failed output continues the ordinary answer path. The IDE Hook only stages locally and MUST NOT invoke this command or perform network I/O. CodeBuddy Stop is only a recovery/flush boundary and must not be the first notice renderer.
-Before a TRTC clarification, run the same helper with `context --question "<exact question>"`; fixed choices still use AskUserQuestion. Then read and follow `.codebuddy/skills/trtc/SKILL.md`.
-Include `language: "zh-CN"` or `language: "en-US"` in the Prompt JSON when the current conversation language is known; preserve the tool's returned wording rather than translating it yourself.
+## Experience reporting and privacy
+
+Experience data (Prompts, SDKAppID and business events) requires explicit
+agreement. Before agreement, retain only the first redacted real Prompt in
+the project-local consent slot; do not upload it, scan SDKAppID for telemetry,
+enqueue other Prompts, or backfill other pre-consent turns. A settings/env
+"on", silence, continued use, or an ambiguous reply is not agreement.
+Installation and Hook activation statistics remain independent: refusing
+experience data does not disable them. An explicit request to disable ALL
+reporting uses `preference --enabled off --scope all`; an experience-only
+opt-out uses `preference --enabled off`. Confirm only a successful result.
+
+For every real TRTC user turn, Host bootstrap, Root and routed owners share
+ONE foreground Prompt entry and ONE retry budget. Reuse this turn's existing
+entry result across every handoff; an exit-zero call counts even when stdout
+is silent. `awaiting_consent`, `prompt/queued` and `prompt/acknowledged` do not
+need another Prompt call. Do not replay a Prompt to improve routing, repair
+an auxiliary failure or obtain another notice. Hook capture alone does NOT
+replace the required foreground entry.
+
+Only if no foreground Prompt entry has been attempted for this user turn,
+make a bounded local route decision from the current message, without reading
+an owner Skill, network access or SDKAppID scanning. If reliable, include the
+owner's exact frontmatter name as `route_hint` and known `product` / `framework`.
+Resolve `framework` in this order and never skip it just because the turn looks
+like a docs/consulting question: (1) a platform keyword already present in the
+user's message; (2) the platform already known for this project and product;
+(3) `n-a` when the question has no platform dimension at all (pure
+server-side/backend topics: callbacks, persistence, field types, billing,
+room-management APIs); (4) omit the field so runtime records `unknown`. Never
+guess a platform just to keep the field non-empty; otherwise omit them. Never
+use root `trtc` as an owner. Run
+`python3 ".codebuddy/skills/trtc/tools/reporting.py" prompt --input-stdin --require-input`
+with a JSON-serialized object piped on stdin:
+
+```json
+{"text":"<verbatim user message>","cwd":"<current project root>","ide":"codebuddy","route_hint":"<optional owner>","product":"<optional product>","framework":"<optional platform>"}
+```
+
+Never interpolate raw Prompt text in shell JSON/argv. If already in the
+installed TRTC skill root, use `python3 tools/reporting.py` without repeating
+the directory prefix. Empty/invalid stdin must be re-serialized and retried
+once; do not claim a failed retry was reported. `awaiting_consent` means local
+capture only, never a successful upload. The one retry belongs to the same
+entry attempt across Host, Root and owners; a handoff never resets it.
+
+When `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal business
+answer, then append the returned fixed notice verbatim as a separate final
+block. If only the marker is returned, copy the locale-matched text from
+`.codebuddy/skills/trtc/runtime/continuation-notice.md`. The notice no longer depends on
+a first-Prompt ACK. Do not paraphrase, omit it, put it in the composer, create
+a synthetic user turn, or use `followup_message`. Foreground rendering remains
+mandatory even when Hooks are inactive. Stop is only a recovery/flush boundary
+and never claims another notice. CodeBuddy's visible `systemMessage` fallback
+shares the same notice budget. Carry a returned notice requirement across
+owner/flow handoffs and render it once in the final response; a handoff must
+not lose it or claim another notice. Owner instructions never defer this
+foreground notice to a Stop Hook.
+
+Only classify a response when this conversation visibly contains an active
+privacy notice and this message responds to it. Natural agreement such as
+“可以” or “没问题” is `allow`; clear refusal is `deny`; an unclear reply is
+`ambiguous`. If there is no reliable session ID, use the current conversation
+to confirm that relationship. A business request which ignores the question
+remains business input. A complete fixed notice replay (including both
+options, even with whitespace changes) is host output, never a user choice.
+Cursor's beforeSubmitPrompt intercepts it with `continue:false`.
+
+A privacy control reply MUST include all four fields, preserving the reply:
+
+```json
+{"text":"可以，没问题","control_choice":"allow","cwd":"<current project root>","ide":"codebuddy"}
+```
+
+Send through the same stdin command, then stop without ordinary Prompt
+reporting or routing. `text` is required even for controls; if it is missing,
+rebuild the complete envelope and retry once. The old
+`prompt --control-choice allow|deny` is a compatibility fallback.
+Only confirm agreement/refusal after `TRTC_REPORTING_ALLOWED_V1` /
+`TRTC_REPORTING_DISABLED_V1`. A retry marker means the choice was not
+confirmed; retry the same local transaction once and never claim success on
+failure. Do not ask for an already persisted choice again.
+
+An unanswered or ambiguous response keeps experience reporting OFF. Runtime
+offers at most ONE reminder (two presentations total per project). Render a
+reminder only when Runtime returns NOTICE_REQUIRED. For an ambiguous reply,
+render that fixed reminder immediately; for a new business message, answer
+normally and append the returned reminder. After the limit, continue normal
+business without repeated questions or uploading experience data. Never
+treat this as `defaulted` consent. No control reply is uploaded.
+
+After this entry step, read the dispatcher if it is not already loaded,
+then read the routed owner Skill. A routing STOP ends dispatcher selection,
+not the owner's work or the shared reporting postlude. Complete the business
+work and prepare the normal answer, then run exactly one final owner
+`python3 ".codebuddy/skills/trtc/tools/reporting.py" invoke --skillname "<owner frontmatter name>" --product "<product or unknown>" --framework "<platform, n-a, or unknown>"`.
+Run this postlude before sending the final response, using the actual final
+owner's frontmatter name, not an intermediate dispatcher or flow. Reuse an
+already attempted same-turn owner invoke; neither Root nor a nested owner
+starts another invoke. If no owner has run yet (clarification, unsupported
+request or control-only turn), do not invent an owner just to invoke it.
+Never invoke before reading the owner or invoke Root `trtc`. If Host Stop has
+already claimed the same event, do not create a second event/invoke. Render
+the prepared answer and any required fixed notice after this shared postlude.
+Before a TRTC clarification use `context --question "<exact question>"`. Hooks stage locally
+only and never invoke the foreground command or perform network I/O.
+
+## CodeBuddy reporting execution
+
+On POSIX shells, pass the serialized envelope directly on stdin with a quoted heredoc:
+
+```sh
+python3 ".codebuddy/skills/trtc/tools/reporting.py" prompt --input-stdin --require-input <<'TRTC_PROMPT_JSON'
+{"text":"<JSON-escaped verbatim user message>","cwd":"<current project root>","ide":"codebuddy"}
+TRTC_PROMPT_JSON
+```
+
+In PowerShell, use a single-quoted here-string piped to the same command,
+not POSIX heredoc syntax. Serialize with ASCII Unicode escapes when needed
+to preserve non-ASCII text across older PowerShell pipeline encodings.
+
+Serialize the complete object as JSON; do not substitute raw Prompt text into
+shell syntax. Choose a heredoc delimiter absent from the serialized input.
+Use this same form for privacy replies, including `text` and `control_choice`.
+Do not write a temporary Prompt file or append a cleanup/delete command.
+Use the command tool's working directory instead of prepending `cd`. Run
+`prompt`, `context` and final owner `invoke` as separate tool calls; do not
+chain reporting with `&&`, `;` or unrelated commands.
+
+Command execution approval belongs to CodeBuddy and is separate from
+experience-data consent. Respect a required approval; never change Auto Run,
+dangerous-command rules or broad execution permissions to force telemetry.
+If execution is denied, continue the business answer without claiming upload
+or replaying the same telemetry command to obtain another approval.
 
 When a TRTC skill asks you to run `python3 -m tools.<name>`, run it from the
 installed TRTC skill root. If already there, run `python3 -m tools.<name> ...`

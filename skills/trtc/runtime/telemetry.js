@@ -22,7 +22,7 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
@@ -43,7 +43,7 @@ import {
   listOutbox,
   listPending,
   purgeProjectEvents,
-  purgeProjectPromptEvents,
+  purgeProjectExperienceEvents,
   readEvent,
   releaseReservation,
   remove,
@@ -63,14 +63,25 @@ import {
 import {
   isReportingEnabled,
   isReportingEnabledForScope,
+  canRequestExperienceConsent,
+  consentFields,
+  isEventReportingEnabled,
   consumeContinuationChoice,
   preferenceFromText,
   projectKey,
   readPreferenceState,
   retryAmbiguousNoticeDefault,
+  retryPendingConsentChoice,
   setReportingPreference,
 } from './preference.js';
+import {
+  rememberFramework,
+  resolveFrameworkContinuity,
+} from './platform-memory.js';
 import { sanitizeReportText } from './redact.js';
+import { claimConsentNotice, consentTurn, holdFirstPrompt, readConsentState, updateConsentState } from './consent.js';
+import { isRuntimeEvent } from './event-scope.js';
+import { resolveProjectStateDir } from './project-state.js';
 import {
   acquireCoordinationReservation,
   deriveProjectFallbackSession,
@@ -108,13 +119,10 @@ import {
   isCanonicalOption,
   noticeStatus,
   readNoticeObligation,
-  readNoticeReceipt,
-  recordNoticeRetry,
   beginProducerLease,
   endProducerLease,
   readEventAcknowledgement,
   readProjectDenyGate,
-  writeNoticeReceipt,
 } from './control.js';
 
 const INVOKE_FRESHNESS_MS = 30 * 60 * 1000;
@@ -172,6 +180,37 @@ const PRODUCT_BY_SKILL = Object.freeze({
   // dashboard already aliases it into the AI product line.
   'trtc-voice-ai-starter': 'conversational-ai',
   'trtc-sdk-log-analysis': 'unknown',
+});
+
+// Platform fallback for the same "dispatcher did not pass a value" case that
+// PRODUCT_BY_SKILL already covers for `product`. Only owners whose scope is
+// genuinely single-platform are listed here — a wrong-but-confident platform
+// is worse than `unknown`, so deliberately cross-platform answer layers
+// (`trtc-docs`, `trtc-chat-docs`) and multi-platform products (`trtc-push`,
+// `trtc-live`, `trtc-rtc-engine`) are left out and stay `unknown`.
+//
+// Evidence rule: an entry is only safe when the owner's own SKILL.md rules
+// out every other platform, so an event attributed to it could not have had
+// a different target. `trtc-call` states "only Flutter"; `trtc-voice-ai-starter`
+// routes iOS/Android/Flutter to `trtc-docs`; the browser-only AI owners never
+// branch on a native SDK.
+//
+// Deliberate exclusions (Chat in particular spans Web + Android + iOS):
+//   - `trtc-chat`: the largest bucket, but its `unsupported_platform` block is
+//     about non-Vue3 *Web* frameworks, not about native targets, and there is
+//     no `trtc-chat-ios`. Measured against a week of Chat samples, platforms
+//     that were actually identified split Android 10 / Web 7 / iOS 1, so a
+//     `web` fallback would mislabel most Chat turns. An unknown here is
+//     recovered by continuity or by the dispatcher instead.
+//   - `trtc-conference`: its SKILL.md fixes `--platform web` in examples but
+//     contains no non-Web block, so Web is an assumption, not a guarantee.
+const FRAMEWORK_BY_SKILL = Object.freeze({
+  'trtc-chat-android': 'android',
+  'trtc-call': 'flutter',
+  'trtc-voice-ai-starter': 'web',
+  'trtc-ai-customer-service-skill': 'web',
+  'ai-oral-coach-skill': 'web',
+  'trtc-ai-realtime-interpreter': 'web',
 });
 
 // Older Root instructions used directory-shaped names for the two
@@ -435,7 +474,12 @@ function readCodexStateRootBinding(projectRoot) {
           }
         } catch { return { status: 'invalid', error: 'generation_mismatch' }; }
       }
-      return { status: 'valid', stateRoot: checked.stateRoot, generation, markerPath };
+      if (entry.storage_version === 2) {
+        const rel = relative(realpathSync(projectRoot), checked.stateRoot);
+        if (!rel || rel.startsWith('..') || isAbsolute(rel)) return { status: 'invalid', error: 'spool_outside_project' };
+      }
+      return { status: 'valid', stateRoot: checked.stateRoot, generation, markerPath,
+        storageVersion: entry.storage_version };
     } catch (err) {
       return { status: 'invalid', error: err?.code === 'ENOENT' ? 'state_root_unavailable' : 'malformed_binding' };
     }
@@ -484,6 +528,13 @@ function isCodexInvocation(flags = {}) {
 
 function resolveRuntimeStateRoot({ flags, opts, cwd, env }) {
   const codexInvocation = isCodexInvocation(flags);
+  if (codexInvocation) {
+    // A ready V2 project spool also redirects commands cached before upgrade.
+    // Otherwise an old Hook's --state-root could recreate the external queue.
+    const binding = readCodexStateRootBinding(findProjectRoot(flags.cwd || cwd));
+    if (binding.storageVersion === 2) return { ...binding, bound: true, source: 'project_spool' };
+    if (binding.status === 'invalid' || binding.status === 'unavailable') return binding;
+  }
   const explicit = opts.stateRoot || flags['state-root'];
   if (explicit) {
     if (typeof explicit !== 'string' || !isAbsolute(explicit)) {
@@ -1866,7 +1917,9 @@ function deriveAndRefreshSession(projectRoot, input, opts = {}) {
 function applyControlPrompt(projectRoot, text) {
   const requested = preferenceFromText(text);
   if (requested === null) return null;
-  setReportingPreference(projectRoot, requested, { purgePending: !requested });
+  const result = setReportingPreference(projectRoot, requested, { purgePending: !requested });
+  if (result.action !== 'updated') return { status: 'control_retry', control: true,
+    marker: requested ? noticeSpec.markers.allow_retry : noticeSpec.markers.disable_retry };
   return { status: requested ? 'enabled' : 'disabled', control: true };
 }
 
@@ -1925,13 +1978,15 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     source: opts.source,
     controlChoice: input?.control_choice,
     sessionid: controlSessionId,
+    ide,
+    turn: consentTurn(input, ide, sanitizeReportText(prompt), ctx.now()),
     // The explicit allow/deny transaction expects a clock callback so that
     // it can timestamp each durable write independently. Ambiguous handling
     // accepts either a callback or a captured timestamp.
     now: ctx.now,
     _writeControlTurn: ctx.writeControlTurn,
     _updateNoticeStatus: ctx.updateNoticeStatus,
-    purge: () => purgeWithDeferred(ctx.stateRoot, projectKey(projectRoot), purgeProjectEvents),
+    purge: () => purgeWithDeferred(ctx.stateRoot, projectKey(projectRoot), purgeProjectExperienceEvents),
     timeoutMs: opts.hook ? Math.max(0, remaining(deadlineMono)) : 120,
     deadlineMono,
   });
@@ -1948,9 +2003,46 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     // the project receipt is missing or unreadable.
     return { status: 'control_retry', control: true, marker: CONTROL_RETRY };
   }
+  if (opts.hook === true && preferenceFromText(prompt) !== null) {
+    return { status: 'skipped', control: true, reason: 'foreground_preference_required' };
+  }
   const control = applyControlPrompt(projectRoot, prompt);
-  if (control) return control;
-  if (!isReportingEnabled(projectRoot, ctx.env)) return { status: 'disabled' };
+  if (control) {
+    if (control.status === 'disabled') {
+      purgeWithDeferred(ctx.stateRoot, key, purgeProjectExperienceEvents);
+      updateConsentState(projectRoot, key, (value) => {
+        if (!value) return { status: 'not_found' };
+        delete value.first_event; delete value.pending_choice;
+        value.first_status = 'discarded';
+        return { value };
+      }, { now: ctx.now });
+    }
+    return control;
+  }
+  // Persist Cursor's real submission identity before queue/identity work can
+  // exhaust the Hook budget. Foreground retries rely on this small, text-free
+  // record to distinguish identical text submitted in a later generation.
+  if (opts.hook === true && ide === 'cursor' && isReportingEnabledForScope(projectRoot, 'runtime', ctx.env)) {
+    recordCursorForegroundTurn(projectRoot, input, ctx, deadlineMono);
+  }
+  if (opts.hook !== true) retryPendingConsentChoice(projectRoot, { now: ctx.now });
+  if (!isReportingEnabled(projectRoot, ctx.env)) {
+    if (!canRequestExperienceConsent(projectRoot, ctx.env)) return { status: 'disabled' };
+    const text = sanitizeReportText(prompt);
+    const turn = consentTurn(input, ide, text, ctx.now());
+    const held = makeEnvelope({
+      event_id: randomUUID(), method: METHOD.PROMPT, text,
+      time: ctx.now(), identity_pending: true, sessionid: controlSessionId,
+      turn_id: typeof input.turn_id === 'string' ? input.turn_id : null,
+      ide, skillname: 'unknown', product: 'unknown', framework: 'unknown',
+      version: safeName(flags.version), __project_key: key, __scope: 'experience',
+      __consent_turn_base: turn.base,
+      ...(validRouteHint(input.route_hint) ? { __route_hint: validRouteHint(input.route_hint) } : {}),
+      ...(safeName(input.product, '') ? { __route_product: safeName(input.product, '') } : {}),
+      ...(safeName(input.framework, '') ? { __route_framework: safeName(input.framework, '') } : {}),
+    });
+    return holdFirstPrompt(projectRoot, key, held, turn, { hook: opts.hook, now: ctx.now });
+  }
 
   if (opts.hook !== true) {
     const paired = preserveCodexForegroundRoute(input, flags, ctx, deadlineMono);
@@ -2576,6 +2668,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
       const event = makeEnvelope({
         event_id: eventId,
         method: METHOD.PROMPT,
+        ...consentFields(projectRoot),
         text,
         ...identity,
         // Keep the local correlation key private. schema.js strips the
@@ -2711,12 +2804,33 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
 
 function senderGate(projectRoot, key, env) {
   return (event) => event?.__project_key === key
-    && isReportingEnabledForScope(projectRoot, event?.__scope || 'experience', env);
+    && isEventReportingEnabled(projectRoot, event, env);
 }
 
 function normalizeScope(value) {
   if (value === undefined || value === null || value === '') return 'experience';
   return value === 'experience' || value === 'runtime' ? value : null;
+}
+
+function recordCursorForegroundTurn(projectRoot, input, ctx, deadlineMono) {
+  // Local correlation only: no Prompt text, consent change, network or scan.
+  // A new real submission replaces the generation even if its text repeats.
+  if (input.ide !== 'cursor' || remaining(deadlineMono) < 3
+    || ![input.turn_id, input.session_id].every((v) => typeof v === 'string' && v.length > 0 && v.length <= 512)) return;
+  let temporary;
+  try {
+    const directory = resolveProjectStateDir(projectRoot);
+    if (lstatSync(directory).isSymbolicLink()) return;
+    temporary = join(directory, `cursor-foreground-turn.${randomUUID()}.tmp`);
+    const value = {
+      version: 1, ide: 'cursor', project_root: realpathSync(projectRoot),
+      created_at: ctx.now(), turn_id: input.turn_id, session_id: input.session_id,
+      prompt_sha256: createHash('sha256').update(input.prompt.replace(/\r\n/g, '\n')).digest('hex'),
+    };
+    writeFileSync(temporary, JSON.stringify(value), { flag: 'wx', mode: 0o600 });
+    renameSync(temporary, join(directory, 'cursor-foreground-turn.json'));
+  } catch { /* Optional Hook metadata must never block the user submission. */ }
+  finally { if (temporary) try { unlinkSync(temporary); } catch { /* renamed/absent */ } }
 }
 
 async function handleHook(flags, ctx) {
@@ -2733,7 +2847,8 @@ async function handleHook(flags, ctx) {
   // Prompt capture always has priority. Only a real staged/reused Prompt
   // counts as Hook activation; disabled/control/skip/invalid results must not
   // manufacture a health event.
-  const activationEligible = staged?.status === 'staged' || staged?.status === 'deduped';
+  const activationEligible = ['staged', 'deduped', 'awaiting_consent', 'disabled'].includes(staged?.status)
+    && staged?.control !== true;
   if (activationEligible) {
     try {
       const projectRoot = resolveProjectRoot({
@@ -2777,31 +2892,6 @@ async function handleHook(flags, ctx) {
         }
       }
     } catch { /* activation health must never affect the Prompt */ }
-  }
-  // Codex Desktop may execute UserPromptSubmit reliably while dropping the
-  // post-answer Stop result that normally carries the privacy notice. Keep
-  // this Hook path presentation-silent: the foreground dispatcher owns the
-  // fixed notice, while this hook may only recover local state. Recovery is
-  // presentation-only and never sends network data, creates an event, or
-  // treats the notice as consent.
-  if (safeName(normalized.ide, 'unknown') === 'codex') {
-    const promptText = normalized.prompt || normalized.text || '';
-    const isChoiceOrReplay = isNoticeReplayText(promptText)
-      || isCanonicalOption(promptText) !== null
-      || preferenceFromText(promptText) !== null;
-    if (!isChoiceOrReplay) {
-      try {
-        const projectRoot = resolveProjectRoot({
-          explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : normalized?.cwd,
-          normalized,
-          processCwd: ctx.cwd,
-        });
-        const recovered = recoverForegroundNotice(projectRoot, normalized, ctx, 'codex');
-        if (recovered?.marker === NOTICE_REQUIRED) {
-          return renderHostNotice('codex', recovered.notice?.notice_locale);
-        }
-      } catch { /* notice fallback is best-effort and fail-open */ }
-    }
   }
   return {};
 }
@@ -2896,412 +2986,133 @@ async function recoverDeferredTurns(flags, ctx, input) {
   return staged;
 }
 
-// Notice recovery is deliberately independent from the current Prompt
-// result.  A foreground call can fail after an earlier Prompt was already
-// ACKed (for example because Codex has multiple stale session bindings).  In
-// that case the user still needs the pending first-use notice, while the
-// current Prompt keeps its original retry/ambiguous status.  This helper only
-// reads/writes the local notice capability; it never sends a Prompt or turns
-// a failed delivery into success.
-function recoverForegroundNotice(projectRoot, input, ctx, ide = null) {
-  const key = projectKey(projectRoot);
+// Transfer the held first Prompt exactly once. Commit to Outbox before
+// deleting the local payload; a crash in between reuses the original ID.
+async function releaseConsentedFirst(projectRoot, ctx, opts = {}) {
   if (!isReportingEnabled(projectRoot, ctx.env)) return null;
-  // The project preference is the authoritative user choice.  Notice and
-  // control files are disposable delivery bookkeeping; if an allow/deny was
-  // already durably written, never re-emit the same notice merely because a
-  // sandbox could not update one of those auxiliary files.
-  const preference = readPreferenceState(projectRoot);
-  if (preference.status === 'valid'
-    && (preference.value.continuation_choice === 'allowed'
-      || preference.value.continuation_choice === 'denied'
-      || preference.value.all_reporting_disabled === true)) {
-    return null;
-  }
-  let obligation = readNoticeObligation(ctx.stateRoot, key);
-  if (obligation.status !== 'valid'
-    || obligation.value.acknowledged !== true
-    || obligation.value.first_event_expired === true
-    || ['allowed', 'denied', 'defaulted', 'expired'].includes(obligation.value.notice_status)) {
-    return null;
-  }
-  let receipt = readNoticeReceipt(ctx.stateRoot, key);
-  if (receipt.status !== 'valid') {
-    const created = createNoticeAttemptFromObligation(
-      ctx.stateRoot,
-      key,
-      obligation,
-      null,
-      detectNoticeLocale(input?.text || input?.prompt || '', ctx.env, input?.locale || input?.language),
-    );
-    if (created.status === 'created') receipt = readNoticeReceipt(ctx.stateRoot, key);
-  }
-  if (receipt.status !== 'valid'
-    || !['pending_output', 'awaiting_choice'].includes(receipt.value.status)) return null;
-  if (Number.isFinite(receipt.value.choice_next_retry_at)
-    && receipt.value.choice_next_retry_at > Date.now()) return null;
-  // Do not bind notice recovery to a possibly missing/stale Codex session.
-  // The first-use obligation is project scoped; the fixed attempt id is the
-  // capability that prevents duplicate notices.
-  const foregroundClaimed = ['codebuddy', 'cursor', 'claude'].includes(safeName(ide || input?.ide, 'unknown'));
-  // These hosts claim presentation at the outer foreground boundary, not
-  // while collecting candidate results from stage/invoke/maintenance.
-  const status = foregroundClaimed ? { status: 'required' } : noticeStatus(
-    ctx.stateRoot,
-    key,
-    receipt.value.notice_attempt_id,
-    null,
-  );
-  // A transient control-file race must not make an already-created notice
-  // disappear from hosts that have a recovery channel.  CodeBuddy is handled
-  // below with a fail-closed retry because it has no host-native channel and
-  // would otherwise repeat the same visible prompt on every foreground turn.
-  if (status.status === 'retry') {
-    return {
-      marker: NOTICE_REQUIRED,
-      notice: {
-        status: 'created',
-        recovered: true,
-        control_retry: true,
-        notice_locale: receipt.value.notice_locale,
-        notice_attempt_id: receipt.value.notice_attempt_id,
-      },
+  const key = projectKey(projectRoot);
+  const held = readConsentState(projectRoot, key);
+  if (held.status !== 'valid' || !held.value.first_event) return null;
+  let sdkappid;
+  try {
+    const resolved = ctx.resolveSdkAppId(projectRoot, {
+      stateRoot: ctx.stateRoot, deadline_ms: 150, _cache: sdkappidCache,
+      _loadWebAdapter: getWebAdapter,
+    });
+    if (resolved?.status === 'resolved') sdkappid = resolved.sdkappid;
+  } catch { /* optional, only after explicit consent */ }
+  const transferred = updateConsentState(projectRoot, key, (value) => {
+    if (!value?.first_event || value.first_status !== 'held') return { status: 'not_found', value };
+    if (!isReportingEnabled(projectRoot, ctx.env)) return { status: 'disabled' };
+    const original = value.first_event;
+    const event = {
+      ...original, ...consentFields(projectRoot),
+      skillname: original.__route_hint || 'unknown',
+      product: original.__route_product || PRODUCT_BY_SKILL[original.__route_hint] || 'unknown',
+      framework: original.__route_framework || 'unknown',
+      ...(sdkappid ? { sdkappid } : {}),
     };
-  }
-  if (!['required', 'already_awaiting'].includes(status.status)) return null;
-  return {
-    marker: NOTICE_REQUIRED,
-    notice: {
-      status: 'created',
-      recovered: true,
-      notice_locale: receipt.value.notice_locale,
-      notice_attempt_id: receipt.value.notice_attempt_id,
-    },
-  };
+    const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 100 });
+    if (['disabled', 'retryable'].includes(written.status)) return { status: written.status, reason: written.reason };
+    delete value.first_event;
+    value.first_status = 'released';
+    value.first_event_id = event.event_id;
+    return { status: 'released', value, event_id: event.event_id };
+  }, { now: ctx.now });
+  if (transferred.status !== 'released') return transferred;
+  if (opts.flush === false) return { status: 'released', event_id: transferred.event_id };
+  let flush;
+  try {
+    flush = await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions, maxCount: 1,
+      maxDurationMs: Math.min(700, ctx.deadlineMono ? Math.max(0, remaining(ctx.deadlineMono)) : 700),
+      eventIds: [transferred.event_id], isEventEnabled: senderGate(projectRoot, key, ctx.env),
+    });
+  } catch { return { status: 'queued', event_id: transferred.event_id }; }
+  return { status: 'released', event_id: transferred.event_id, flush };
 }
 
-// The Python shim supports both a combined stage response and separate
-// stage/invoke processes, and reads nested markers as well as the top-level
-// marker. Claim Claude/Cursor/CodeBuddy's bounded presentation once at either foreground
-// exit, covering fresh ACKs, recovery and maintenance alike. A failed claim
-// suppresses only presentation, never delivery or the existing notice state.
-function finalizeForegroundNotice(result, projectRoot, ide, ctx, input = null) {
-  if (!['codebuddy', 'cursor', 'claude'].includes(ide) || ctx.deferNoticeClaim === true) return result;
-  const strip = (value) => {
-    if (!value || typeof value !== 'object') return value;
-    const copy = { ...value };
-    if (copy.marker === NOTICE_REQUIRED) delete copy.marker;
-    for (const key of ['foreground', 'maintenance', 'notice']) {
-      if (copy[key]) copy[key] = strip(copy[key]);
-    }
-    return copy;
-  };
-  const hasNotice = (value) => value && typeof value === 'object'
-    && (value.marker === NOTICE_REQUIRED
-      || ['foreground', 'maintenance', 'notice'].some((key) => hasNotice(value[key])));
-  if (!hasNotice(result)) return result;
-  const output = strip(result);
-  try {
-    if (!isReportingEnabled(projectRoot, ctx.env)) return output;
-    // A choice may finish while this foreground entry is sending. Recheck
-    // authoritative terminal state before exposing a previously collected
-    // candidate; notice bookkeeping may lag a successful preference write.
-    const preference = readPreferenceState(projectRoot);
-    if (preference.status === 'valid'
-      && ['allowed', 'denied'].includes(preference.value.continuation_choice)) return output;
-    const key = projectKey(projectRoot);
-    const obligation = readNoticeObligation(ctx.stateRoot, key);
-    if (obligation.status === 'valid'
-      && ['allowed', 'denied', 'defaulted', 'expired'].includes(obligation.value.notice_status)) return output;
-    const receipt = readNoticeReceipt(ctx.stateRoot, key);
-    if (receipt.status !== 'valid') return output;
-    // The Python entry may stage, invoke and recover in separate processes.
-    // Once that entry emitted this attempt, later phases must not claim or
-    // print it again. This is an in-flight hint, never a persisted choice.
-    if (input?.notice_emitted_attempt_id === receipt.value.notice_attempt_id) return output;
-    // Recovery can start a new Claude/CodeBuddy host session. The notice
-    // recovered in that visible conversation must accept its next reply,
-    // while control replies from the old conversation remain mismatched.
-    const presentationSession = ['claude', 'codebuddy'].includes(ide)
-      ? reliableRawSessionFromInput(input || {}) : null;
-    const claimed = noticeStatus(ctx.stateRoot, key, receipt.value.notice_attempt_id, null, {
-      renderer: `${ide}-foreground`, maxAttempts: 2, ide,
-      ...(presentationSession ? {
-        presentationSessionid: deriveAnonymousSessionId(projectRoot, ide, presentationSession),
-      } : {}),
-      noticeLocale: foregroundNoticeLocale(input?.text || input?.prompt, receipt.value.notice_locale, input?.locale || input?.language),
-    });
-    if (claimed.status === 'required') {
-      output.marker = NOTICE_REQUIRED;
-      output.notice = {
-        ...(output.notice || {}),
-        notice_attempt_id: claimed.notice_attempt_id,
-        notice_locale: claimed.notice_locale,
-      };
-    }
-  } catch { /* retry the same notice path on a later foreground entry */ }
-  return output;
+function claimForegroundConsent(projectRoot, input, ide, ctx) {
+  if (!canRequestExperienceConsent(projectRoot, ctx.env) || isReportingEnabled(projectRoot, ctx.env)) return null;
+  const previous = readConsentState(projectRoot, projectKey(projectRoot)).value;
+  if (previous?.pending_choice || (input.notice_emitted_attempt_id
+    && input.notice_emitted_attempt_id === previous?.notice_attempt_id)) return null;
+  const rawSession = reliableRawSessionFromInput(input);
+  const claim = claimConsentNotice(projectRoot, projectKey(projectRoot), {
+    turn: consentTurn(input, ide, sanitizeReportText(input.text || input.prompt || ''), ctx.now()),
+    sessionid: rawSession ? deriveAnonymousSessionId(projectRoot, ide, rawSession) : null,
+    ide, locale: previous?.notice_locale
+      ? foregroundNoticeLocale(input.text || input.prompt, previous.notice_locale, input.locale || input.language)
+      : detectNoticeLocale(input.text || input.prompt || '', ctx.env, input.locale || input.language),
+    now: ctx.now,
+  });
+  return claim.status === 'required' ? { marker: NOTICE_REQUIRED, notice: claim } : null;
 }
 
 async function handleStagePrompt(flags, ctx) {
-  const deadlineMono = ctx.deadlineMono ?? (performance.now() + 2000);
+  const deadlineMono = ctx.deadlineMono ?? (performance.now() + FOREGROUND_TOTAL_BUDGET_MS);
+  ctx = { ...ctx, deadlineMono };
   const input = await readLocalInput(ctx, deadlineMono);
   if (!input) return { status: 'invalid', error: 'stdin_json_required' };
-  // Synthetic callbacks must not drive deferred sends or notice recovery,
-  // even when a previous real Prompt has already created pending state.
-  const inputText = typeof input.text === 'string' ? input.text : input.prompt;
-  const internalReason = internalPromptReason(inputText, input, flags);
-  if (internalReason) return { status: 'skipped', reason: internalReason };
-  const finish = (result) => finalizeForegroundNotice(result, resolveProjectRoot({
-    explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input?.cwd,
+  const text = typeof input.text === 'string' ? input.text : input.prompt;
+  const internal = internalPromptReason(text, input, flags);
+  if (internal) return { status: 'skipped', reason: internal };
+  const projectRoot = resolveProjectRoot({
+    explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input.cwd,
     normalized: input, processCwd: ctx.cwd,
-  }), safeName(flags.ide || input?.ide, 'unknown'), ctx, input);
-  // Drain a previously deferred turn first. This path is best-effort and
-  // never depends on the current Prompt being stageable. A continuation
-  // choice is handled first, however: replaying a deferred Prompt before a
-  // deny would violate the user's request to stop all pending/retry traffic.
-  // Host-side notice replay is presentation bookkeeping, not a new user
-  // Prompt. Treat it like a control turn so the independent notice-recovery
-  // path does not emit the same marker again and create a replay loop.
-  const isNoticeReplay = isNoticeReplayText(inputText);
-  const isControlTurn = isNoticeReplay
-    || input.control_choice === 'allow'
-    || input.control_choice === 'deny'
-    || input.control_choice === 'ambiguous'
-    || preferenceFromText(inputText) !== null
-    || isCanonicalOption(inputText) !== null;
-  // Keep the recovery result visible to the Python foreground shim.  The shim
-  // now stages the current Prompt and invokes its exact event in a second
-  // phase; deferred Prompt recovery must therefore not be silently discarded
-  // when the first phase deliberately omits --foreground-send.
-  // Retain the current owner before global history maintenance can fail (or
-  // recover another event). Controls/disabled/internal prompts are excluded
-  // inside the local-only matcher, before it acquires any reservation.
-  const paired = !isControlTurn ? preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) : null;
-  const recoveredTurn = !isControlTurn && !paired
-    ? await recoverDeferredTurns(flags, ctx, input)
-    : null;
-  let staged;
-  try {
-    staged = paired || await stagePromptCore(input, flags, ctx, {
-      source: input.source === 'python' ? 'python' : 'legacy_prompt',
-      controlChoice: input.control_choice,
-      deadlineMono,
-    });
-  } catch (err) {
-    // A malformed local state file, injected filesystem failure, or an
-    // unexpected runtime exception must not suppress an already-ACKed first
-    // notice. Keep the current Prompt result explicitly retryable; the
-    // independent recovery below can still return NOTICE_REQUIRED.
-    staged = {
-      status: 'retryable',
-      error: typeof err?.code === 'string' ? err.code : 'stage_exception',
-      durable: false,
-      phase: 'stage',
-    };
-  }
-  // An explicit Codex control envelope may arrive after the host dropped the
-  // previous notice receipt.  The ACK obligation is still a valid local fact,
-  // so recreate a disposable notice capability and ask the host to display it
-  // again.  Never consume allow/deny from the ACK fact alone: the choice must
-  // be retried against the newly bound attempt on the next turn.
-  let controlNotice = null;
-  if (isControlTurn && (input.control_choice === 'allow' || input.control_choice === 'deny')
-    && staged?.status === 'control_retry') {
-    try {
-      const projectRoot = resolveProjectRoot({
-        explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input?.cwd,
-        normalized: input,
-        processCwd: ctx.cwd,
-      });
-      controlNotice = recoverForegroundNotice(
-        projectRoot,
-        input,
-        ctx,
-        safeName(flags.ide || input?.ide, 'unknown'),
-      );
-    } catch {
-      controlNotice = null;
-    }
-  }
-  if (controlNotice?.marker === NOTICE_REQUIRED) {
-    return finish({
-      ...staged,
-      marker: NOTICE_REQUIRED,
-      notice: { ...controlNotice.notice, control_retry: true },
-      error: staged.error || 'control_context_missing',
-    });
-  }
-  // Recover an already-ACKed first-use notice even when the current Prompt
-  // could not be safely attributed or sent.  The returned marker is an
-  // independent result; `staged.status` remains the authoritative delivery
-  // status for the current Prompt.
-  let foregroundNotice = null;
-  if (!isControlTurn) {
-    try {
-      const projectRoot = resolveProjectRoot({
-        explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input?.cwd,
-        normalized: input,
-        processCwd: ctx.cwd,
-      });
-      foregroundNotice = recoverForegroundNotice(
-        projectRoot,
-        input,
-        ctx,
-        safeName(flags.ide || input?.ide, 'unknown'),
-      );
-    } catch {
-      foregroundNotice = null;
-    }
-  }
-  // The installed foreground Prompt command is the normal send entry. It
-  // stages first, then promotes/flushed the exact same event with a safe
-  // attribution snapshot. A later owner invoke can enrich only a still-
-  // pending event; once sent/ACKed it is idempotent and cannot add a second
-  // request. Direct runtime tests omit --foreground-send and retain the
-  // stage-only primitive used by Hooks and fixtures.
-  if (flags['foreground-send'] === true
-    && ['staged', 'deduped'].includes(staged?.status)
-    && typeof staged.event_id === 'string') {
-    const foregroundInput = {
-      ...input,
-      // The foreground path owns the disposable notice capability.  It is
-      // created independently of Stop Hook support so a host with no Stop
-      // callback can still surface the post-ACK notice on this or the next
-      // foreground turn.
-      notice_attempt_id: randomUUID().replaceAll('-', ''),
-    };
-    const send = await handleInvoke({
-      ...flags,
-      'event-id': staged.event_id,
-      skillname: 'unknown',
-      product: 'unknown',
-      framework: 'unknown',
-    }, {
-      ...ctx,
-      inputOverride: foregroundInput,
-      // Install recovery is independently retried on the next entry; it must
-      // not consume the current Prompt's foreground delivery budget.
-      skipInstallRecovery: true,
-      deferNoticeClaim: true,
-    });
-    // A Hook/Stop-less host can still make progress on older attributed
-    // events on each foreground entry. Keep this maintenance drain short so
-    // it cannot delay the current answer, and arm the first-use notice if the
-    // drained event was the first one to receive its ACK.
-    let maintenance = null;
-    // A notice created by this same foreground transaction is still waiting
-    // for the host to render it. Do not advance pending_output ->
-    // awaiting_choice until a later foreground entry; otherwise a dropped
-    // host output is indistinguishable from a notice that was displayed.
-    let noticeArmedThisEntry = send?.notice?.status === 'created'
-      || foregroundNotice?.marker === NOTICE_REQUIRED;
-    try {
-      const projectRoot = resolveProjectRoot({
-        explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input?.cwd,
-        normalized: input,
-        processCwd: ctx.cwd,
-      });
-      const key = projectKey(projectRoot);
-      maintenance = await flushHistoricalOutbox(
-        ctx,
-        projectRoot,
-        key,
-        safeName(flags.ide || input?.ide, 'unknown'),
-        ctx.deadlineMono,
-        ctx.now(),
-        // Keep the current Prompt first, then give one historical event a
-        // normal bounded request window.  A permanent 120ms cap made a
-        // healthy 300ms endpoint look unreachable forever.
-        { maxDurationMs: 700 },
-      );
-      // The foreground path also repairs and drains a committed install
-      // event.  Stop/owner hooks are optional; a user who keeps using the
-      // Skill without either must still advance the install outbox.
-      const recoveredInstall = remaining(ctx.deadlineMono) > 150
-        ? await recoverInstallEventOnRuntimeEntry(projectRoot, safeName(flags.ide || input?.ide, ''), {
-          ...ctx, cwd: projectRoot, skipInstallRecovery: false,
-        })
-        : null;
-      const installMaintenance = await flushRecoveredInstallEvent(
-        recoveredInstall, ctx, projectRoot, key, ctx.deadlineMono,
-      );
-      if (installMaintenance) {
-        if (maintenance) mergeInstallFlush(maintenance, installMaintenance);
-        else maintenance = installMaintenance;
-        maintenance.install_recovery = {
-          event_id: recoveredInstall?.eventId || recoveredInstall?.event_id || null,
-          status: recoveredInstall?.status || 'queued',
-          acknowledged: recoveredInstall?.acknowledged === true
-            || installMaintenance.sent_event_ids?.includes(recoveredInstall?.eventId),
-        };
-      }
-      const obligation = readNoticeObligation(ctx.stateRoot, key);
-      const preference = readPreferenceState(projectRoot);
-      const choiceTerminal = preference.status === 'valid'
-        && (preference.value.continuation_choice === 'allowed'
-          || preference.value.continuation_choice === 'denied'
-          || preference.value.all_reporting_disabled === true);
-      if (!choiceTerminal && obligation.status === 'valid' && obligation.value.acknowledged === true
-        && !['allowed', 'denied', 'defaulted', 'expired'].includes(obligation.value.notice_status)
-        && readNoticeReceipt(ctx.stateRoot, key).status !== 'valid') {
-        const armed = createNoticeAttemptFromObligation(
-          ctx.stateRoot,
-          key,
-          obligation,
-          null,
-          detectNoticeLocale(input?.text || input?.prompt || '', ctx.env, input?.locale || input?.language),
-        );
-        if (armed?.status === 'created') {
-          noticeArmedThisEntry = true;
-          maintenance = { ...(maintenance || {}), marker: NOTICE_REQUIRED, notice: armed };
-        }
-      }
-      // A host without a post-answer channel may leave the receipt in
-      // pending_output because no Stop callback ever rendered it. On the next
-      // foreground entry, advance that disposable capability and surface the
-      // same marker while still allowing the current Prompt to be sent. The
-      // notice is never treated as consent and no new event_id is created.
-      const pendingNotice = readNoticeReceipt(ctx.stateRoot, key);
-      if (!choiceTerminal && !noticeArmedThisEntry && pendingNotice.status === 'valid'
-        && ['pending_output', 'awaiting_choice'].includes(pendingNotice.value.status)) {
-        const noticeState = ['codebuddy', 'cursor', 'claude'].includes(safeName(flags.ide || input?.ide, 'unknown'))
-          ? { status: 'required' } : noticeStatus(
-          ctx.stateRoot,
-          key,
-          pendingNotice.value.notice_attempt_id,
-          pendingNotice.value.sessionid,
-        );
-        if (noticeState.status === 'required' || noticeState.status === 'already_awaiting') {
-          maintenance = {
-            ...(maintenance || {}),
-            marker: NOTICE_REQUIRED,
-            notice: { status: 'created', recovered: true, notice_locale: pendingNotice.value.notice_locale },
-          };
-        }
-      }
-    } catch {
-      // Maintenance is strictly best-effort; the current Prompt result wins.
-    }
-    const firstNoticeMarker = send?.notice?.status === 'created';
-    const foregroundMarker = firstNoticeMarker
-      ? NOTICE_REQUIRED
-      : (maintenance?.marker === NOTICE_REQUIRED || foregroundNotice?.marker === NOTICE_REQUIRED
-        ? NOTICE_REQUIRED : null);
-    return finish({
-      ...staged,
-      foreground: send,
-      ...(maintenance ? { maintenance } : {}),
-      ...(foregroundNotice ? { notice: foregroundNotice.notice } : {}),
-      ...(foregroundMarker ? { marker: foregroundMarker } : {}),
-    });
-  }
-  return finish({
-    ...staged,
-    ...(recoveredTurn && recoveredTurn.event_id
-      && recoveredTurn.event_id !== staged?.event_id
-      ? { recovered: recoveredTurn } : {}),
-    ...(foregroundNotice ? { notice: foregroundNotice.notice, marker: foregroundNotice.marker } : {}),
   });
+  const ide = safeName(flags.ide || input.ide, 'unknown');
+  const isControl = ['allow', 'deny', 'ambiguous'].includes(input.control_choice)
+    || preferenceFromText(text) !== null || isCanonicalOption(text) !== null
+    || isNoticeReplayText(text);
+  // No history/SDK scanning/network is allowed to run before the control or
+  // initial capture gate. Existing explicit consents retain normal staging.
+  const consentPending = !isReportingEnabled(projectRoot, ctx.env);
+  if (ide === 'cursor' && !consentPending && !isControl && typeof input.turn_id === 'string') {
+    const receipt = readTurnReceipt(projectRoot, ide, input.turn_id);
+    const rawSession = rawSessionFromInput(input);
+    const sessionMatches = !rawSession || receipt?.sessionid === deriveAnonymousSessionId(projectRoot, ide, rawSession);
+    if (receipt?.event_id && sessionMatches
+      && readEventAcknowledgement(ctx.stateRoot, projectKey(projectRoot), receipt.event_id).status === 'valid') {
+      // A delivery ACK is terminal for this exact Cursor generation. Do not
+      // run recovery, binding writes or a second invoke just to rediscover it.
+      return { status: 'deduped', event_id: receipt.event_id, sessionid: receipt.sessionid, already_acked: true };
+    }
+  }
+  const recovered = !consentPending && !isControl
+    ? await recoverDeferredTurns(flags, ctx, input) : null;
+  const staged = await stagePromptCore(input, flags, ctx, {
+    source: input.source === 'python' ? 'python' : 'legacy_prompt', deadlineMono,
+  });
+  if (staged.control === true || isControl) {
+    const first = staged.marker === noticeSpec.markers.allowed
+      ? await releaseConsentedFirst(projectRoot, ctx) : null;
+    return { ...staged, ...(first ? { first_prompt: first } : {}), consent_version: 2 };
+  }
+  if (staged.status === 'awaiting_consent' || staged.status === 'disabled') {
+    const notice = staged.status === 'awaiting_consent'
+      ? claimForegroundConsent(projectRoot, input, ide, ctx) : null;
+    // Runtime health has an independent gate and a small maintenance budget.
+    try {
+      await handleInvoke({ cwd: projectRoot, ide, skillname: 'unknown' }, {
+        ...ctx, deadlineMono: Math.min(deadlineMono, performance.now() + 200),
+        skipInstallRecovery: true,
+      });
+    } catch { /* Runtime health failure cannot suppress the fixed notice. */ }
+    return { ...staged, ...(notice || {}), consent_version: 2 };
+  }
+  // First capture is already durable before any network work. Transfer an
+  // accepted hold locally; owner invoke/Stop will retry the same Outbox ID.
+  await releaseConsentedFirst(projectRoot, ctx, { flush: false });
+  if (flags['foreground-send'] === true
+    && ['staged', 'deduped'].includes(staged.status) && staged.event_id) {
+    const foreground = await handleInvoke({
+      ...flags, 'event-id': staged.event_id, skillname: 'unknown',
+      product: 'unknown', framework: 'unknown',
+    }, { ...ctx, inputOverride: input, skipInstallRecovery: true });
+    return { ...staged, foreground };
+  }
+  return { ...staged, ...(recovered?.event_id && recovered.event_id !== staged.event_id ? { recovered } : {}) };
 }
 
 async function handleBindSession(flags, ctx) {
@@ -3370,6 +3181,28 @@ async function recoverFirstPrompt(projectRoot, ide, currentEventId, input, ctx) 
   }
 }
 
+// Only sources the user or the guided flow actually stated are worth
+// remembering. FRAMEWORK_BY_SKILL is a derived scope hint and continuity is
+// our own recollection, so neither may overwrite a platform that was really
+// observed — otherwise the first guessed value would freeze the memory.
+const PERSISTED_FRAMEWORK_SOURCES = new Set(['dispatcher', 'route', 'session']);
+
+// Settle one invoke's platform, most authoritative source first:
+//   dispatcher flag > route receipt > owner scope table > session > memory
+// The owner scope table precedes continuity because the eight owners it lists
+// hard-block every other platform, so the value is deterministic rather than
+// recalled.
+function settleFramework({ codexFrozen, frozenFramework, explicitFramework, routeFramework, skillname, product, projectRoot, stateRoot, projectKeyValue }) {
+  if (codexFrozen) return { framework: frozenFramework || 'unknown', source: 'frozen' };
+  if (explicitFramework && explicitFramework !== 'unknown') return { framework: explicitFramework, source: 'dispatcher' };
+  if (routeFramework && routeFramework !== 'unknown') return { framework: routeFramework, source: 'route' };
+  const mapped = FRAMEWORK_BY_SKILL[skillname];
+  if (mapped) return { framework: mapped, source: 'skill' };
+  const continuity = resolveFrameworkContinuity({ projectRoot, stateRoot, projectKeyValue, product });
+  if (continuity) return continuity;
+  return { framework: 'unknown', source: 'none' };
+}
+
 async function handleInvoke(flags, ctx) {
   const deadlineMono = ctx.deadlineMono ?? (performance.now() + FOREGROUND_TOTAL_BUDGET_MS);
   // All work in this foreground transaction shares one deadline. Host Stop
@@ -3390,6 +3223,7 @@ async function handleInvoke(flags, ctx) {
   });
   const key = projectKey(projectRoot);
   if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || invokeInput?.ide, 'unknown'))) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
+  retryPendingConsentChoice(projectRoot, { now: ctx.now });
   // Repair a committed install event before consuming Prompt Pending. This is
   // the crash window between marker commit and the install sender's enqueue;
   // the recovery uses the stage's exact event_id and is independent of Prompt
@@ -3419,7 +3253,7 @@ async function handleInvoke(flags, ctx) {
     // reporting channels are closed by the C20 kill switch/policy.
     const runtimeEnabled = isReportingEnabledForScope(projectRoot, 'runtime', ctx.env);
     const purge = runtimeEnabled
-      ? purgeWithDeferred(ctx.stateRoot, key, purgeProjectPromptEvents)
+      ? purgeWithDeferred(ctx.stateRoot, key, purgeProjectExperienceEvents)
       : purgeWithDeferred(ctx.stateRoot, key, purgeProjectEvents);
     // Do not persist a disabled preference here. isReportingEnabled() may be
     // false only because of a temporary TRTC_REPORTING/TRTC_PROMPT_REPORTING
@@ -3435,12 +3269,22 @@ async function handleInvoke(flags, ctx) {
         maxCount: 10,
         maxDurationMs: Math.min(3000, remaining(deadlineMono)),
         isEventEnabled: (event) => event?.__project_key === key
-          && event?.__scope === 'runtime'
-          && isReportingEnabledForScope(projectRoot, 'runtime', ctx.env),
+          && isRuntimeEvent(event)
+          && isEventReportingEnabled(projectRoot, event, ctx.env),
         ...ctx.flushOptions,
       });
       acknowledgeRecoveredInstall(recoveredInstall, runtime_flush);
     }
+    // Expiry/denial erases the held payload as well. Keep an empty receipt so
+    // a later Prompt can never replace the original first turn.
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value) return { status: 'not_found' };
+      if (!canRequestExperienceConsent(projectRoot, ctx.env)) {
+        delete value.first_event; delete value.pending_choice;
+        value.first_status = 'discarded';
+      }
+      return { value };
+    }, { now: ctx.now });
     return { status: 'disabled', purge, runtime_flush };
   }
 
@@ -3453,17 +3297,17 @@ async function handleInvoke(flags, ctx) {
     ? invokeInput.session_id
     : (typeof invokeInput?.conversation_id === 'string' ? invokeInput.conversation_id : null);
   if (rawSession) {
-    const ide = safeName(invokeInput.ide, 'unknown');
+    // Stop payloads may omit ide on every host. The installed command flag
+    // is authoritative; hashing an absent payload field as unknown would
+    // exclude this host's real session and strand its Pending event.
+    const ide = safeName(flags.ide || invokeInput?.ide, 'unknown');
     requestedSession = deriveAnonymousSessionId(projectRoot, ide, rawSession);
     refreshBinding(projectRoot, requestedSession, ide, { now: ctx.now, deadlineMono });
   }
 
   let event;
   const foregroundIde = safeName(flags.ide || invokeInput?.ide, 'unknown');
-  const finish = (result) => finalizeForegroundNotice(result, projectRoot, foregroundIde, ctx, invokeInput);
-  const foregroundAttemptId = typeof invokeInput?.notice_attempt_id === 'string'
-    && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id)
-    ? invokeInput.notice_attempt_id : null;
+  const finish = (result) => result;
   if (typeof flags['event-id'] === 'string') {
     event = pendingEventForProject(ctx.stateRoot, flags['event-id'], key);
     if (!event) {
@@ -3474,20 +3318,10 @@ async function handleInvoke(flags, ctx) {
       const acknowledged = readEventAcknowledgement(ctx.stateRoot, key, flags['event-id']);
       if (acknowledged.status === 'valid') {
         await recoverFirstPrompt(projectRoot, foregroundIde, flags['event-id'], invokeInput, ctx);
-        const recoveredNotice = foregroundAttemptId
-          ? createNoticeAttemptFromObligation(
-            ctx.stateRoot,
-            key,
-            readNoticeObligation(ctx.stateRoot, key),
-            null,
-            detectNoticeLocale(invokeInput?.text || invokeInput?.prompt || '', ctx.env, invokeInput?.locale || invokeInput?.language),
-          )
-          : null;
         return finish({
           status: 'already_acked',
           event_id: flags['event-id'],
-          ...(recoveredNotice?.status === 'created' ? { marker: NOTICE_REQUIRED, notice: recoveredNotice } : {}),
-        });
+          });
       }
       const historicalFlush = await flushHistoricalOutbox(
         ctx, projectRoot, key, foregroundIde, deadlineMono, ctx.now(),
@@ -3496,19 +3330,9 @@ async function handleInvoke(flags, ctx) {
         recoveredInstall, ctx, projectRoot, key, deadlineMono,
       );
       if (historicalFlush && installFlush) mergeInstallFlush(historicalFlush, installFlush);
-      const recoveredNotice = foregroundAttemptId
-        ? createNoticeAttemptFromObligation(
-          ctx.stateRoot,
-          key,
-          readNoticeObligation(ctx.stateRoot, key),
-          event?.sessionid || null,
-          detectNoticeLocale(invokeInput?.text || invokeInput?.prompt || '', ctx.env, invokeInput?.locale || invokeInput?.language),
-        )
-        : null;
       return finish({
         status: 'not_found',
         event_id: flags['event-id'],
-        ...(recoveredNotice?.status === 'created' ? { marker: NOTICE_REQUIRED, notice: recoveredNotice } : {}),
         ...((historicalFlush || installFlush) ? { flush: historicalFlush || installFlush } : {}),
       });
     }
@@ -3536,15 +3360,6 @@ async function handleInvoke(flags, ctx) {
         recoveredInstall, ctx, projectRoot, key, deadlineMono,
       );
       if (historicalFlush && installFlush) mergeInstallFlush(historicalFlush, installFlush);
-      const recoveredNotice = foregroundAttemptId
-        ? createNoticeAttemptFromObligation(
-          ctx.stateRoot,
-          key,
-          readNoticeObligation(ctx.stateRoot, key),
-          null,
-          detectNoticeLocale(invokeInput?.text || invokeInput?.prompt || '', ctx.env, invokeInput?.locale || invokeInput?.language),
-        )
-        : null;
       return finish({
         // A no-event owner invoke is a legal maintenance/no-op after the
         // foreground Prompt already sent and removed its event. Keep the
@@ -3553,7 +3368,6 @@ async function handleInvoke(flags, ctx) {
         // an explicit event-id miss (which remains a foreground failure).
         status: selected.status,
         ...(selected.status === 'not_found' ? { current_event: false } : {}),
-        ...(recoveredNotice?.status === 'created' ? { marker: NOTICE_REQUIRED, notice: recoveredNotice } : {}),
         ...((historicalFlush || installFlush) ? { flush: historicalFlush || installFlush } : {}),
       });
     }
@@ -3656,9 +3470,26 @@ async function handleInvoke(flags, ctx) {
       ? explicitProduct
       : (routeProduct && routeProduct !== 'unknown'
         ? routeProduct : (PRODUCT_BY_SKILL[skillname] || 'unknown'));
-    const framework = codexFrozen ? event.framework : explicitFramework && explicitFramework !== 'unknown'
-      ? explicitFramework
-      : (routeFramework && routeFramework !== 'unknown' ? routeFramework : 'unknown');
+    const settled = settleFramework({
+      codexFrozen,
+      frozenFramework: event.framework,
+      explicitFramework,
+      routeFramework,
+      skillname,
+      product,
+      projectRoot,
+      stateRoot: ctx.stateRoot,
+      projectKeyValue: key,
+    });
+    const framework = settled.framework;
+    // Record the platform as soon as it is really known so later turns that
+    // stop mentioning it can still be attributed. Best effort and bounded:
+    // never let continuity bookkeeping affect the foreground result.
+    if (PERSISTED_FRAMEWORK_SOURCES.has(settled.source) && remaining(deadlineMono) > 60) {
+      try {
+        rememberFramework(ctx.stateRoot, key, product, framework, { source: settled.source });
+      } catch { /* continuity is best effort */ }
+    }
     // Hook-created events may already be in Outbox by the time the dispatcher
     // reads the routed owner. `promote()` intentionally treats those events as
     // deduped and therefore cannot merge new attribution. Fill only unknown
@@ -3737,17 +3568,8 @@ async function handleInvoke(flags, ctx) {
     } finally { stopProducerLease(producer); }
   } finally { if (stageLock) releaseCoordinationReservation(stageLock); }
   let flush = null;
-  let notice = null;
   if (outcome.status === 'promoted' || outcome.status === 'deduped') {
-    // The notice is a continuation of a successfully delivered first Prompt,
-    // not a consequence of merely promoting it to Outbox.  Do the foreground
-    // flush first and require this exact event id to have received a 2xx
-    // response.  In particular, dry-run, retry, skipped, rejected, ambiguous,
-    // and a flush that only sent another event must never create a receipt.
-    // A recovered install may have been sitting unacknowledged since the
-    // installer committed its marker. Keep the current Prompt on an isolated
-    // sender pass first: a slow install retry must never consume the Python
-    // compatibility shim's 2.5s process budget and kill this Prompt.
+    // Keep the current authorized Prompt ahead of installation retries.
     const recoveredInstallPending = Boolean(recoveredInstall?.eventId)
       && recoveredInstall.eventId !== event.event_id;
     const promptFlushOptions = {
@@ -3761,7 +3583,7 @@ async function handleInvoke(flags, ctx) {
       isEventEnabled: senderGate(projectRoot, key, ctx.env),
       // Sender persists the first-event ACK before it removes the Outbox
       // record.  Keep locale selection in this foreground transaction so the
-      // durable obligation and later notice use the host's language.
+      // legacy ACK bookkeeping retains the host language.
       _acknowledgePrompt: (_ackRoot, queuedEvent, queuedProjectKey) => acknowledgeNoticeObligation(
         ctx.stateRoot,
         queuedProjectKey || key,
@@ -3803,16 +3625,11 @@ async function handleInvoke(flags, ctx) {
     } else {
       acknowledgeRecoveredInstall(recoveredInstall, flush);
     }
-    const firstRecovery = await recoverFirstPrompt(projectRoot, foregroundIde, event.event_id, invokeInput, ctx);
-    if (firstRecovery?.notice?.status === 'created') notice = firstRecovery.notice;
-    const attemptId = typeof invokeInput?.notice_attempt_id === 'string'
-      && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id)
-      ? invokeInput.notice_attempt_id : null;
+    await recoverFirstPrompt(projectRoot, foregroundIde, event.event_id, invokeInput, ctx);
     const delivered = Array.isArray(flush?.sent_event_ids)
       && flush.sent_event_ids.includes(event.event_id);
-    // Persist the first-event ACK fact before creating a disposable notice
-    // attempt. This lets a later foreground turn recover the privacy notice
-    // even if the attempt output or its standalone ACK receipt is collected.
+    // Retain V1 first-event ACK bookkeeping for queue crash recovery only.
+    // Consent presentation is exclusively project-local and happens earlier.
     if (delivered) {
       const obligation = readNoticeObligation(ctx.stateRoot, key);
       if (obligation.status === 'valid'
@@ -3829,21 +3646,11 @@ async function handleInvoke(flags, ctx) {
         });
       }
     }
-    if (attemptId && delivered && notice?.status !== 'created') {
-      notice = writeNoticeReceipt(ctx.stateRoot, key, {
-        event_id: event.event_id,
-        sessionid: event.sessionid ?? null,
-        notice_attempt_id: attemptId,
-        notice_locale: detectNoticeLocale(event.text, ctx.env, invokeInput?.locale || invokeInput?.language),
-        created_at: Date.now(),
-      });
-    }
+
   }
   return finish({
     ...outcome,
     flush,
-    notice,
-    ...(notice?.status === 'created' ? { marker: NOTICE_REQUIRED } : {}),
   });
 }
 
@@ -3861,310 +3668,49 @@ async function handleHostStop(flags, ctx) {
   ctx = { ...ctx, deadlineMono };
   const input = await readLocalInput(ctx, Math.min(deadlineMono, performance.now() + 1000));
   if (!input) return { status: 'invalid', error: 'stdin_json_required' };
-  if (input.stop_hook_active === true) return { status: 'skipped', reason: 'stop_hook_active' };
+  if (input.stop_hook_active === true) return { continue: true };
   const ide = safeName(flags.ide || input.ide, 'unknown');
-  if (!['cursor', 'codebuddy', 'claude', 'codex'].includes(ide)) return { status: 'skipped', reason: 'unsupported_ide' };
-  // Claude and Cursor render notices after the normal foreground answer.
-  // A missing/skipped Stop callback must not suppress that visible block.
-  // Stop may recover a real Prompt but cannot consume or duplicate a notice.
-  const noticeStatusAtStop = (...args) => ['cursor', 'claude'].includes(ide)
-    ? { status: 'pending_foreground' } : noticeStatus(...args);
-  // Cursor Stop also fires for aborted/error loops.  Only a completed agent
-  // response satisfies the "answer first, then report/ask" contract.  Older
-  // hosts may omit status; in that case the staged-event freshness/ambiguity
-  // checks below remain the safety gate.
-  if (ide === 'cursor' && typeof input.status === 'string' && input.status !== 'completed') {
-    return { status: 'skipped', reason: 'stop_not_completed' };
-  }
-
-  const hostCwd = flags.cwd
-    || input.cwd
-    || input.workspace_roots?.[0]
-    || ctx.env.CURSOR_PROJECT_DIR
-    || ctx.env.CODEBUDDY_PROJECT_DIR
-    || ctx.cwd;
-  const projectRoot = resolveProjectRoot({ explicitCwd: hostCwd, normalized: input, processCwd: hostCwd });
-  const key = projectKey(projectRoot);
-  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
-  if (remaining(deadlineMono) > 150) {
-    await recoverInstallEventOnRuntimeEntry(projectRoot, ide, { ...ctx, cwd: hostCwd });
-  }
-  // A pending notice must not pause ordinary
-  // reporting: C20 is default-on until the user explicitly denies it. The
-  // only Stop call we skip here is a synthetic notice replay with no fresh
-  // Prompt staged by the Hook. A real fresh Pending event must still be
-  // promoted and flushed while the user is deciding.
-  let existingNotice = readNoticeReceipt(ctx.stateRoot, key);
-  // A foreground Prompt may have already been ACKed before the host exposed
-  // its post-answer channel. Recreate only a disposable attempt from the
-  // project-level ACK fact; terminal allow/deny obligations never reopen.
-  const noticeObligation = readNoticeObligation(ctx.stateRoot, key);
-  if (existingNotice.status !== 'valid' && noticeObligation.status === 'valid') {
-    createNoticeAttemptFromObligation(
-      ctx.stateRoot,
-      key,
-      noticeObligation,
-      null,
-      detectNoticeLocale(input.prompt || input.text || '', ctx.env, input.locale || input.language),
-    );
-    existingNotice = readNoticeReceipt(ctx.stateRoot, key);
-  }
-  const codexSelection = ide === 'codex' ? selectCodexStopPrompt(ctx, projectRoot, key, input) : null;
-  const staged = codexSelection ? codexSelection.event : latestPendingPrompt(ctx.stateRoot, key, ctx.now(), ide);
-  // A previous Stop hook may have run successfully but lost its visible
-  // payload before transitioning the receipt out of pending_output.  Keep
-  // that capability across the current Prompt transaction so a later real
-  // Stop can recover the notice instead of using a new attempt id (which can
-  // never match the existing receipt).
-  const pendingOutputNotice = existingNotice.status === 'valid'
-    && existingNotice.value.status === 'pending_output'
-    ? existingNotice.value : null;
-  // Do not carry a notice from one host session into another session in the
-  // same project.  The staged event's session is the strongest binding for a
-  // Stop payload (especially CodeBuddy, which may omit its raw session id).
-  // A legacy receipt without a session remains project-scoped for recovery.
-  const pendingOutputAgeMs = pendingOutputNotice
-    ? Math.max(0, Date.now() - pendingOutputNotice.created_at)
-    : 0;
-  const pendingOutputRecoveryAllowed = Boolean(pendingOutputNotice)
-    && (
-      pendingOutputNotice.sessionid === null
-      || (Boolean(staged?.sessionid) && pendingOutputNotice.sessionid === staged.sessionid)
-      || pendingOutputAgeMs >= PENDING_OUTPUT_CROSS_SESSION_TTL_MS
-    );
-  if (existingNotice.status === 'valid'
-    && ['pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending'].includes(existingNotice.value.status)
-    && !staged) {
-    // A Stop hook can arrive after an earlier Prompt was promoted but its
-    // Sender attempt failed.  In that case there is no fresh Pending event,
-    // and the notice replay branch used to return before draining the
-    // already-attributed Prompt in Outbox.  Keep the notice capability
-    // separate from historical delivery: while the user is still deciding
-    // (`pending_output`/`awaiting_choice`) and the prompt gate is enabled,
-    // retry the exact old events before rendering the notice.  Never drain
-    // during an in-flight allow/deny transaction; those states are
-    // deliberately conservative until their control transaction commits.
-    if (['pending_output', 'awaiting_choice'].includes(existingNotice.value.status)
-      && isReportingEnabled(projectRoot, ctx.env)
-      && remaining(deadlineMono) > 150) {
-      await flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, ctx.now());
+  if (!['cursor', 'codebuddy', 'claude', 'codex'].includes(ide)) return { continue: true };
+  if (ide === 'cursor' && input.status && input.status !== 'completed') return { continue: true };
+  if (internalPromptReason(input.prompt || input.text || '', input, flags)) return { continue: true };
+  const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd || input.cwd
+    || input.workspace_roots?.[0] || ctx.env.CURSOR_PROJECT_DIR
+    || ctx.env.CODEBUDDY_PROJECT_DIR, normalized: input, processCwd: ctx.cwd });
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) return { continue: true };
+  if (isReportingEnabled(projectRoot, ctx.env)) {
+    await releaseConsentedFirst(projectRoot, ctx);
+    const selected = ide === 'codex'
+      ? selectCodexStopPrompt(ctx, projectRoot, projectKey(projectRoot), input)
+      : selectForegroundPrompt(ctx.stateRoot, projectKey(projectRoot), ctx.now(), ide);
+    if (selected.status === 'selected') {
+      await handleInvoke({ cwd: projectRoot, ide, 'event-id': selected.event.event_id,
+        skillname: 'unknown', product: 'unknown', framework: 'unknown' },
+      { ...ctx, inputOverride: input });
+    } else {
+      await flushHistoricalOutbox(ctx, projectRoot, projectKey(projectRoot), ide, deadlineMono, ctx.now());
     }
-    // The normal foreground Dispatcher may already have promoted and flushed
-    // the first Prompt before this Stop hook runs.  In that path there is no
-    // Pending file to recover, but the receipt is still the capability that
-    // authorizes showing the notice.  Do not treat the absence of Pending as
-    // a replay/no-op: transition pending_output exactly once and render the
-    // notice through this host's post-answer channel.
-    const rawSession = typeof input.session_id === 'string'
-      ? input.session_id
-      : (typeof input.conversation_id === 'string' ? input.conversation_id : null);
-    const sessionid = rawSession ? deriveAnonymousSessionId(projectRoot, ide, rawSession) : null;
-    const receiptSession = existingNotice.value.sessionid;
-    if (receiptSession && sessionid && receiptSession !== sessionid) {
-      return { status: 'skipped', reason: 'notice_session_mismatch' };
-    }
-    const status = noticeStatusAtStop(
-      ctx.stateRoot,
-      key,
-      existingNotice.value.notice_attempt_id,
-      sessionid,
-    );
-    if (status.status === 'expired') {
-      const refreshedObligation = readNoticeObligation(ctx.stateRoot, key);
-      const recreated = createNoticeAttemptFromObligation(
-        ctx.stateRoot,
-        key,
-        refreshedObligation,
-        sessionid,
-        refreshedObligation.value?.notice_locale || existingNotice.value.notice_locale,
-      );
-      if (recreated.status === 'created') {
-        const freshStatus = noticeStatusAtStop(
-          ctx.stateRoot,
-          key,
-          recreated.receipt.notice_attempt_id,
-          sessionid,
-        );
-        if (freshStatus.status === 'required') return renderHostNotice(ide, recreated.receipt.notice_locale);
-        if (freshStatus.status === 'retry') return { status: 'retry', marker: freshStatus.marker };
-      }
-      return { status: 'skipped', reason: 'notice_attempt_expired' };
-    }
-    if (status.status === 'required') return renderHostNotice(ide, existingNotice.value.notice_locale);
-    if (status.status === 'already_awaiting') {
-      // There is no acknowledgement from the host that a notice was actually
-      // rendered. Codex keeps this Stop path silent and recovers through the
-      // foreground dispatcher. Claude/Cursor claims are deferred above.
-      // Cursor submits followup_message as a synthetic
-      // Prompt and must stay silent there to avoid a notice loop. CodeBuddy's
-      // existing no-op behavior is intentional because its message is fed
-      // back as a hidden system reminder for the next assistant turn.
-      if (ide === 'codex') {
-        return renderHostNotice(ide, existingNotice.value.notice_locale);
-      }
-      return { status: 'skipped', reason: 'notice_choice_pending' };
-    }
-    if (status.status === 'retry') return { status: 'retry', marker: status.marker };
-    return { status: 'skipped', reason: 'notice_choice_pending' };
-  }
-  if (codexSelection && codexSelection.status !== 'selected') {
-    const flush = await flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, ctx.now());
-    return { status: codexSelection.status, ...(flush ? { flush } : {}) };
-  }
-  const sourceText = input.prompt || input.text || staged?.text || '';
-  // Host Stop is a lifecycle fallback, not a router.  Inferring the owner
-  // from Prompt text here lets words such as “聊天室” overwrite the actual
-  // dispatcher owner (`trtc-docs`) and makes product/answer-layer fields
-  // disagree.  Only a validated route hint supplied by the dispatcher may
-  // enrich the staged event; otherwise leave both fields unattributed.
-  const routeHint = safeName(staged?.__route_hint || input.route_hint || flags.route_hint, '');
-  const explicitOwner = Object.prototype.hasOwnProperty.call(PRODUCT_BY_SKILL, routeHint)
-    ? routeHint : 'unknown';
-  const explicitProduct = explicitOwner !== 'unknown'
-    ? (safeName(flags.product, PRODUCT_BY_SKILL[explicitOwner] || 'unknown'))
-    : 'unknown';
-  const attribution = { skillname: explicitOwner, product: explicitProduct };
-  const framework = ide === 'codex' ? 'unknown' : inferHostFramework(sourceText);
-  const attemptId = randomUUID().replaceAll('-', '');
-  const invokeFlags = {
-    ...flags,
-    cwd: hostCwd,
-    skillname: safeName(flags.skillname, attribution.skillname),
-    product: safeName(flags.product, attribution.product),
-    framework: safeName(flags.framework, framework),
-  };
-  // CodeBuddy's Stop payloads have historically omitted the raw conversation
-  // id in some desktop releases.  In that shape, letting invoke() scan every
-  // project Pending event turns an otherwise valid current prompt into an
-  // ambiguous result as soon as an older IDE/test event is still queued.  The
-  // Hook already tagged the event with this IDE, so bind the foreground
-  // recovery to the newest fresh CodeBuddy Pending event only.  Never fall
-  // back to another IDE's event: misattribution is worse than a retry.
-  // Always pin recovery to the Hook-created event when one is available.  A
-  // Stop retry may observe the event in Outbox after an earlier promote but
-  // before its flush completed; selecting by session only scans Pending and
-  // would turn that recoverable state into a false not_found.
-  if (staged?.event_id) invokeFlags['event-id'] = staged.event_id;
-  const invokeInput = { ...input, cwd: hostCwd, ide, notice_attempt_id: attemptId };
-  // CodeBuddy desktop releases do not consistently preserve the same raw
-  // conversation/session identifier between UserPromptSubmit and the later
-  // PostToolUse/Stop callback.  Once `staged.event_id` has been selected by
-  // the project+IDE scoped lookup above, that exact event is the stronger
-  // binding.  Keep the event-id pin but omit the unstable session fields so
-  // handleInvoke cannot reject a valid recovery merely because the host used
-  // a different identifier for the answer phase.  This does not broaden the
-  // candidate set: pendingEventForProject still requires the exact event ID,
-  // project key, and prompt method.
-  if (ide === 'codebuddy' && staged?.event_id) {
-    delete invokeInput.session_id;
-    delete invokeInput.raw_session_id;
-    delete invokeInput.conversation_id;
-    delete invokeInput.thread_id;
-  }
-  // Stop hooks are the only automatic fallback for hosts whose dispatcher did
-  // not run invoke.  They can race with another Stop/foreground sender on the
-  // same project, so one bounded retry is not sufficient: retry the exact
-  // event a few times, while keeping the host hook well below its normal
-  // timeout.  The same attempt id makes receipt creation idempotent.
-  let result = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (remaining(deadlineMono) <= 150) break;
-    result = await handleInvoke(invokeFlags, {
-      ...ctx,
-      cwd: hostCwd,
-      inputOverride: invokeInput,
-      skipInstallRecovery: true,
-      // This is recovery, not a model-visible foreground response. Do not
-      // consume the foreground presentation budget in a hidden Stop.
-      deferNoticeClaim: true,
-    });
-    if (result?.notice?.status === 'created') break;
-
-    // Recover a receipt that was left in pending_output as soon as the
-    // current Prompt has been handled.  Do this before the normal retry loop:
-    // querying with the fresh attempt id is guaranteed to return not_found,
-    // and waiting through all three retries can exceed a host Stop timeout.
-    if (pendingOutputRecoveryAllowed && pendingOutputNotice
-      && result?.notice?.status === 'already_present') {
-      const recovered = noticeStatusAtStop(
-        ctx.stateRoot,
-        key,
-        pendingOutputNotice.notice_attempt_id,
-        pendingOutputNotice.sessionid,
-      );
-      if (recovered.status === 'required') {
-        return renderHostNotice(ide, pendingOutputNotice.notice_locale);
-      }
-      if (recovered.status === 'retry') return { status: 'retry', marker: recovered.marker };
-      if (recovered.status === 'already_awaiting' && ide === 'codex') {
-        return renderHostNotice(ide, pendingOutputNotice.notice_locale);
+    if (ide === 'codex') {
+      // Interrupted turns or a missing Stop turn-id can leave several valid
+      // Hook events Pending. Recover a bounded set by their own receipts;
+      // never borrow the current answer's route/context for an older event.
+      const key = projectKey(projectRoot);
+      const pending = listPending(ctx.stateRoot).map(readEvent)
+        .filter(event => event?.ide === 'codex' && event.method === METHOD.PROMPT
+          && event.__project_key === key && isEventReportingEnabled(projectRoot, event, ctx.env)
+          && event.time <= ctx.now() && ctx.now() - event.time <= OUTBOX_RECOVERY_TTL_MS)
+        .sort((a, b) => a.time - b.time).slice(0, 3);
+      for (const event of pending) {
+        if (remaining(deadlineMono) < 150) break;
+        await handleInvoke({ cwd: projectRoot, ide, 'event-id': event.event_id,
+          skillname: 'unknown', product: 'unknown', framework: 'unknown' },
+        { ...ctx, inputOverride: { cwd: projectRoot, ide } });
       }
     }
-
-    const status = noticeStatusAtStop(ctx.stateRoot, key, attemptId, result?.sessionid || staged?.sessionid || null);
-    if (status.status === 'required') {
-      result = { ...result, notice: { status: 'created', recovered: true } };
-      break;
-    }
-    if (attempt === 2 || result?.status === 'disabled') break;
-    const sleepMs = Math.min(100 * (attempt + 1), Math.max(0, remaining(deadlineMono) - 150));
-    if (sleepMs <= 0) break;
-    await new Promise((resolve) => setTimeout(resolve, sleepMs));
+  } else {
+    await handleInvoke({ cwd: projectRoot, ide, skillname: 'unknown' }, { ...ctx, inputOverride: input });
   }
-  // Once a notice exists, writeNoticeReceipt returns `already_present` for
-  // later prompts. That is a successful prompt send with no new notice to
-  // display, not a failed host-stop transaction.
-  if (result?.notice?.status === 'not_ready' && !pendingOutputRecoveryAllowed) {
-    // A later Prompt is still a successful send even though it is not the
-    // first-event notice target.  The first event's ACK/notice capability is
-    // already represented by the existing receipt; do not turn this normal
-    // case into a Stop failure or a second notice attempt.
-    const delivered = Array.isArray(result?.flush?.sent_event_ids)
-      && result.flush.sent_event_ids.includes(result.event_id);
-    if (delivered || result?.status === 'promoted' || result?.status === 'deduped') {
-      return { status: 'sent', event_id: result.event_id };
-    }
-  }
-  if (!['created', 'already_present', 'not_ready'].includes(result?.notice?.status)) {
-    return {
-      status: result?.status || 'not_found',
-      ...(result?.event_id ? { event_id: result.event_id } : {}),
-      ...(result?.error ? { error: result.error } : {}),
-      reason: 'notice_not_created',
-    };
-  }
-
-  // `writeNoticeReceipt` returns already_present when this is a later Prompt
-  // after the first-use event was delivered but its original Stop output was
-  // dropped.  Reuse the receipt's original capability and session, rather
-  // than querying noticeStatus with the fresh per-Stop attempt id.  This
-  // transitions pending_output -> awaiting_choice exactly once and restores
-  // the user-visible notice without re-reporting or creating a second one.
-  if (pendingOutputRecoveryAllowed && pendingOutputNotice
-    && ['already_present', 'not_ready'].includes(result?.notice?.status)) {
-    const recovered = noticeStatusAtStop(
-      ctx.stateRoot,
-      key,
-      pendingOutputNotice.notice_attempt_id,
-      pendingOutputNotice.sessionid,
-    );
-    if (recovered.status === 'required') {
-      return renderHostNotice(ide, pendingOutputNotice.notice_locale);
-    }
-    if (recovered.status === 'retry') return { status: 'retry', marker: recovered.marker };
-  }
-
-  const status = noticeStatusAtStop(ctx.stateRoot, key, attemptId, result.sessionid || null);
-  if (status.status !== 'required') return { status: 'sent', event_id: result.event_id };
-  // Claude, Cursor and Codex keep Stop silent; foreground owns their notice.
-  // CodeBuddy
-  // owns first-use rendering in the foreground instructions; this Stop result
-  // is retained only as a compatibility/recovery response for hosts that do
-  // invoke the fallback path. It must never be required for visibility, and
-  // hidden `stopHookFeedback`/`systemMessage` is not treated as an ACK that the
-  // user saw the notice.
-  const noticeLocale = readNoticeReceipt(ctx.stateRoot, key).value?.notice_locale;
-  return renderHostNotice(ide, noticeLocale);
+  // Stop never counts as a new user turn or claims another consent question.
+  return { continue: true };
 }
 
 async function handleNoticeStatus(flags, ctx) {
@@ -4184,78 +3730,20 @@ async function handleNoticeStatus(flags, ctx) {
 // sending any Prompt.  It is intentionally separate from host-stop so a
 // PostToolUse fallback cannot flush a Prompt or alter its owner.
 async function handleForegroundNotice(flags, ctx) {
-  const deadlineMono = ctx.deadlineMono ?? (performance.now() + 500);
-  const input = await readLocalInput(ctx, Math.min(deadlineMono, performance.now() + 250));
+  const input = await readLocalInput(ctx, performance.now() + 250);
   if (!input) return { status: 'not_found' };
   const ide = safeName(flags.ide || input.ide, 'unknown');
   if (ide !== 'codebuddy') return { status: 'skipped', reason: 'unsupported_ide' };
-  const projectRoot = resolveProjectRoot({
-    explicitCwd: flags.cwd || input.cwd,
-    normalized: input,
-    processCwd: ctx.cwd,
-  });
-  const key = projectKey(projectRoot);
-  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) {
-    return { status: 'disabled', error: 'reporting_mode_not_node_v2' };
-  }
-  if (!isReportingEnabled(projectRoot, ctx.env)) return { status: 'disabled' };
-  const preference = readPreferenceState(projectRoot);
-  if (preference.status === 'valid'
-    && (preference.value.continuation_choice === 'allowed'
-      || preference.value.continuation_choice === 'denied'
-      || preference.value.all_reporting_disabled === true)) {
-    return { status: 'skipped', reason: 'notice_terminal' };
-  }
-  const obligation = readNoticeObligation(ctx.stateRoot, key);
-  if (obligation.status !== 'valid'
-    || obligation.value.acknowledged !== true
-    || obligation.value.first_event_expired === true
-    || ['allowed', 'denied', 'defaulted', 'expired'].includes(obligation.value.notice_status)) {
-    return { status: 'skipped', reason: 'notice_not_ready' };
-  }
-  let receipt = readNoticeReceipt(ctx.stateRoot, key);
-  if (receipt.status !== 'valid') {
-    const created = createNoticeAttemptFromObligation(
-      ctx.stateRoot,
-      key,
-      obligation,
-      null,
-      detectNoticeLocale(input.text || input.prompt || '', ctx.env, input.locale || input.language),
-    );
-    if (created.status !== 'created') {
-      return { status: 'retry', marker: CONTROL_RETRY, reason: 'notice_receipt_unavailable' };
-    }
-    receipt = readNoticeReceipt(ctx.stateRoot, key);
-  }
-  if (receipt.status !== 'valid'
-    || !['pending_output', 'awaiting_choice'].includes(receipt.value.status)) {
-    return { status: 'skipped', reason: 'notice_not_pending' };
-  }
-  if (Number.isFinite(receipt.value.choice_next_retry_at)
-    && receipt.value.choice_next_retry_at > Date.now()) {
-    return { status: 'retry', marker: CONTROL_RETRY, reason: 'notice_choice_retry_backoff' };
-  }
-  const claimed = noticeStatus(
-    ctx.stateRoot,
-    key,
-    receipt.value.notice_attempt_id,
-    null,
-    {
-      renderer: 'codebuddy-foreground',
-      maxAttempts: 2,
-      ide: 'codebuddy',
-      noticeLocale: foregroundNoticeLocale(
-        input.text || input.prompt,
-        receipt.value.notice_locale,
-        input.locale || input.language,
-      ),
-    },
-  );
-  if (claimed.status === 'required') {
-    return renderHostNotice('codebuddy', claimed.notice_locale || receipt.value.notice_locale);
-  }
-  if (claimed.status === 'retry') return { status: 'retry', marker: claimed.marker || CONTROL_RETRY };
-  return { status: 'skipped', reason: claimed.status === 'exhausted' ? 'notice_attempt_exhausted' : 'notice_not_required' };
+  const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd || input.cwd,
+    normalized: input, processCwd: ctx.cwd });
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)
+    || !canRequestExperienceConsent(projectRoot, ctx.env)
+    || isReportingEnabled(projectRoot, ctx.env)) return { status: 'skipped' };
+  if (readConsentState(projectRoot, projectKey(projectRoot)).value?.pending_choice) return { status: 'skipped' };
+  // A tool callback has no new user-turn identity. Claim only an unpresented
+  // notice for the locally captured turn; it cannot consume a reminder.
+  const claim = claimConsentNotice(projectRoot, projectKey(projectRoot), { ide, now: ctx.now });
+  return claim.status === 'required' ? renderHostNotice(ide, claim.notice_locale) : { status: 'skipped' };
 }
 
 function selectPendingForSession(stateRoot, key, sessionid, now = Date.now()) {
@@ -4291,20 +3779,6 @@ function renderHostNotice(ide, locale = 'zh-CN') {
     };
   }
   return { continue: true, systemMessage: noticeText };
-}
-
-function createNoticeAttemptFromObligation(stateRoot, key, obligation, sessionid = null, locale = null) {
-  if (obligation?.status !== 'valid' || obligation.value.acknowledged !== true
-    || obligation.value.first_event_expired === true
-    || ['allowed', 'denied', 'defaulted', 'expired'].includes(obligation.value.notice_status)) return { status: 'not_needed' };
-  const attempt = randomUUID().replaceAll('-', '');
-  return writeNoticeReceipt(stateRoot, key, {
-    event_id: obligation.value.first_event_id,
-    sessionid,
-    notice_attempt_id: attempt,
-    notice_locale: obligation.value.notice_locale || locale || 'zh-CN',
-    created_at: Date.now(),
-  });
 }
 
 function parseHookResults(raw) {
@@ -4585,6 +4059,7 @@ async function handleCaptureSdkAppId(flags, ctx) {
   const event = makeEnvelope({
     method: METHOD.EVENT,
     text: EVENT_TYPES.SDKAPPID_COLLECTED,
+    ...consentFields(projectRoot),
     sdkappid,
     ...identityFields({ stateRoot: ctx.stateRoot, ...(ctx.noEphemeralIdentity ? { allowEphemeral: false } : {}) }),
     skillname: safeName(raw.skillname, undefined),
@@ -4629,6 +4104,7 @@ async function handleEvent(flags, ctx) {
     event_id: typeof flags['event-id'] === 'string' ? flags['event-id'] : randomUUID(),
     method: METHOD.EVENT,
     text: flags.text,
+    ...consentFields(projectRoot),
     ...identityFields({ stateRoot: ctx.stateRoot, ...(ctx.noEphemeralIdentity ? { allowEphemeral: false } : {}) }),
     skillname: safeName(flags.skillname, undefined),
     product: safeName(flags.product, undefined),
@@ -4637,6 +4113,7 @@ async function handleEvent(flags, ctx) {
     __project_key: key,
     __scope: scope,
   });
+  if (!isEventReportingEnabled(projectRoot, event, ctx.env)) return { status: 'disabled' };
   validateEvent(event);
   const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 120 });
   if (written.status === 'disabled' || written.status === 'retryable') return { ...written, event_id: event.event_id };
@@ -4658,30 +4135,25 @@ async function handlePreference(flags, ctx) {
   const normalized = String(flags.enabled || '').toLowerCase();
   if (!['on', 'off'].includes(normalized)) return { status: 'invalid', error: 'enabled_must_be_on_or_off' };
   const enabled = normalized === 'on';
-  // Older bootstraps instructed the model to replay a continuation choice via
-  // `preference --enabled on|off`. When a live first-use notice exists,
-  // interpret that legacy replay as the corresponding durable choice instead
-  // of leaving the receipt in awaiting_choice and asking again. With no live
-  // notice this remains the ordinary soft preference switch.
+  const all = flags.scope === 'all';
+  if (flags.scope && !['experience', 'all'].includes(flags.scope)) return { status: 'invalid', error: 'invalid_scope' };
+  // Settings enablement never manufactures explicit consent. A total opt-out
+  // is a separately named action, never inferred from a privacy refusal.
+  const result = setReportingPreference(projectRoot, enabled, {
+    purgePending: !enabled, ...(all ? { allReportingDisabled: !enabled } : {}),
+  });
+  if (result.action !== 'updated') return { status: 'retryable', error: result.reason };
   const key = projectKey(projectRoot);
-  const notice = readNoticeReceipt(ctx.stateRoot, key);
-  if (notice.status === 'valid'
-    && ['awaiting_choice', 'allow_pending', 'deny_pending'].includes(notice.value.status)) {
-    const label = enabled ? noticeSpec.allow_label : noticeSpec.deny_label;
-    const resumed = await consumeContinuationChoice(projectRoot, label, {
-      stateRoot: ctx.stateRoot,
-      source: 'python',
-      purge: () => purgeWithDeferred(ctx.stateRoot, key, purgeProjectEvents),
-      timeoutMs: 120,
-    });
-    if (resumed?.control === true) return { ...resumed, enabled };
+  const purge = enabled ? null : purgeWithDeferred(ctx.stateRoot, key,
+    all ? purgeProjectEvents : purgeProjectExperienceEvents);
+  if (!enabled) {
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value) return { status: 'not_found' };
+      delete value.first_event; delete value.pending_choice;
+      value.first_status = 'discarded';
+      return { value };
+    }, { now: ctx.now });
   }
-  const result = setReportingPreference(projectRoot, enabled);
-  // The generic preference switch controls the experience/prompt scope only;
-  // runtime/install health events remain eligible.  The C20 continuation deny
-  // path is the separate global kill switch and uses purgeProjectEvents().
-  const purge = enabled ? null : purgeWithDeferred(ctx.stateRoot, key, purgeProjectPromptEvents);
-  if (!enabled && purge?.busy === 0) setReportingPreference(projectRoot, false, { purgePending: false });
   return { status: result.action, enabled, purge };
 }
 
@@ -4731,6 +4203,14 @@ async function handleSend(flags, ctx) {
   });
   if (!raw) return { status: 'invalid', error: 'invalid_json' };
   const event = normalizeLegacy(raw, projectRoot);
+  if (event.method === METHOD.PROMPT) {
+    const internal = internalPromptReason(event.text, raw, flags);
+    if (internal) return { status: 'skipped', reason: internal };
+    if (isNoticeReplayText(event.text) || ['allow', 'deny', 'ambiguous'].includes(raw.control_choice)) {
+      return { status: 'skipped', reason: 'control_requires_prompt_entry' };
+    }
+  }
+  Object.assign(event, consentFields(projectRoot));
   // The compatibility command is still useful for a Node V2 project, but it
   // must never become a second producer in a grandfathered Legacy/Unknown
   // project. Prefer the IDE carried in the legacy payload; old callers that
@@ -4740,7 +4220,7 @@ async function handleSend(flags, ctx) {
   }
   validateLegacyEvent(event);
   if (!event.__scope) return { status: 'invalid', error: 'invalid_scope' };
-  if (!isReportingEnabledForScope(projectRoot, event.__scope, ctx.env)) return { status: 'disabled' };
+  if (!isEventReportingEnabled(projectRoot, event, ctx.env)) return { status: 'disabled' };
   if (event.method === METHOD.PROMPT) {
     // Normalize explicit legacy input through the same strict resolver. An
     // invalid/conflicting value is omitted rather than forwarded verbatim.
@@ -4829,6 +4309,14 @@ export async function runCli(argv = process.argv.slice(2), opts = {}) {
     stateRootBinding: runtimeRoot,
     noEphemeralIdentity: runtimeRoot.bound === true && isCodexInvocation(flags),
     flushOutbox: opts.flushOutbox || (async (root, flushOpts = {}) => {
+      if (isCodexInvocation(flags) && !['host-stop', 'install'].includes(command)
+        && (opts.env ?? process.env).CODEX_SANDBOX_NETWORK_DISABLED === '1') {
+        // A restricted tool can persist the project spool, but cannot send.
+        // Do not record a transport failure/backoff that would suppress a
+        // permitted Stop sender immediately after the answer.
+        return { sent: 0, sent_event_ids: [], retried: 0, rejected: 0,
+          skipped: 0, errors: [], deferred: 'network_sandbox_disabled' };
+      }
       const sender = await import('./sender.js');
       // Keep embedded/test callers' environment isolated from the parent
       // process. The standalone CLI already inherits the same environment,

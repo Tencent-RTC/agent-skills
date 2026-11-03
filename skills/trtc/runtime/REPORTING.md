@@ -10,64 +10,36 @@
 ## Architecture
 
 ```text
-IDE Prompt Hook                         Foreground prompt / invoke
-      │                                             │
-      │ redact + atomic local write                 │ bounded promote/send
-      ▼                                             ▼
- telemetry/pending/  ── attribute ──>  telemetry/outbox/
-                                                 │
-                                                 ▼
-                                        bounded HTTPS Sender
-                                                 │
-                                        ┌────────┴────────┐
-                                        │                 │
-                                     CLS 2xx        timeout / non-2xx
-                                        │                 │
-                         persist ACK + notice_pending  └── keep Outbox for retry
-                         then remove Outbox (if safe)
+real user Prompt -> redact -> project-local experience-consent-v2.json
+                                    |
+                        explicit allow (never default-on)
+                                    |
+                          same first event_id -> Outbox -> HTTPS -> ACK
+future consented Prompts -> Pending -> attribute ----^
+install / Hook health --------------> independent runtime gate
 ```
 
-The Hook and Sender are intentionally separated. A Hook never starts a network
-request, DNS lookup, child process, background flush, or file watcher. It only
-normalizes and redacts host input, then performs an atomic best-effort local
-write. `invoke`, the installer, or the compatibility shim may perform a bounded
-foreground flush. The event remains in Outbox until CLS confirms delivery with
-2xx; merely starting a process or request never marks it reported. For the
-first Prompt, the project-level obligation records the fixed `event_id` and
-the ACK fact. The sender persists `acknowledged=true` (and the pending notice
-state) before removing the Outbox file. If that write fails, the event stays
-queued and the same `event_id` is retried. A duplicate HTTP request after a
-lost response is expected and is deduplicated by `event_id` at the receiving
-or analysis layer.
-
-### Durable event and notice state
-
-There is one logical event identity across the local lifecycle:
+The Hook never starts network/DNS, spawns a sender, or scans SDKAppID. It
+captures only the first redacted Prompt while consent is pending. Foreground
+rendering does not depend on CLS availability or Hooks being active.
+After explicit agreement, the held first Prompt is written to Outbox before
+its local payload is removed. A restart reuses the original event ID; Sender
+persists ACK before cleanup and retries transport failures with backoff.
+A response lost after server acceptance can still cause a physical HTTP retry;
+the receiving/analysis layer deduplicates by event_id.
 
 ```text
-staged (pending/<event_id>.json)
-  → queued (outbox/<event_id>.json)
-  → sending (sender reservation; event remains durable)
-  → acked (project obligation acknowledged=true; Outbox may then be removed)
+consent: pending -> allowed | denied
+notice:  0 -> 1 (initial) -> 2 (one reminder maximum)
+first:   held -> released | expired | discarded
 ```
 
-The notice capability is a separate project fact and never travels on the
-wire:
-
-```text
-notice: none → pending → offered → allowed | denied
-```
-
-`pending`/`outbox` files and `notice-obligation.json` are the local recovery
-source of truth. An ACK, notice update, and Outbox cleanup are atomic file
-transactions; recovery treats an ACKed event whose Outbox cleanup was
-interrupted as already delivered and never creates a new event ID.
-
-The production entry is the committed `telemetry.cjs` bundle. User machines do
-not build the Runtime and do not need Python packages, PyYAML, Runtime
-`node_modules`, MCP, or a nested `npx` command for reporting. The optional Web
-runtime-log collector is a separate module and may require Puppeteer; see
-`RUNTIME.md`.
+The single hold file is outside global Pending/Outbox, so older runtimes
+cannot drain it. Its redacted payload expires after seven days and is deleted
+on the next runtime entry; the empty record prevents a later Prompt from
+replacing the first. Other pre-consent Prompts are neither queued nor backfilled.
+The runtime is shipped as telemetry.cjs; user machines do not need a build,
+Python packages, MCP, or runtime node_modules for reporting.
 
 ---
 
@@ -76,7 +48,7 @@ runtime-log collector is a separate module and may require Puppeteer; see
 | Property | Value |
 |----------|-------|
 | Runtime | `skills/trtc/runtime/telemetry.cjs` |
-| Queue | User-level durable `telemetry/outbox/` |
+| Queue | Codex: project-local private spool; other hosts: user-level durable `telemetry/outbox/` |
 | Backend | CLS anonymous Tracklog HTTPS endpoint |
 | Invocation | Hook, installer, Dispatcher, or Python compatibility shim calls the local Node Runtime. |
 
@@ -90,6 +62,28 @@ for file or directory `fsync`, keeping the IDE request path within its latency
 budget. A sudden OS/power loss can therefore lose the newest unflushed Hook
 event; normal process exit and IDE sandbox cleanup do not. Installer,
 Dispatcher, Sender, and other non-Hook writes retain full file/directory sync.
+
+### Codex sandbox delivery
+
+New and upgraded Codex installations bind all commands to
+`<project>/.trtc-skill-state/codex-runtime` (or the existing `.trtc-reporting`
+directory). Installation transfers only that project's eligible Codex events,
+preserves event IDs and ACKs, and reuses its device identity. Other IDE queues
+remain in their original location. The V2 binding redirects cached old Hook
+commands to the same spool; runtime commands never perform the migration.
+
+With `CODEX_SANDBOX_NETWORK_DISABLED=1`, foreground commands persist locally
+without making a transport attempt or recording network backoff. A permitted
+Stop sender retries the exact events. A Stop payload need not contain `ide`:
+the installed `--ide codex` flag defines its session hash. Interrupted Pending
+turns are recovered in a bounded batch using their own attribution receipts.
+
+Local `prompt/queued` is not upload confirmation; `prompt/acknowledged`
+requires exact-event ACK evidence. Consent controls retain the frozen markers,
+and no reply, silence or settings value can create consent. No sandbox policy
+is broadened by this installation. The dedicated check is
+`npm run test:codex-sandbox`; it uses an actual macOS sandbox and local HTTPS
+receiver. This protocol check does not attest to GUI rendering.
 
 ### Local redaction boundary
 
@@ -140,13 +134,13 @@ as their single state location; the runtime never dual-writes both directories.
 Older
 `~/.cache/trtc-traces/reporting-state-<project-hash>.json` state is migrated once
 and never allowed to override the canonical project state. Experience
-reporting defaults enabled without an install-time question. Before the
+reporting requires explicit agreement without an install-time question. Before the
 installed foreground `prompt --input-stdin --require-input` path sends, the
 Root dispatcher makes a bounded local route decision. A validated
 `route_hint` (plus known `product`/`framework`) is persisted with the same
 event and used immediately; only when no reliable route exists does the event
-use `unknown`. The path durably stages and performs a bounded send before the
-model answer. The final owner `invoke` (or the post-answer Host Stop fallback)
+use `unknown`. Before agreement the path holds only the first Prompt locally. After agreement
+it stages and performs a bounded send before the model answer. The final owner `invoke` (or the post-answer Host Stop fallback)
 may enrich the same still-pending event, or retries it when the foreground send
 was not acknowledged; it never creates a second event for an already
 acknowledged Prompt.
@@ -183,174 +177,69 @@ and are never staged or uploaded.
 locally-redacted prompts and workflow results. `--no-report` persistently disables
 experience reporting, separately-consented runtime uploads, and anonymous install
 statistics. Nested packages inherit the nearest saved parent-project preference.
-`TRTC_PROMPT_REPORTING=on|off` overrides experience reporting;
+`TRTC_PROMPT_REPORTING=off` disables experience reporting; `on` still requires consent;
 `TRTC_REPORTING=on|off` is the diagnostic global override.
 
-### First-use default reporting and subsequent opt-out (C20)
+### Explicit consent and one reminder (V2)
 
-**Product mode: default-on reporting with user opt-out.** This is NOT an
-opt-in model where the user must explicitly consent before any data is sent.
+Experience sending is OFF until a durable explicit agreement is present.
+Installation / Hook activation statistics remain eligible under their separate
+runtime settings. The initial Prompt is redacted and held locally, then the
+model answers the business request and renders the exact fixed notice.
+The first unanswered business input gets one reminder after its normal answer;
+an ambiguous privacy reply is consumed and gets the reminder immediately.
+After two presentations total, silence/ambiguity leaves reporting OFF and
+ordinary business continues without further prompts. No control reply is
+uploaded, including a reply with an invalid or missing receipt.
 
-The first routed Prompt is durably staged and sent under the default-enabled
-preference by the foreground prompt command, before the model starts its
-normal answer. A confirmed CLS 2xx is persisted in the project obligation
-before the Outbox file is removed. Once that ACK fact exists, the foreground
-command returns `TRTC_REPORTING_NOTICE_REQUIRED_V1` on stdout (exactly, no
-JSON) and arms a disposable notice attempt. The owner `invoke` and optional
-Host Stop are recovery/attribution paths for the same event; they may return
-the same marker but never create another event ID. The Skill finishes the
-normal answer; the host-specific bootstrap then renders the locale-matched
-continuation notice. Codex, Cursor, and CodeBuddy render the exact notice through
-their foreground dispatcher after the normal answer; Claude uses its
-host-visible post-answer channel. If a foreground renderer is not reached,
-the marker remains pending and is replayed on the next foreground entry. No
-host waits for Stop as the first renderer, sends a new event, or requires a
-second consent transaction. Codex, Cursor, and CodeBuddy Stop remain recovery/flush
-boundaries only. The locale is
-selected from
-explicit host language metadata when available, otherwise from the first
-Prompt's script (Chinese or English), with the host locale and English as
-fallbacks. The exact generated notice must never be paraphrased. Existing
-receipts without a locale remain Chinese for backward compatibility.
+Notice delivery and consent live in the project-local
+experience-consent-v2.json file. Hook, foreground, tool fallback and Stop cannot
+each consume a presentation for the same logical user turn. Stop never claims
+a notice. CodeBuddy's visible tool fallback shares the same turn and quota.
+Foreground delivery is claimed atomically; a failed local write cannot authorize
+sending. There is no defaulted authorization state.
 
-Every foreground entry checks an acknowledged, non-terminal first-use
-obligation independently of the current Prompt result. If that Prompt is
-ambiguous or retryable, the helper may still return the same
-`TRTC_REPORTING_NOTICE_REQUIRED_V1` marker while preserving the Prompt failure
-for retry; a notice marker never turns an undelivered Prompt into success.
-The host bootstrap owns the rendering contract: Codex, Claude, Cursor, and CodeBuddy emit the
-exact generated `continuation-notice.md` block from their foreground path. No host
-may paraphrase the notice, rely on hidden Stop output, or treat the marker as
-proof that the user has already chosen allow/deny.
+A control classification is supplied by the model only when the notice is
+visible in the current conversation and the user is answering it. Natural
+agreement ("可以", "没问题") is allow; clear refusal is deny; uncertainty is
+ambiguous. Runtime requires the same project and matches reliable session IDs
+when both exist. Without a reliable session ID the model verifies the
+conversation context. The complete fixed notice, including its two labels,
+is presentation replay, not a control response. Cursor cancels its synthetic
+submission before model input.
 
-Claude Code renders the exact claimed notice after the normal answer, including
-both choices. The foreground helper returns the localized fixed text under the
-marker; the bootstrap uses `continuation-notice.md` if that text is missing.
-Its Stop Hook only recovers or flushes delivery and never claims or repeats
-the notice. Missing hooks and `stop_hook_active` callbacks therefore cannot
-suppress foreground presentation. A lost foreground response leaves the same
-notice available for one bounded recovery attempt. This does not gate the
-Prompt send: `prompt --input-stdin --require-input` still sends the first Prompt
-before the answer, and owner `invoke`/Stop use the same event.
-When a claimed Claude foreground presentation recovers an old notice in a new
-session, its receipt is atomically bound to that new anonymous session ID.
-The old session's replies remain invalid; control messages cannot rebind it.
-The user's next message is classified by the model/Host before telemetry staging.
-The model may send an explicit local `control_choice` enum only when the
-current conversation visibly contains an active privacy notice and the current
-user message is responding to it. It recognizes natural agreement such as
-“可以” and “没问题”; an exact fixed option label is not required. If a host
-does not provide a reliable session ID, the model must verify the relationship
-from the current conversation. When both the notice and current message have a
-session ID, Runtime requires them to match. Runtime does not guess intent from
-arbitrary natural-language text:
+The stdin envelope always includes text (verbatim), control_choice, cwd, ide.
+Only a valid, fresh V2 notice can change preferences. Explicit classifications
+with a missing/corrupt/expired/mismatched receipt are skipped, never staged.
+V1 default-on/unanswered/defaulted states do not count as agreement. Existing
+explicit V1 agreements remain usable. V1 refusals/global-off records are
+preserved conservatively, since their global disable provenance cannot always
+be distinguished; the upgrade never silently re-enables a channel.
 
-- `同意继续体验数据上报` — writes `continuation_choice='allowed'`; does NOT
-  override an existing global-off preference; outputs `TRTC_REPORTING_ALLOWED_V1`
-- `停止后续体验数据上报` — writes `continuation_choice='denied'`,
-  `prompt_reporting_enabled=false`, `all_reporting_disabled=true`,
-  `purge_pending=true`; outputs `TRTC_REPORTING_DISABLED_V1` (success) or
-  `TRTC_REPORTING_DISABLE_RETRY_V1` (tombstone set but purge incomplete)
-- `control_choice: "allow"` / `"deny"` — equivalent explicit enum inputs
-- `control_choice: "ambiguous"` — skips the current reply before ordinary
-  Prompt staging, enqueue, or network delivery. With a fresh, project-scoped
-  notice receipt and a matching session ID when both sides provide one, Runtime
-  persists the notice as `defaulted`; otherwise it leaves preference and notice
-  state unchanged. It returns no ALLOWED/DISABLED marker and never uploads the
-  ambiguous reply itself.
-- Any other message without an active choice context — continues as a normal
-  Prompt; defaults remain active.
+A new allow persists continuation_choice=allowed, version=2 and a private
+experience_consent_id. Queued experience events must carry that generation,
+so an old default-on backlog cannot be released by later agreement. Allow
+never overrides all_reporting_disabled or TRTC_REPORTING=off. Generic
+preference/settings/env "on" never manufactures agreement.
+A new deny persists continuation_choice=denied (version=2), disables only
+experience reporting, deletes the held Prompt and purges non-runtime queues.
+It does not set all_reporting_disabled or create a global deny tombstone.
+Explicit preference --enabled off --scope all / --no-report disables both.
 
-`defaulted` is an internal terminal notice state, not a public marker. It does
-not change the default-on Prompt reporting preference; later ordinary Prompts
-continue through the normal path. If the single authoritative
-`notice-v1.json` cannot be updated, Runtime records a bounded retry on that same
-receipt and retries on a later foreground entry without blocking a later
-ordinary Prompt. It never creates a second fallback state file. A persistent
-filesystem failure may leave the notice awaiting recovery after a process
-restart; the current ambiguous reply still does not enter the telemetry queue.
+| Frozen stdout marker | Meaning |
+|---|---|
+| TRTC_REPORTING_NOTICE_REQUIRED_V1 | Render fixed notice (initial or sole reminder) |
+| TRTC_REPORTING_ALLOWED_V1 | Explicit agreement durably persisted |
+| TRTC_REPORTING_DISABLED_V1 | Experience refusal durably persisted |
+| TRTC_REPORTING_ALLOW_RETRY_V1 / TRTC_REPORTING_DISABLE_RETRY_V1 | Choice write failed; never claim success |
+| TRTC_REPORTING_CHOICE_RETRY_V1 | Control state unavailable |
 
-The two canonical Chinese labels remain valid control aliases for backward
-compatibility. A localized notice also accepts its localized option labels. All
-labels are control messages only when the current project has a valid
-notice/receipt for the same reporting flow (and, where available, the same
-session/attempt). Without that receipt, an identical phrase is ordinary user
-input and follows the normal Prompt path; it must not change preferences or
-globally disable reporting. This prevents a common onboarding reply from being
-swallowed when it was not an answer to the reporting notice.
-
-When a Hook sees either fixed option, it only performs a bounded receipt check
-and returns control-in-progress; it does not acquire preference/control locks
-or perform durable writes. The following foreground shim replays the same
-option and completes the durable preference, control receipt, and (for deny)
-queue cleanup. This keeps both options within the Hook latency budget.
-
-These localized labels, plus the two canonical Chinese aliases, are the
-project-level control commands and must match verbatim (leading/trailing
-whitespace and trailing punctuation allowed). When
-an applicable notice/receipt is present, they are intercepted before ordinary
-Prompt staging and are never staged, queued, or uploaded. Without that
-receipt, they remain ordinary Prompt text.
-
-**Frozen control markers** (exact stdout, no JSON, no trailing content):
-
-| Marker | Meaning |
-|--------|---------|
-| `TRTC_REPORTING_NOTICE_REQUIRED_V1` | Notice must be shown after answer |
-| `TRTC_REPORTING_ALLOWED_V1` | `allowed` preference persisted |
-| `TRTC_REPORTING_ALLOW_RETRY_V1` | Preference write failed; ask user to retry |
-| `TRTC_REPORTING_CHOICE_RETRY_V1` | Control state unreadable; ask user to retry |
-| `TRTC_REPORTING_DISABLED_V1` | All reporting durably disabled; global cleanup may be deferred when the foreground sandbox cannot write it |
-| `TRTC_REPORTING_DISABLE_RETRY_V1` | Tombstone set; preference/purge incomplete |
-
-**Kill switch:** when a deny tombstone exists at
-`<stateRoot>/telemetry/control/<project_key>/deny-v1.tombstone`, the Sender
-final gate refuses any transport regardless of preference file state. The
-tombstone blocks producers and Sender independently of preference state. A
-durable project preference with `continuation_choice='denied'` and
-`all_reporting_disabled=true` also blocks every reporting scope, including
-Sender's final network gate, even when the foreground sandbox cannot write the
-global control directory. A fresh valid project notice and a confirmed refusal
-are required for this local fallback. It returns `DISABLED` with local-only
-`cleanup_pending:true`; the next permitted invoke/Stop purges the queues. A
-global control write failure must not ask the user to make the same choice again.
-
-Codex's ambient `CODEX_THREAD_ID` is a local correlation hint, not reliable
-conversation identity for a privacy reply. Only explicit host session fields
-participate in strict receipt matching. Without them, the model must confirm
-that the user is replying to the notice visible in the current conversation.
-An explicitly supplied session mismatch still cannot change preferences.
-
-If the host captures the first Prompt but its model request fails before the
-foreground helper runs, a later foreground send recovers that original event
-from the project's first-event obligation. Recovery uses the exact event ID,
-its original attribution, the same project/IDE, and the remaining foreground
-deadline. Only its actual ACK unlocks the privacy notice; a newer Prompt's ACK
-does not substitute for it. A notice visibly recovered in a new CodeBuddy
-session is rebound to that presentation session before accepting its reply.
-
-**What the first event contains** (and what it does NOT contain):
-
-| Allowed | Forbidden |
-|---------|-----------|
-| Redacted prompt text | SecretKey / UserSig / Token / private key |
-| Unique high-confidence TRTC SDKAppID (if resolved) | SDKAppID conflict candidates or Resolver debug context |
-| product / platform / framework / skill_id | Project source, file paths, code snippets |
-| event_id / anonymous useragent / session-anon ID / version / IDE | User's option text (allow or deny reply) |
-
-`sdkappid` is omitted entirely (not `sdkappid: 0`) when unresolved, ambiguous,
-or conflicting.
-
-**What does NOT change:**
-
-- The install phase does not add new install-time questions;
-- `--no-report` and `TRTC_REPORTING=off` retain the highest priority;
-- `continuation_choice='denied'` and `all_reporting_disabled=true` cannot be
-  overridden by `TRTC_REPORTING=on` — explicit restore requires a dedicated
-  preference command;
-- The first event is never retracted even after a deny choice;
-- The installer must not overwrite an existing `continuation_choice`;
-- `notice` fields, tombstone state, and control markers never enter CLS wire.
+All four IDEs retain foreground rendering after the business answer. Claude,
+Cursor and Codex Stop remain silent; CodeBuddy's visible fallback shares the
+project-local quota. The notice JSON generates the JS/MD projections.
+No consent fields, local authorization IDs, receipt state, or new CLS fields
+are added to the wire. SDKAppID business setup remains available before consent;
+telemetry resolution/capture is gated until agreement.
 
 ### Install reporting payload
 
@@ -424,8 +313,8 @@ stays stdout/stderr-silent for ordinary Prompts, binds local state to the curren
 IDE conversation, and stages the locally-redacted Prompt for post-route attribution.
 Cursor renders the notice as a separate fixed block at the end of the normal
 answer. Its Stop hook never emits `followup_message` or consumes foreground
-presentation attempts; a recovery ACK keeps `pending_output` for the next
-foreground entry. The Python command returns the localized canonical text
+presentation attempts. An unanswered real user turn can claim the one
+remaining reminder. The Python command returns the localized canonical text
 alongside its marker, claiming at most two presentation attempts on the same
 receipt. The notice never enters the composer or creates a synthetic user turn.
 Legacy complete fixed notice replay remains a presentation exception: before any
@@ -662,7 +551,7 @@ python3 "<current trtc skill root>/tools/reporting.py" invoke \
 
 Do not interpolate raw prompt text into shell JSON or command arguments. With
 `--require-input`, the first command emits no ordinary stdout but performs a
-bounded local-to-Outbox-to-CLS attempt before returning; its stdout is reserved
+bounded local capture (and, only after explicit consent, a send attempt); its stdout is reserved
 for the frozen C20 control markers. An empty or malformed foreground pipe fails
 non-zero, so the dispatcher must retry with the same JSON instead of treating a
 missing Prompt as success. Without `--require-input`, the compatibility path
@@ -730,3 +619,16 @@ python3 "<current trtc skill root>/tools/reporting.py" send \
   the old MCP path, and neither case produces a dual Prompt chain.
 - [ ] Commit only the C19 files, push the revision, and record
   candidate/bundle/source hashes before the final four-IDE smoke test.
+
+### Release contract checks
+
+The reporting model is opt-in: explicit agreement is required before any
+experience upload. The install phase does not add new install-time questions.
+An unresolved sdkappid is omitted entirely; zero is never a sentinel. Notice
+text, tombstones and control markers never enter CLS wire.
+
+Consented events use `telemetry/pending/` then `telemetry/outbox/` with a bounded
+foreground flush. Only CLS 2xx is treated as delivery; the ACK is persisted
+before cleanup. Declining before consent discards the held first Prompt.
+
+The V2 choices are **同意上报** and **关闭上报** (English: **Share data** and **Don’t share**). Earlier V2 labels remain compatible for replies to a valid active notice.

@@ -1,3 +1,10 @@
+---
+doc_source:
+  - faq-ios-receipt
+  - faq-common-stats-delay
+doc_revision: c20d1a39
+---
+
 # iOS 触达统计与 Notification Service Extension
 
 ## 与 MCP 的关系

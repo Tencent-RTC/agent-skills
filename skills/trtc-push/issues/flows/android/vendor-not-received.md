@@ -1,3 +1,14 @@
+---
+doc_source:
+  - ts-chain-vendor
+  - faq-android-xiaomi-vivo-store
+  - faq-android-xiaomi-errors
+  - faq-android-vivo-10302
+  - faq-android-vivo-10096
+  - faq-android-oppo
+doc_revision: cd1ea0a7
+---
+
 # Android 厂商通道收不到排查流程
 
 ## 与 MCP 的关系
@@ -34,8 +45,8 @@ App 杀死后、或厂商系统限制。
 1. **校验提醒**：控制台厂商通道证书已配置且在有效期内（`console-validity-gate.md`；MCP stage-1）。
 2. **校验提醒**（主链第 3 步）：包名与厂商控制台一致；华为 / 荣耀需 SHA-256 证书指纹一致；
    `google-services.json` / `agconnect-services.json` 放对位置。
-3. **校验提醒**：厂商后台是否已通过应用审核、是否误传「未发布草稿」。
-4. **观测**：`registerPush` 成功日志中是否出现对应厂商通道成功回调。
+3. **校验提醒**：小米 / vivo 等部分厂商要求应用已上架对应应用市场，未上架时厂商可能拒绝下发。
+4. **观测**：构建日志显示厂商配置文件被读取（如 `Using the AGConnect-Config file: ...`），且 `registerPush success`、RegistrationID 非空。
 5. **校验提醒**：厂商限制规则（小米单日额度、vivo 夜间免打扰、OPPO 通知栏权限等）。
 6. **观测**：设备通知开关与通道开关；分应用通知权限。
 7. **观测**：杀进程后的离线消息：部分厂商通道对强制停止有限制。
@@ -46,9 +57,10 @@ App 杀死后、或厂商系统限制。
 |---|---|---|
 | 控制台有效性 | 服务/厂商证未配置或失效 | `../../cards/common/console-validity-gate.md` |
 | 华为 | `6003` / AGConnect / SHA-256 | `../../cards/android/vendor-huawei.md` |
-| 荣耀 | 包名 / 签名 / 通道状态 | `../../cards/android/vendor-honor.md` |
+| 荣耀 | 包名 / 签名 / 通道状态 | `../../cards/android/vendor-huawei.md`（含荣耀 MCS 配置；厂商配置指南可用 MCP `fetch_vendor_setup_guide { vendor: "honor" }`） |
 | FCM | 海外 / GMS / `FCM unavailable` | `../../cards/android/fcm-gms-domestic.md` |
 | 厂商限额 | 单日上限 / 夜间 | `../../cards/android/message-category-limit.md` |
+| 厂商下发错误码 | 小米 `10016` / `10041` / `200001`；vivo `10302` / `10096` / `10097`；OPPO `67`（`private classify channel need permission`） | 前两者 `../../cards/android/error-codes.md`；OPPO 67 为 link-only（官网《排查流程》「提交厂商通道」：没有私信 / 通讯与服务通道权限，不要继续填私信分类，到 OPPO 开放平台确认权益）；排查工具「报错信息」里可看厂商错误码和解决方案 |
 | 强杀不达 | 仅杀死后异常 | `../../cards/android/kill-process-offline.md` |
 | 已送达不展示 | 回执成功不弹 | `delivered-not-displayed.md` |
 | 注册侧错误码 | `800xxx` | `../../cards/android/error-codes.md` + `register-failed.md` |
@@ -68,7 +80,7 @@ App 杀死后、或厂商系统限制。
 ## 常见错误
 
 - 未配厂商后台应用信息就调客户端。
-- 包名大小写、空格、测试包名与线上不一致。
+- 测试包名与线上包名、厂商控制台包名不完全一致（官网要求完全一致）。
 - 华为 / 荣耀忘记 SHA-256 指纹。
 - 忽视厂商单日消息量限制与静默时段。
 - 用模拟器验证厂商通道全链路。

@@ -8,7 +8,7 @@ description: >
   files and analyzes only user-provided or workspace-local artifacts; it does
   not access devices or external sandboxes automatically.
 metadata:
-  version: "1.1.2"
+  version: "1.1.3"
   tags: "trtc, sdk-log, troubleshooting, offline-analysis"
 ---
 

@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-android-xiaomi-vivo-store
+doc_revision: e9089512
+---
+
 # 小米 / vivo 上架与通道限制
 
 ## 与 MCP 的关系

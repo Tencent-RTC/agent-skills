@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-ios-click-ext
+doc_revision: 510607fc
+---
+
 # iOS 点击通知无跳转 / ext 为空 / 回调异常
 
 ## 与 MCP 的关系

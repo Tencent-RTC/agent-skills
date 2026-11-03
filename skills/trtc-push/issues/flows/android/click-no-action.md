@@ -1,3 +1,11 @@
+---
+doc_source:
+  - faq-android-click-jump
+  - faq-flutter-click
+  - faq-flutter-callkit
+doc_revision: 65a5e48c
+---
+
 # Android 通知点击无跳转排查流程
 
 ## 与 MCP 的关系
@@ -30,7 +38,7 @@
 ## 排查顺序
 
 0. 确认能收到且展示通知。
-1. 控制台点击后续动作与跳转参数。
+1. 控制台点击后续动作选「打开应用内指定界面」，且插件默认填写的跳转参数没有被改过。
 2. 点击回调注册时机（Application 靠前）。
 3. 厂商拉活权限（自启动 / 悬浮窗 / 后台弹出）。
 4. 冷启动复测。
@@ -41,8 +49,9 @@
 | 分支 | 判断信号 | 处理动作 |
 |---|---|---|
 | 未实现点击回调 | 无 listener / 无日志 | 按 card 实现回调并导航 |
-| ext / Intent 不一致 | 控制台字段与路由表不符 | 对齐字段与 intent-filter |
-| Flutter 桥接 | Dart 未接 `onNotificationClicked` | Flutter flow + card |
+| 控制台点击配置被改 | 「点击后续动作」未选「打开应用内指定界面」，或应用内指定界面不是插件默认值 | 改回「打开应用内指定界面」并恢复插件默认跳转参数（官网《点击通知后无法跳转，如何排查？》） |
+| Flutter 点击回调不触发 | `onNotificationClicked` 不触发 | 依次核对：厂商证书 / 配置文件 / 注册结果；控制台点击后续动作选「打开应用内指定页面」；应用内指定界面恢复插件默认路径；原生混合开发使用多进程时，在负责推送的原生进程统一注册点击回调，避免重复或遗漏 |
+| Flutter TUICallKit 点击通话通知不跳转 | TUICallKit + TIMPush，切后台收到通话邀请，点击通知不进通话界面 | 控制台点击后续动作选「打开应用内指定页面」并用默认值；在 `onNotificationClicked` 回调内增加自动登录逻辑，保持打开应用后登录态 |
 | 实际未展示 | 用户误报为点击问题 | `delivered-not-displayed.md` |
 | 鸿蒙点击崩溃 | OHMUrl | `../harmonyos/offline-not-received.md` / ohmurl card |
 

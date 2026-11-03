@@ -1,3 +1,11 @@
+---
+doc_source:
+  - faq-ios-token-mismatch
+  - faq-ios-bad-devicetoken
+  - faq-ios-cert-expired
+doc_revision: 0f1139b3
+---
+
 # iOS 证书 ID / businessID 配置失效
 
 ## 与 MCP 的关系
@@ -46,6 +54,9 @@ iOS 离线推送依赖客户端上报的 APNs token 和当前腾讯云应用下�
 3. 核对 Bundle ID：APNs 证书绑定的 Bundle ID 必须与 App 实际 Bundle ID 一致。
 4. 核对 `timpush-configs.json`：证书编号 / `businessID` 必须来自当前控制台证书。
 5. 核对 APNs 环境：开发包、Release 包、Sandbox / Production 证书不能混用。
+   - 开发环境（Xcode 直接运行）：证书 ID 由 Debug 设置配置；生产环境（打包 ipa）：由 release 设置配置。常见错误是把生产证书上传到开发环境。
+   - 后台报 `bad devicetoken`：生产环境证书类型应为 Apple Push Notification service SSL (Sandbox & Production)，并 Archive 出 Release 包测试，不可在 Xcode 里测；开发环境证书可使用 Xcode 直接运行 Debug 包测试。
+   - p12 可选开发/生产一体的证书，或使用 p8；上传到控制台时选择想要的环境。
 6. 如果用户删除重建过证书，确认旧包是否写死旧证书 ID；必要时评估后端恢复映射或发版
    更新配置。
 7. 如证书链路正确，再进入 `../../flows/ios/offline-not-received.md` 继续排查 token、权限、

@@ -1,3 +1,10 @@
+---
+doc_source:
+  - faq-other-uniapp
+  - faq-android-click-jump
+doc_revision: e908c7fa
+---
+
 # UniApp 推送集成排查流程
 
 ## 与 MCP 的关系
@@ -9,6 +16,7 @@ uni-app「收不到 / 注册失败」排障由 **MCP `troubleshoot-uniapp`** 状
 | `stage-0-investigation-plan` | 排查计划确认（开场闸口） |
 | `stage-1-console-validity` | 控制台有效性（服务 + 目标端证书） |
 | `stage-2-scenario` | 测法与形态（collect：基座、编译/运行期） |
+| `stage-2b-online-check` | 在线分支（stage-2 选在线通道时进入；不涉及厂商证书与 token 绑定） |
 | `stage-3-config-alignment` | 配置对齐（verify：原生 + nativeResources） |
 | `stage-4-register-observation` | registerPush 观测 |
 | `stage-5-token-binding` | 推送 token 绑定 |
@@ -21,12 +29,13 @@ uni-app「收不到 / 注册失败」排障由 **MCP `troubleshoot-uniapp`** 状
 
 | 分支 | 判断信号 | 处理动作 |
 |---|---|---|
+| 在线通道收不到 | App 在前台才收不到通知，或 `onRecvPushMessage` 不触发 | MCP stage-2 选 `channel_path=online` → `stage-2b-online-check`；知识见 `../../cards/common/online-not-received.md` |
 | 控制台无效 | 插件未开/到期、证书无效 | `../../cards/common/console-validity-gate.md`；MCP stage-1 |
 | 基座 / 路径 / config.json | 打包或配置层 | MCP stage-3 + 原生 flow |
 | Android 厂商 | 某品牌收不到 | `../android/vendor-not-received.md` + `troubleshoot-android` |
 | Android 收不到通用 | 场景不清 | `../android/offline-not-received.md` |
 | Android 错误码 | registerPush fail | `../../cards/android/error-codes.md` |
-| Android 已送达不弹 | 后台点击恢复 | `../android/delivered-not-displayed.md` |
+| Android 已送达不弹 | 已送达但没看到通知 | `../android/delivered-not-displayed.md` |
 | Android 点击无跳转 | 能收不跳 | `../android/click-no-action.md` |
 | Android 强杀不达 | 强制停止后 | `../../cards/android/kill-process-offline.md` |
 | FCM | 海外设备 / `FCM unavailable` | `../../cards/android/fcm-gms-domestic.md` |
@@ -37,7 +46,7 @@ uni-app「收不到 / 注册失败」排障由 **MCP `troubleshoot-uniapp`** 状
 
 - MCP stage-1 / stage-3 通过。
 - registerPush 成功；能查到已绑定推送 token。
-- 自定义基座 + 后台/杀进程离线测试可达或回执可解释。
+- Android / iOS：自定义基座（标准基座不含推送原生能力）+ 后台/杀进程离线测试可达或回执可解释；Harmony 不需要自定义基座。
 
 ## 何时升级 / 转交
 

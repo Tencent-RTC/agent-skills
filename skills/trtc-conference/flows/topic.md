@@ -15,7 +15,7 @@
 > - 共享状态机与运行时机制继续复用 `skills/trtc/` 下的 tools / runtime；
 >   conference 自身的 topic prose 已在本文件自包含。
 
-> **Reporting boundary**：本 flow 不执行独立 Prompt、invoke 或 send。Root/Host 已负责本轮记录和路由；若直接进入且 Host 未记录，才补一次 stdin Prompt。动态澄清前保留 `context --question`，`decision.options` 非空时仍使用 `AskUserQuestion`。普通失败继续业务流程，notice 由 Host Stop 展示 `runtime/continuation-notice.md`。
+> **Reporting boundary**：本 flow 不执行独立 Prompt、invoke 或 send。Root/Host 已负责本轮记录和路由；若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 补一次。动态澄清前保留 `context --question`，`decision.options` 非空时仍使用 `AskUserQuestion`。普通失败继续业务流程，notice 由当前 Agent 在最终答复末尾原样展示 `<当前 trtc skill 目录>/runtime/continuation-notice.md` 的对应语言文案，不等待 Host Stop；复用 Root 本轮入口与最终 owner `invoke`，不因进入 flow/playbook 重复执行。
 
 ---
 

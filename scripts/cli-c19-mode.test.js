@@ -534,6 +534,7 @@ test("C19 Runtime: Root self-invoke is a hard no-op and preserves Pending", asyn
   const state = path.join(project, ".runtime-state");
   mode.writeInstallMarker(project, "node_v2", { installerVersion: "test" });
   const runtime = await import("../skills/trtc/runtime/telemetry.js");
+  await (await import('../tests/reporting-v2/helpers/consent-fixture.js')).grantExperienceConsent(project);
   try {
     await runRuntimeHook(runtime, project, state);
     const before = (await import("../skills/trtc/runtime/outbox.js")).listPending(state);
@@ -592,6 +593,7 @@ test("C19 Runtime: complete node_v2 marker still permits Node Prompt staging", a
   const state = path.join(project, ".runtime-state");
   mode.writeInstallMarker(project, "node_v2", { installerVersion: "test" });
   const runtime = await import("../skills/trtc/runtime/telemetry.js");
+  await (await import('../tests/reporting-v2/helpers/consent-fixture.js')).grantExperienceConsent(project);
   try {
     assert.deepEqual(await runRuntimeHook(runtime, project, state), {});
     assert.equal((await import("../skills/trtc/runtime/outbox.js")).listPending(state).length, 1);
@@ -610,6 +612,7 @@ test("C19 Runtime: Hook uses its --ide target when marker contains mixed IDE mod
   mode.writeInstallMarker(project, "legacy_mcp", { installerVersion: "test", ides: ["claude"] });
   mode.writeInstallMarker(project, "node_v2", { installerVersion: "test", ides: ["codex"] });
   const runtime = await import("../skills/trtc/runtime/telemetry.js");
+  await (await import('../tests/reporting-v2/helpers/consent-fixture.js')).grantExperienceConsent(project);
   try {
     const result = await runRuntimeHook(runtime, project, state, "codex");
     assert.deepEqual(result, {});

@@ -117,8 +117,8 @@ test('real Python CodeBuddy recovers an abandoned first Hook and shares one boun
     };
     const key = projectKey(project);
     // The host captured this Prompt but its model request failed before the
-    // foreground helper ran. A later real Python call must send this exact
-    // event as well as its current Prompt and unlock the first-use notice.
+    // foreground helper ran. A later real Python call displays the notice;
+    // explicit consent releases only that held first event, not intervening turns.
     await runCli(['hook', '--ide', 'codebuddy'], {
       cwd: project, stateRoot: state, env,
       deadlineMono: require('node:perf_hooks').performance.now() + 1000,
@@ -126,7 +126,7 @@ test('real Python CodeBuddy recovers an abandoned first Hook and shares one boun
         cwd: project, session_id: 'codebuddy-python-notice-session' })]),
     });
     const noticeSpec = JSON.parse(readFileSync(join(repo, 'skills/trtc/runtime/continuation-notice.json'), 'utf8'));
-    let noticeAttempt;
+    let firstEventId;
     for (let turn = 1; turn <= 3; turn += 1) {
       const result = await runPythonPrompt(script, project, env, {
         text: turn === 2 ? '请继续集成聊天功能' : `CodeBuddy Python foreground prompt ${turn}`,
@@ -142,17 +142,18 @@ test('real Python CodeBuddy recovers an abandoned first Hook and shares one boun
         ? `TRTC_REPORTING_NOTICE_REQUIRED_V1\n${localized.body}\n\n**${localized.allow_label}**　　**${localized.deny_label}**\n`
         : '';
       assert.equal(result.stdout.replace(/\r\n/g, '\n'), expected, `turn ${turn}: ${JSON.stringify(result)}`);
-      const receipt = readNoticeReceipt(state, key);
+      const receipt = (await import('../skills/trtc/runtime/consent.js')).readConsentState(project, key);
       assert.equal(receipt.status, 'valid');
-      assert.equal(receipt.value.foreground_attempts, Math.min(turn, 2),
+      assert.equal(receipt.value.notice_count, Math.min(turn, 2),
         'stage and invoke must not each consume an attempt for the same foreground turn');
-      assert.equal(receipt.value.status, 'awaiting_choice');
+      assert.equal(receipt.value.first_status, 'held');
       assert.equal(receipt.value.notice_locale, turn === 1 ? 'en-US' : 'zh-CN',
         'recovery language changes on the same receipt, but exhausted prompts do not rewrite it');
-      noticeAttempt ||= receipt.value.notice_attempt_id;
-      assert.equal(receipt.value.notice_attempt_id, noticeAttempt, 'recovery must retain the same notice');
-      assert.equal(requests.filter((event) => event.method === 'prompt').length, turn + 1,
-        'each real Prompt must reach the mock endpoint once without a Stop Hook');
+      firstEventId ||= receipt.value.first_event.event_id;
+      assert.equal(receipt.value.first_event.event_id, firstEventId, 'reminders retain the same held first event');
+      assert.match(receipt.value.notice_attempt_id, /^[a-f0-9]{32}$/);
+      assert.equal(requests.filter((event) => event.method === 'prompt').length, 0,
+        'no pre-consent Prompt reaches the endpoint');
     }
 
     const allowed = await runPythonPrompt(script, project, env, {
@@ -161,7 +162,7 @@ test('real Python CodeBuddy recovers an abandoned first Hook and shares one boun
     });
     assert.equal(allowed.status, 0, JSON.stringify(allowed));
     assert.equal(allowed.stdout.trim(), 'TRTC_REPORTING_ALLOWED_V1', JSON.stringify(allowed));
-    assert.equal(requests.filter((event) => event.method === 'prompt').length, 4,
+    assert.equal(requests.filter((event) => event.method === 'prompt').length, 1,
       'privacy choices must not become Prompt events');
 
     const next = await runPythonPrompt(script, project, env, {
@@ -172,10 +173,10 @@ test('real Python CodeBuddy recovers an abandoned first Hook and shares one boun
     assert.equal(next.status, 0, JSON.stringify(next));
     assert.equal(next.stdout.trim(), '', JSON.stringify(next));
     const prompts = requests.filter((event) => event.method === 'prompt');
-    assert.equal(prompts.length, 5);
-    assert.equal(new Set(prompts.map((event) => event.event_id)).size, 5,
+    assert.equal(prompts.length, 2);
+    assert.equal(new Set(prompts.map((event) => event.event_id)).size, 2,
       'the two Python phases must send only one logical event per ordinary Prompt');
-    assert.equal(readNoticeReceipt(state, key).value.status, 'allowed');
+    assert.equal((await import('../skills/trtc/runtime/preference.js')).isReportingEnabled(project, {}), true);
   } finally {
     await new Promise((resolveClose) => server.close(resolveClose));
     rmSync(base, { recursive: true, force: true });

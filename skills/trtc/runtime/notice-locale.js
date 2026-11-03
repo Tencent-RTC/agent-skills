@@ -75,14 +75,24 @@ export function isNoticeReplayText(text) {
   // Hosts may normalize line endings or wrap the fixed notice in the composer.
   // Match the complete localized projection, ignoring presentation whitespace
   // only; an option label, excerpt, or additional user reply is not a replay.
-  const normalized = text.replace(/\s/gu, '');
-  return SUPPORTED_NOTICE_LOCALES.some((locale) =>
-    normalized === noticeTextForLocale(locale).replace(/\s/gu, ''));
+  // Compare both Markdown and rendered text: hosts may remove emphasis and
+  // bullet markers when copying a visible notice into an input envelope.
+  const presentation = (value) => value.replace(/\*\*/g, '')
+    .replace(/(^|\s)[-*]\s+/g, '$1').replace(/\s/gu, '');
+  const normalized = presentation(text);
+  return [...SUPPORTED_NOTICE_LOCALES.map(noticeTextForLocale), ...(noticeSpec.legacy_replay_texts || [])]
+    .some((body) => normalized === presentation(body));
 }
 
 export function choiceFromLocalizedText(text) {
   if (typeof text !== 'string') return null;
   const normalized = text.trim().replace(/[。.!！?？\s]+$/u, '');
+  // Old labels are accepted only after the caller verifies a live V2 notice.
+  if (['同意继续体验数据上报', 'Agree and continue experience data collection',
+    '同意体验数据上报', 'Agree to experience data reporting',
+    '上报提示词，帮助优化 Skill', 'Share prompts to improve the Skill', 'Allow reporting'].includes(normalized)) return 'allowed';
+  if (['停止后续体验数据上报', 'Stop future experience data collection',
+    '不同意体验数据上报', 'Decline experience data reporting', 'Turn off reporting', "Don't share"].includes(normalized)) return 'denied';
   for (const locale of SUPPORTED_NOTICE_LOCALES) {
     const notice = noticeForLocale(locale);
     if (normalized === notice.allow_label) return 'allowed';

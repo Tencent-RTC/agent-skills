@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-common-regid-not-exist
+doc_revision: ac248607
+---
+
 # RegistrationID / UserID 设备绑定问题
 
 ## 与 MCP 的关系

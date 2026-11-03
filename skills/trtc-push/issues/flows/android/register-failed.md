@@ -1,3 +1,12 @@
+---
+doc_source:
+  - ts-chain-register
+  - faq-android-800005
+  - faq-android-huawei-register
+  - faq-android-fcm-no-receive
+doc_revision: 83bf36d9
+---
+
 # Android registerPush 注册失败排查流程
 
 ## 与 MCP 的关系
@@ -30,7 +39,7 @@
 
 1. 主链 stage-1：控制台有效性（服务 + 厂商证），参见上方首轮证据。
 2. 主链 stage-3：配置校验提醒（厂商证 / configs / 包名指纹）；失败含「certificate fingerprint」「6003」先核 SHA256。
-3. 若报错属 `800005` 家族（Tencent 或厂商标识非法），走 `error-codes.md`。
+3. 若报错为 `800005` / `800006` / `800008`（依次为：本机通道注册失败 / 本机通道失败后 FCM 兜底也失败 / 注册超时），走 `error-codes.md`；`800006` 先排查本机厂商通道，再排查 FCM 兜底。
 4. 若指向 FCM 或 Google 服务，先排除 GMS / 网络 / Firebase 配置。
 5. 仍失败再比对 demo 与集成文档；若主链 stage-7 仍无法定位，再抓 IM SDK xlog（不要一上来就要）：**复现 → 重启应用 → 再登录 IM → 导出 *.xlog**，调用 MCP `get_imsdk_log_guide` / `decode_imsdk_xlog` / `analyze_imsdk_push_log`。
 
@@ -41,9 +50,8 @@
 | 错误码已明确                                        | `800xxx` / `6003` 等       | `../../cards/android/error-codes.md`                                               |
 | `timpush-configs` 或 `google-services.json` 错误 | 与控制台元数据不一致                | 核对控制台 + `vendor-not-received.md`                                                   |
 | SHA-256 不一致                                   | `certificate fingerprint` | 用 `compute_signing_sha256` 对齐厂商控制台                                                 |
-| `MissingWebViewPackageException`              | 无 WebView                 | 恢复 WebView 后再验证                                                                    |
-| 华为 / 荣耀                                       | AGConnect / 包名 / 指纹       | `../../cards/android/vendor-huawei.md` / `vendor-honor.md`                         |
-| FCM                                           | GMS / 防火墙 / 订阅            | `../../cards/android/fcm-gms-domestic.md`                                          |
+| 华为 / 荣耀                                       | AGConnect / 包名 / 指纹       | `../../cards/android/vendor-huawei.md`（含荣耀 MCS 配置）                          |
+| FCM                                           | 控制台 FCM 证书未正确上传；GMS 是否可用（国内多数设备没有 GMS）；网络防火墙是否放行 TCP 5228 / 5229 / 5230 / 443 | `../../cards/android/fcm-gms-domestic.md`                                          |
 | uni-app / 鸿蒙特殊                                | 非标准 Android               | `../cross-platform/uniapp-integration.md` 或 `../harmonyos/offline-not-received.md` |
 
 ## 验证信号
@@ -60,7 +68,6 @@
 
 - 仅凭「注册失败」四个字排查而不抓错误码。
 - 忽略「先过控制台有效性 + 配置校验」而直接怀疑代码。
-- 把 FCM 网络问题当成腾讯云侧必现 bug。
 - 在华为 / 荣耀上漏配 SHA-256 或错放 `agconnect-services.json`。
 - 用旧 `timpush-configs.json` 适配新 App。
 

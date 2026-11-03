@@ -72,7 +72,7 @@
 - **凭据落点**：
   - Android：`local.properties`（不变）。
   - Dart（registerPush 所用）：`lib/tim_push_credentials.dart`（gitignore）+ `lib/tim_push_credentials.example.dart`（提交，`YOUR_*`）。
-  - iOS 原生：若需落 Chat 凭据且工程内未发现 → `ios/Runner/ChatCredentials.swift`（+ example + gitignore）；已发现则**不改**。**禁止** `timpush.local.xcconfig` / 主 Info.plist 存机密；**不要**调用 `apply_local_xcconfig`。
+  - iOS 原生：若需落 Chat 凭据且工程内未发现 → `ios/Runner/ChatCredentials.swift`（+ example + gitignore）；已发现则**不改**。**禁止**把 AppKey / SecretKey 写入主 `Info.plist` 或 `.xcconfig`。
   - 用户给真值则写入；跳过则占位并明确提示路径。
 - `registerPush` **禁止**写在 `main`；通知点击用 `addPushListener`，不要依赖即将废弃的 `onNotificationClicked` 业务逻辑。
 - registerPush `code==0` 后**必须** `getRegistrationID` 并用 `debugPrint` 打出 `registrationID=`（`registration_id_logged=true`）；只验证非空不够。
@@ -94,7 +94,7 @@
 - **凭据落点（禁止 xcconfig）**：
   - Push SDKAppID / AppKey：`push_credentials.js`（或 `.ts`，gitignore）+ `push_credentials.example.js`（提交）。
   - Chat：若 detect 已发现凭据 → **不改**；需要且未发现 → `chat_credentials.js`（+ example + gitignore）。
-  - **禁止** `timpush.local.xcconfig` / 新建 `Config.xcconfig` 存机密；**不要**调用 `apply_local_xcconfig`；不要把 AppKey 写入 Info.plist。
+  - **禁止**把 AppKey / SecretKey 写入主 `Info.plist` 或 `.xcconfig`。
 - HBuilderX **避开 4.64 / 4.65**；TencentCloud-Push 建议 1.1.0+。
 - registerPush 成功后**必须**再调 `getRegistrationID`，并用 `console.log('registrationID=' + ...)` 打印（`registration_id_logged=true`）；只打成功回调不够。
 - 目标端用 `route_key` 经 `success_routes` 跳过未选端（如 `android_only` 跳过 stage-5 ios-configs）。
@@ -150,7 +150,7 @@
 - 客户端注册必须使用**客户端密钥**；服务端密钥用于 REST 下发，混用即配置错误。
 - `registerPush` 成功后必须拿到非空 RegID / token；云真机不支持，必须本地真机验证。
 - 发送回执 `80300002` 是服务端下发无权限（`cards/android/error-codes.md` 80300002 节），勿当作鸿蒙客户端注册失败。
-- Flutter 鸿蒙 Push 当前为产品缺口：直接告知用户并走原生混合接入，不要在 Flutter 插件层反复尝试。
+- Flutter / uni-app 接入鸿蒙：官网接入页均有 HarmonyOS 页签（Flutter 需用 Flutter-OH 构建并按页内 `dependency_overrides` 配置；uni-app 的 Harmony 不需要自定义基座），按接入页核对，不要直接告知「不支持」。
 
 ---
 

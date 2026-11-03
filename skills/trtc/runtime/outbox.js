@@ -50,6 +50,7 @@ import {
 import { join, basename, dirname } from 'node:path';
 
 import { isPidAlive } from './identity.js';
+import { isRuntimeEvent } from './event-scope.js';
 import { performance } from 'node:perf_hooks';
 import {
   listActiveProducerLeases,
@@ -879,7 +880,7 @@ export function purgeProjectPromptEvents(root, targetProjectKey, opts = {}) {
   const result = { removed: 0, busy: 0, skipped: 0 };
   for (const path of [...listPending(root), ...listOutbox(root), ...listRejected(root)]) {
     const event = readEvent(path);
-    if (!event || event.method !== 'prompt' || event.__project_key !== targetProjectKey) {
+    if (!event || (opts.experience ? isRuntimeEvent(event) : event.method !== 'prompt') || event.__project_key !== targetProjectKey) {
       result.skipped++;
       continue;
     }
@@ -893,7 +894,7 @@ export function purgeProjectPromptEvents(root, targetProjectKey, opts = {}) {
     if (!lock) { result.busy++; continue; }
     try {
       const current = readEvent(path);
-      if (current && current.method === 'prompt' && current.__project_key === targetProjectKey) {
+      if (current && (opts.experience ? !isRuntimeEvent(current) : current.method === 'prompt') && current.__project_key === targetProjectKey) {
         remove(path);
         result.removed++;
       }
@@ -902,6 +903,11 @@ export function purgeProjectPromptEvents(root, targetProjectKey, opts = {}) {
     }
   }
   return result;
+}
+
+/** Experience opt-out includes SDKAppID and other non-runtime events. */
+export function purgeProjectExperienceEvents(root, key, opts = {}) {
+  return purgeProjectPromptEvents(root, key, { ...opts, experience: true });
 }
 
 /**

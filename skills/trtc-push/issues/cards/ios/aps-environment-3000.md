@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-ios-3000
+doc_revision: 47c13d74
+---
+
 # iOS APNs code=3000 / aps-environment 缺失
 
 ## 与 MCP 的关系
@@ -23,7 +29,7 @@
 3. **XcodeGen**：只在 Xcode UI 加了 Push Notifications，或只写了
    `entitlements.path` 没写 `entitlements.properties`——下次 `xcodegen generate`
    会清掉 Capability / 把 entitlements 覆写成空 dict。
-4. Apple Developer App ID 未开 Push（较少表现为这句文案，但仍需核对）。
+4. Apple Developer 账号下对应 App 未勾选 Push Notifications；描述文件需包含 `aps-environment` 且环境（开发 / 生产）正确（官网 FAQ 将其与「Xcode 未启用推送权限」并列为原因）。
 
 ## 修复
 

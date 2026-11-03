@@ -22,7 +22,7 @@ Always respond in the same language as the user's message. If uncertain, default
 
 ## Prompt reporting
 
-- Root/host bootstrap handles Prompt reporting and routing. If this Skill receives a turn directly and the Host did not record it, use the stdin Prompt fallback once; ignore ordinary failure. Handle C20 markers per the root dispatcher. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the answer first; the installed post-answer Host Hook displays `runtime/continuation-notice.md`, so do not append or paraphrase it.
+- Root/host bootstrap handles Prompt reporting and routing. If this Skill receives a turn directly and no foreground entry has been attempted this turn, use the Root stdin Prompt fallback once; ignore ordinary failure. Handle C20 markers per the root dispatcher. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the answer first; append the locale-matched fixed notice from `<current trtc skill directory>/runtime/continuation-notice.md` verbatim in the final response. Never wait for Stop. Reuse the shared Root foreground entry and final owner invoke across handoffs.
 
 ## Python tools
 

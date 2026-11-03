@@ -1,3 +1,13 @@
+---
+doc_source:
+  - ts-offline-chain
+  - faq-common-troubleshoot-entry
+  - ts-by-type
+  - faq-android-online-callback
+  - faq-android-online-not-offline
+doc_revision: f88ac427
+---
+
 # Android 离线 / 收不到通用排查流程
 
 ## 与 MCP 的关系（必读）
@@ -10,6 +20,7 @@
 | `stage-0-investigation-plan` | 排查计划确认（开场闸口） | plan |
 | `stage-1-console-validity`                 | 控制台有效性（服务 + 厂商证书）          | verify  |
 | `stage-2-scenario`                         | 测法与场景                      | collect |
+| `stage-2b-online-check` | 在线分支（stage-2 选 `channel_path=online` 时进入；只查前台开关 / 发送端推送信息 / `onRecvPushMessage`，不涉及厂商证书与 token 绑定） | verify |
 | `stage-3-config-alignment`                 | 配置对齐（厂商证 / configs / 包名指纹） | verify  |
 | `stage-4-register-observation`             | registerPush 观测            | observe |
 | `stage-5-token-binding`                    | 排查工具：已绑定的推送 token          | observe |
@@ -25,6 +36,8 @@
 
 Android **收不到推送 / 离线不达**，且尚未给出可定位的单一错误码（或错误码已处理仍收不到）。
 
+先分清在线还是离线（官网《排查流程》）：App 在前台走在线通道（不经厂商通道、不需要厂商证书，在线通知不会出现在推送记录里，无法用排查工具查），App 在后台或已被强制停止走离线通道。在线通道收不到 → `stage-2b-online-check`；离线通道收不到 → 本主链。
+
 有明确 TIMPush / 厂商错误码时，先读 `../../cards/android/error-codes.md`，再视需要回主链补查。
 
 厂商配置 / 注册专项（AGConnect、包名指纹、某厂通道证书）走子流程
@@ -35,6 +48,7 @@ Android **收不到推送 / 离线不达**，且尚未给出可定位的单一�
 
 | 现象         | 走哪条                                                       |
 | ---------- | --------------------------------------------------------- |
+| App 在前台才收不到通知 / `onRecvPushMessage` 不触发（在线通道） | `stage-2b-online-check`（见 `../../cards/common/online-not-received.md`） |
 | 场景不清的「收不到」 | `troubleshoot-android` 主链 stage-0→6                       |
 | 明确错误码      | `../../cards/android/error-codes.md` + 回补 stage-1、stage-3 |
 | 注册失败主链     | `register-failed.md`                                      |
@@ -50,6 +64,7 @@ Android **收不到推送 / 离线不达**，且尚未给出可定位的单一�
 
 | 分支                | 判断信号                                   | 处理动作                                                      |
 | ----------------- | -------------------------------------- | --------------------------------------------------------- |
+| 在线通道收不到 | App 在前台才收不到通知，或 `onRecvPushMessage` 不触发 | MCP stage-2 选 `channel_path=online` → `stage-2b-online-check`；知识见 `../../cards/common/online-not-received.md` |
 | 服务未开通 / 到期或证书无效   | 插件关闭、套餐过期、厂商证未配/失效                     | `../../cards/common/console-validity-gate.md`；MCP stage-1 |
 | 配置对齐              | 厂商证 / timpush-configs / 包名指纹           | MCP stage-3；专项 `vendor-not-received.md`                   |
 | 注册失败              | registerPush failed / 无 RegistrationID | `register-failed.md`                                      |

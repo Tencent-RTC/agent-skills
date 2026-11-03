@@ -1,3 +1,10 @@
+---
+doc_source:
+  - faq-android-force-stop
+  - faq-common-custom-msg-offline
+doc_revision: 9e6c6286
+---
+
 # 强杀后收不到离线推送
 
 ## 与 MCP 的关系
@@ -45,6 +52,7 @@
 1. 要求强制停止后，用控制台离线测试工具复测。
 2. 核对该品牌证书与 `timpush-configs.json`。
 3. 收齐注册绑定链路证据（见 `../../cards/common/registration-binding.md`）。
+   部分厂商系统对强制停止的应用有限制（需开启自启动、后台运行等权限），这属于厂商系统策略，需提示用户核对。
 4. 区分 Chat 消息 PushFlag / OfflinePushInfo 是否允许离线。
 5. 若注册成功且离线任务失败，按厂商转入 store/Channel/分类卡片。
 

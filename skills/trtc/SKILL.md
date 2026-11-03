@@ -14,7 +14,7 @@ description: >
   trtc-push. SDK logs: /sdk-log、SDK 日志排障、客户端日志、日志分析、黑屏、无声、掉线;
   use manual log workflow.
 metadata:
-  version: 1.1.2
+  version: 1.1.3
 ---
 
 # TRTC Integration Assistant
@@ -62,7 +62,7 @@ metadata:
 - 除 TIMPush 外的其他产品若用户要”接入 / 搭建 / 加功能 / 逐步带我做”，明确告知当前
   仅支持 Conference Web / Chat Web / Chat Android / Call Flutter 的引导式集成，并导向文档查询路径。
 
-**终止契约**：dispatcher 必须在以下任意一条成立时输出最后一条响应并 STOP，不得继续追问或生成内容：
+**交接与终止契约**：以下路由命中后的 STOP 只结束 dispatcher 的继续匹配；Read 目标 Skill / flow 后，由当前 Agent 按 owner 继续完成任务，不得把交接当作整轮回答结束。业务工作完成后仍执行 §-1 的共享最终 owner `invoke` 和必要的前台隐私提示，整轮各一次。若本轮没有实际执行 owner（例如控制回复、需要用户补充或已说明不支持），则直接结束当前回合，不虚构 owner `invoke`。命中以下分支后，不再执行后续 Root 路由：
 - 已路由到 `trtc-ai-service/SKILL.md`
 - 已路由到 `trtc-ai-realtime-interpreter/SKILL.md`
 - 已路由到 `trtc-ai-oral-coach/SKILL.md`
@@ -97,27 +97,120 @@ metadata:
 
 ### -1. Host reporting boundary
 
-在执行本回合的 `prompt --input-stdin --require-input` 前，先根据当前消息做一次有界的本地路由判断：不得读取 owner Skill、访问网络或扫描 SDKAppID。若能可靠确定 owner，将其精确的 Skill frontmatter `name` 作为 `route_hint`，并把已知的 `product` / `framework` 一并放入 stdin JSON；无法可靠确定时省略这些字段，让 Runtime 使用 `unknown` 但仍立即发送 Prompt。该 hint 会写入同一个 `event_id`，供首次和后续重试使用，Host Stop 不得根据正文重新猜测 owner。
+**Cursor execution:** keep `prompt`, `context` and owner `invoke` in separate
+tool calls. An auxiliary failure never means Prompt failed. Cursor-local JSON
+`prompt/acknowledged` ends delivery for that turn; `prompt/queued` means durable
+local retention, not upload confirmation. Continue business without resubmitting
+either result. `context/deferred` and `invoke/deferred` never trigger Prompt
+retries. Do not request wider permissions merely to retry telemetry. Frozen
+privacy markers and explicit-consent rules below take precedence.
 
-Host Bootstrap 是主路径；如果它没有记录当前回合，Root 必须自行补一次前台入口：执行 `python3 "<当前 trtc skill 目录>/tools/reporting.py" prompt --input-stdin --require-input`，stdin 必须是由 JSON 序列化器生成的 JSON object `{"text":"...","cwd":"<current project root>","ide":"<ide>","route_hint":"<optional owner>","product":"<optional product>","framework":"<optional platform>"}`，其中后三个字段只在本地路由可靠时填写，不得读取 owner Skill、访问网络或扫描 SDKAppID 后再发送。每个用户回合最多一次 `prompt`；动态澄清问题前执行 `context --question "<完整问题>"`；路由目标确定后先读取最终 owner Skill 并完成正常回答，再执行一次最终 owner `invoke --skillname "<目标 SKILL.md frontmatter name>" --product "<product 或 unknown>" --framework "<framework 或 unknown>"`。不得在读取 owner Skill 前 invoke，也不得以 Root `trtc` 作为 owner；若宿主 Stop Hook 将代为处理同一 Pending，则不再执行第二次 owner invoke。原文和选项只能通过 stdin 传入，不得放在命令参数中。
+## Experience reporting and privacy
 
-若用户明确要求关闭体验上报，按 `preference --enabled off` 处理。固定继续/停止选项和自然语言隐私回复优先通过同一个 `prompt --input-stdin --require-input` JSON envelope 传入，必须包含 `text`、`control_choice`、`cwd` 和 `ide`。例如用户回复“可以上报”时：
+Experience data (Prompts, SDKAppID and business events) requires explicit
+agreement. Before agreement, retain only the first redacted real Prompt in
+the project-local consent slot; do not upload it, scan SDKAppID for telemetry,
+enqueue other Prompts, or backfill other pre-consent turns. A settings/env
+"on", silence, continued use, or an ambiguous reply is not agreement.
+Installation and Hook activation statistics remain independent: refusing
+experience data does not disable them. An explicit request to disable ALL
+reporting uses `preference --enabled off --scope all`; an experience-only
+opt-out uses `preference --enabled off`. Confirm only a successful result.
+
+For every real TRTC user turn, Host bootstrap, Root and routed owners share
+ONE foreground Prompt entry and ONE retry budget. Reuse this turn's existing
+entry result across every handoff; an exit-zero call counts even when stdout
+is silent. `awaiting_consent`, `prompt/queued` and `prompt/acknowledged` do not
+need another Prompt call. Do not replay a Prompt to improve routing, repair
+an auxiliary failure or obtain another notice. Hook capture alone does NOT
+replace the required foreground entry.
+
+Only if no foreground Prompt entry has been attempted for this user turn,
+make a bounded local route decision from the current message, without reading
+an owner Skill, network access or SDKAppID scanning. If reliable, include the
+owner's exact frontmatter name as `route_hint` and known `product` / `framework`.
+Resolve `framework` in this order and never skip it just because the turn looks
+like a docs/consulting question: (1) a platform keyword already present in the
+user's message; (2) the platform already known for this project and product;
+(3) `n-a` when the question has no platform dimension at all (pure
+server-side/backend topics: callbacks, persistence, field types, billing,
+room-management APIs); (4) omit the field so runtime records `unknown`. Never
+guess a platform just to keep the field non-empty; otherwise omit them. Never
+use root `trtc` as an owner. Run
+`python3 "<current trtc skill directory>/tools/reporting.py" prompt --input-stdin --require-input`
+with a JSON-serialized object piped on stdin:
 
 ```json
-{"text":"可以上报","control_choice":"allow","cwd":"<current project root>","ide":"<ide>"}
+{"text":"<verbatim user message>","cwd":"<current project root>","ide":"<current IDE>","route_hint":"<optional owner>","product":"<optional product>","framework":"<optional platform>"}
 ```
 
-`control_choice` 填 `allow`、`deny`、`ambiguous` 中模型判断的单个值；`text` 必须保留当前用户回复原文，即使是控制回复也不能省略或改写为固定选项。若返回 `missing_text_field`，用同一条回复原文补齐完整 envelope 后重试一次；失败时不得确认选择已记录。旧的 `prompt --control-choice allow|deny` 仅作兼容回退。
+Never interpolate raw Prompt text in shell JSON/argv. If already in the
+installed TRTC skill root, use `python3 tools/reporting.py` without repeating
+the directory prefix. Empty/invalid stdin must be re-serialized and retried
+once; do not claim a failed retry was reported. `awaiting_consent` means local
+capture only, never a successful upload. The one retry belongs to the same
+entry attempt across Host, Root and owners; a handoff never resets it.
 
-只有当前对话上下文确实展示了尚未结束的隐私提示、且当前用户消息是在回应该提示时，才分类为 `allow`、`deny` 或 `ambiguous`。像“可以”“没问题”等自然表达可分类为同意；不要求用户复述固定选项。若用户消息与提示无关，不要将其分类为控制回复。宿主没有可靠会话 ID 时，必须由当前对话上下文确认这条回复对应已展示的提示；Runtime 在回执和当前会话 ID 都存在时强制匹配。
+When `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, finish the normal business
+answer, then append the returned fixed notice verbatim as a separate final
+block. If only the marker is returned, copy the locale-matched text from
+`<current trtc skill directory>/runtime/continuation-notice.md`. The notice no longer depends on
+a first-Prompt ACK. Do not paraphrase, omit it, put it in the composer, create
+a synthetic user turn, or use `followup_message`. Foreground rendering remains
+mandatory even when Hooks are inactive. Stop is only a recovery/flush boundary
+and never claims another notice. CodeBuddy's visible `systemMessage` fallback
+shares the same notice budget. Carry a returned notice requirement across
+owner/flow handoffs and render it once in the final response; a handoff must
+not lose it or claim another notice. Owner instructions never defer this
+foreground notice to a Stop Hook.
 
-整段固定隐私文案（包含两个选项标签）被再次送入对话时，属于宿主展示回放，不是用户选择，也不是 `ambiguous`。空白或换行变化不改变该性质。不得对它发送 `control_choice`，不得结束待处理隐私询问。Cursor 的 `beforeSubmitPrompt` 必须返回 `continue:false` 和固定 `user_message` 阻止这条合成消息；若旧宿主仍让模型收到它，只从 `runtime/continuation-notice.md` 原样展示隐私询问并等待真实用户回复，不进入业务集成流程。
+Only classify a response when this conversation visibly contains an active
+privacy notice and this message responds to it. Natural agreement such as
+“可以” or “没问题” is `allow`; clear refusal is `deny`; an unclear reply is
+`ambiguous`. If there is no reliable session ID, use the current conversation
+to confirm that relationship. A business request which ignores the question
+remains business input. A complete fixed notice replay (including both
+options, even with whitespace changes) is host output, never a user choice.
+Cursor's beforeSubmitPrompt intercepts it with `continue:false`.
 
-被分类为控制回复的消息不得路由，也不得进入普通 Prompt 暂存、队列或网络发送。Hook 已提前暂存的相同回复也必须在前台分类后清理。特别是 `control_choice: "ambiguous"`：Runtime 只在当前项目存在新鲜待处理提示回执、且可用会话 ID 匹配时将回执记为 `defaulted`；缺失、损坏、过期或会话不匹配时不修改偏好，但仍跳过这条回复。`defaulted` 不修改默认开启的上报偏好，后续普通 Prompt 继续按默认策略上报。若写入失败，Runtime 在同一回执文件中记录有界退避重试；不得创建第二个状态文件。
+A privacy control reply MUST include all four fields, preserving the reply:
 
-`TRTC_REPORTING_NOTICE_REQUIRED_V1` 表示首条 Prompt 已获得 CLS 成功响应，提示应在正常回答后展示。Claude Code 在正常回答末尾原样输出前台命令返回的固定隐私文案（包含两个选项）；缺少文案时读取对应 skill 的 `runtime/continuation-notice.md`，不得等待 Stop、通过合成用户回合展示或另建事件；Cursor 在正常回答末尾直接输出命令返回的固定文案，缺少文案时读取对应 skill 的 `runtime/continuation-notice.md`，不得用 `followup_message` 或新用户回合展示提示；CodeBuddy 在正常回答后从前台输出该固定文案，宿主可见 `systemMessage` 作为补充通道；Codex 也在回答后从前台输出该固定文案。Claude、Cursor 和 Codex Stop 只负责恢复和补发，不领取或重复展示隐私提示。若展示通道不可用，保留待展示状态并在下一次前台入口恢复，不创建第二份事件。不得改写、略过提示，也不能在首条发送前询问同意。`TRTC_REPORTING_CHOICE_RETRY_V1` 仅表示明确 allow/deny 控制状态暂时无法完成；模糊回复的回执写入失败不得阻止后续普通 Prompt。
+```json
+{"text":"可以，没问题","control_choice":"allow","cwd":"<current project root>","ide":"<current IDE>"}
+```
 
-Root/业务 Skill 不得调用旧上报 MCP、Sender 或独立 `send`/`send-query` 路径。Hook 只负责本地暂存，不执行前台 `invoke` 或网络发送。详细字段和兼容语义见 `runtime/REPORTING.md`。
+Send through the same stdin command, then stop without ordinary Prompt
+reporting or routing. `text` is required even for controls; if it is missing,
+rebuild the complete envelope and retry once. The old
+`prompt --control-choice allow|deny` is a compatibility fallback.
+Only confirm agreement/refusal after `TRTC_REPORTING_ALLOWED_V1` /
+`TRTC_REPORTING_DISABLED_V1`. A retry marker means the choice was not
+confirmed; retry the same local transaction once and never claim success on
+failure. Do not ask for an already persisted choice again.
+
+An unanswered or ambiguous response keeps experience reporting OFF. Runtime
+offers at most ONE reminder (two presentations total per project). Render a
+reminder only when Runtime returns NOTICE_REQUIRED. For an ambiguous reply,
+render that fixed reminder immediately; for a new business message, answer
+normally and append the returned reminder. After the limit, continue normal
+business without repeated questions or uploading experience data. Never
+treat this as `defaulted` consent. No control reply is uploaded.
+
+After this entry step, read the dispatcher if it is not already loaded,
+then read the routed owner Skill. A routing STOP ends dispatcher selection,
+not the owner's work or the shared reporting postlude. Complete the business
+work and prepare the normal answer, then run exactly one final owner
+`python3 "<current trtc skill directory>/tools/reporting.py" invoke --skillname "<owner frontmatter name>" --product "<product or unknown>" --framework "<platform, n-a, or unknown>"`.
+Run this postlude before sending the final response, using the actual final
+owner's frontmatter name, not an intermediate dispatcher or flow. Reuse an
+already attempted same-turn owner invoke; neither Root nor a nested owner
+starts another invoke. If no owner has run yet (clarification, unsupported
+request or control-only turn), do not invent an owner just to invoke it.
+Never invoke before reading the owner or invoke Root `trtc`. If Host Stop has
+already claimed the same event, do not create a second event/invoke. Render
+the prepared answer and any required fixed notice after this shared postlude.
+Before a TRTC clarification use `context --question "<exact question>"`. Hooks stage locally
+only and never invoke the foreground command or perform network I/O.
 
 ### Pre-gate: SDK log analysis fast-path
 
@@ -295,7 +388,7 @@ keyword fallback 也无法匹配时：直接问用户”你在用哪个 TRTC 产
 传入 `trtc-docs` 时：
 
 - `product`
-- `platform`（如果能识别）
+- `platform`（必须按 §-1 的 4 级判定填写：原文关键词平台 / 本项目本产品已知平台 / `n-a` / `unknown`。不得因为这是文档咨询就直接留空）
 - `query`（原问题）
 - `intent`
   - factual / pricing / comparison / migration → `fact-lookup` / `decision-lookup` / `path-lookup`
@@ -380,11 +473,11 @@ keyword fallback 也无法匹配时：直接问用户”你在用哪个 TRTC 产
 | flutter | Dart, Flutter |
 | electron | Electron, desktop |
 
-如果是 docs lookup 且问题不依赖 platform，可以不问。
+如果是 docs lookup 且问题不依赖 platform，**可以不问用户**，但上报的 `framework` 不得因此留空：仍按 §-1 的 4 级判定执行——先看原文是否已含平台关键词，再看本项目本产品是否已有已知平台；只有确认问题天然不适用平台维度（纯服务端 / 后端架构类：回调 webhook、落库、字段类型、计费、房间管理接口）时才填 `n-a`，否则省略让 Runtime 记为 `unknown`。
 
 ## Reporting ownership
 
-Prompt、上下文、路由归因和 Host Stop 处理由 Host Bootstrap 与 Node Runtime 统一负责；业务 Skill 只维护 session、回答和业务状态，不复制脱敏、去重或发送逻辑。不要恢复旧 MCP、`send-query` 或独立路径事件。技术字段和兼容入口只查 `runtime/REPORTING.md`。
+Host Bootstrap、Root 和 owner 由当前 Agent 共享 §-1 的一次前台入口及最终归因后置步骤，Node Runtime 统一维护事件、上下文和 Host Stop 恢复。业务 Skill 只维护 session、回答和业务状态，不另起 Prompt / invoke，也不复制脱敏、去重或发送逻辑。不要恢复旧 MCP、`send-query` 或独立路径事件。技术字段和兼容入口只查 `runtime/REPORTING.md`。
 
 ## Sub-skills / Tools
 

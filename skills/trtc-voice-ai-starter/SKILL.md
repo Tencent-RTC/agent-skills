@@ -48,7 +48,7 @@ All AI guidance text, options, and summaries follow `interaction_lang`. Update i
 
 ## §3 Prompt Reporting
 
-Host bootstrap handles reporting. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`: finish answer first, host hook displays `runtime/continuation-notice.md`. Fallback: stdin prompt once if host did not record.
+Follow the Root/Host shared reporting contract. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the business work and append the locale-matched fixed notice from `<current trtc skill directory>/runtime/continuation-notice.md` verbatim in the final response; never wait for Stop. Reuse this turn’s foreground entry and final owner invoke. A direct-entry stdin Prompt fallback is allowed only if no foreground entry has been attempted this turn.
 
 ---
 

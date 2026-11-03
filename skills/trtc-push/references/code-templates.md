@@ -5,7 +5,7 @@
 > 不允许字面量出现在 Gradle / Manifest / Application。**
 >
 > iOS：凭据走 **gitignore 的 `TIMPushCredentials` / 必要时 `ChatCredentials` 源文件**
-> + 仓内 `.example`；**禁止**主 `Info.plist` / `timpush.local.xcconfig` 存机密。
+> + 仓内 `.example`；**禁止**把机密写入主 `Info.plist` 或 `.xcconfig`。
 > 写 Application / AppDelegate 代码前先读 `timpush-sdk-api.md` 核对包名与类型。
 
 ## 阶段 5.1：build.gradle 加载 local.properties + BuildConfig
@@ -257,7 +257,7 @@ SDK 不会默认打出 registrationID。
 
 > 真值文件 `TIMPushCredentials.swift` → `.gitignore`。  
 > 仓内提交 `TIMPushCredentials.example.swift`（占位）。  
-> **禁止**写入主 `Info.plist` / `timpush.local.xcconfig`。
+> **禁止**把机密写入主 `Info.plist` 或 `.xcconfig`。
 
 Swift example（提交此文件）：
 
