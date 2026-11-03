@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-common-only-few
+doc_revision: 4318a70b
+---
+
 # 消息分类与厂商日限额
 
 ## 与 MCP 的关系

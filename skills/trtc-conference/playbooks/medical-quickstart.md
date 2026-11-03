@@ -14,7 +14,7 @@ ui_mode: medical-template
 > **bypass 说明**：本 playbook 不进 topic，不走状态机，不物化 execution_queue。
 > 完成后 `status = completed`，流程终止。
 
-> **Reporting boundary**：Root/Host 已负责本轮 Prompt、路由和 Host Stop notice；本 playbook 不执行独立 `send`。若直接进入且 Host 未记录，才补一次 stdin Prompt。动态澄清前保留 `context --question`，固定选项仍用 `AskUserQuestion`；notice 由 Host Stop 展示 `runtime/continuation-notice.md`。
+> **Reporting boundary**：Root/Host 已负责本轮 Prompt、路由和隐私提示；本 playbook 不执行独立 `send`。若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 补一次。动态澄清前保留 `context --question`，固定选项仍用 `AskUserQuestion`；notice 由当前 Agent 在最终答复末尾原样展示 `<当前 trtc skill 目录>/runtime/continuation-notice.md` 的对应语言文案，不等待 Host Stop；复用 Root 本轮入口与最终 owner `invoke`，不因进入 flow/playbook 重复执行。
 
 ---
 

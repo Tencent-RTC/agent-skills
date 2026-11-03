@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-android-debug-release
+doc_revision: 61232191
+---
+
 # Release 包推送统计异常（ProGuard）
 
 ## 与 MCP 的关系
@@ -44,7 +50,7 @@ R8/ProGuard 过度混淆 TIMPush 或厂商 SDK 相关类，导致上报/统计�
 
 ## 解决方案
 
-- 按 TIMPush Android 文档添加 ProGuard keep。
+- 按 TIMPush Android 文档添加 ProGuard keep；官网 FAQ 给出的基础规则是 `-keep class com.tencent.qcloud.** { *; }` 与 `-keep class com.tencent.timpush.** { *; }`。
 - 同步检查厂商 SDK 要求的 keep。
 - 验证时使用同一 RegistrationID 对比 Debug/Release。
 

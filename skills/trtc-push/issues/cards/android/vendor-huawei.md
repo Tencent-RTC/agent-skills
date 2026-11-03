@@ -1,3 +1,10 @@
+---
+doc_source:
+  - faq-android-huawei-register
+  - faq-android-huawei-token-empty
+doc_revision: 3bee7a27
+---
+
 # 华为 / 荣耀厂商配置问题
 
 ## 与 MCP 的关系
@@ -44,6 +51,7 @@
 - debug 包使用了 release SHA-256，或 release 包使用了 debug SHA-256。
 - 修改厂商控制台包名、指纹或应用配置后，没有重新下载 JSON 并重新构建。
 - 在 HarmonyOS NEXT / 纯血鸿蒙上继续套 Android 厂商通道方案。
+- 部分华为设备注册失败且 Token 为空，日志含 `HMS token within 24h, not allowed apply hms token.`：项目里的第三方依赖影响了 Token 获取，已知 `com.github.ihsanbal:LoggingInterceptor` 会导致该问题（见下方「Token 为空分支」）。
 
 ## 必须收集的证据
 
@@ -76,6 +84,14 @@
 - 用当前测试包真实签名重新计算 SHA-256，并填入厂商控制台。
 - 修改厂商控制台应用配置后，重新下载配置文件、重新构建并重新安装 APK。
 - HarmonyOS NEXT / 纯血鸿蒙使用鸿蒙原生 Push 方案，不复用 Android 厂商通道。
+
+## Token 为空分支（日志含 `HMS token within 24h, not allowed apply hms token.`）
+
+以官网 FAQ「华为设备注册失败且 Token 为空」为准：
+
+1. 先用**相同推送配置**创建空项目测试。
+2. 空项目能正常获取 Token：逐一恢复原项目依赖，定位并升级或移除冲突依赖（已知 `com.github.ihsanbal:LoggingInterceptor`）。需要读用户工程的依赖列表。
+3. 空项目仍失败：说明不是业务依赖冲突，引导使用官网排查工具检查推送注册链路，并带着日志走 `troubleshoot-android`。
 
 ## 验证信号
 

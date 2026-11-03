@@ -1,6 +1,6 @@
 {
-  "$schema_note": "Lightweight TIMPush issue router. Keep this file small: route only, no solution body.",
-  "version": "2026-08-04",
+  "$schema_note": "Lightweight TIMPush issue router. Keep this file small: route only, no solution body. Rule types: card / flow / workflow (have target or workflow_id) and link (link-only: no target, `doc_key` points to an entry in DOC-LINKS.md).",
+  "version": "2026-10-12",
   "routing_policy": {
     "purpose": "Best-effort candidate routing, not an exhaustive decision tree.",
     "order": [
@@ -26,7 +26,14 @@
         "80300002",
         "regId 不合法",
         "本机通道注册",
-        "注册推送服务超时"
+        "注册推送服务超时",
+        "10096",
+        "10097",
+        "10016",
+        "10041",
+        "200001",
+        "harmony requestid",
+        "No permission to send message to these tmIDs"
       ]
     },
     {
@@ -44,7 +51,10 @@
         "荣耀通道不通",
         "AGConnect",
         "agconnect-services.json",
-        "mcs-services.json"
+        "mcs-services.json",
+        "HMS token within 24h",
+        "华为 Token 为空",
+        "LoggingInterceptor"
       ]
     },
     {
@@ -160,19 +170,21 @@
       ]
     },
     {
-      "id": "card-common-timpush-only-registrationid",
+      "id": "link-common-push-only",
       "priority": 88,
-      "type": "card",
+      "type": "link",
       "platform": "common",
       "workflow_id": null,
-      "target": "cards/common/timpush-only-registrationid.md",
+      "target": null,
+      "doc_key": "faq-common-push-only",
       "match_any": [
         "只有 TIMPush",
         "不需要 IM SDK",
         "只接入 Push",
         "RegistrationID 推送",
         "registrationID 推送",
-        "TPNS 停服"
+        "TPNS 停服",
+        "不接入 IM 只用 Push"
       ]
     },
     {
@@ -251,7 +263,12 @@
         "OPPO ChannelID",
         "setAndroidOPPOChannelID",
         "realme 收不到",
-        "一加 收不到"
+        "一加 收不到",
+        "OPPO 消息分类",
+        "OPPO category",
+        "OPPO notify_level",
+        "REST 能收到 客户端收不到",
+        "OPPO 内容过长"
       ]
     },
     {
@@ -735,6 +752,366 @@
         "iOS 离线推送",
         "iOS 推送异常",
         "苹果推送收不到"
+      ]
+    },
+    {
+      "id": "card-common-online-not-received",
+      "priority": 90,
+      "type": "card",
+      "platform": "common",
+      "workflow_id": null,
+      "target": "cards/common/online-not-received.md",
+      "match_any": [
+        "在线收不到",
+        "在线推送收不到",
+        "前台收不到通知",
+        "前台不弹通知",
+        "App 在前台 收不到",
+        "onRecvPushMessage",
+        "disablePostNotificationInForeground",
+        "能收到离线收不到在线"
+      ]
+    },
+    {
+      "id": "card-common-console-test-ok-im-offline-fail",
+      "priority": 92,
+      "type": "card",
+      "platform": "common",
+      "workflow_id": "troubleshoot-android",
+      "target": "cards/common/console-test-ok-im-offline-fail.md",
+      "match_any": [
+        "控制台测试成功 IM 消息收不到",
+        "接入测试成功 离线收不到",
+        "控制台能收到 IM 消息收不到",
+        "测试推送成功 业务消息收不到",
+        "测试推送成功 IM 消息离线"
+      ]
+    },
+    {
+      "id": "card-flutter-register-fcm-errors",
+      "priority": 94,
+      "type": "card",
+      "platform": "flutter",
+      "workflow_id": "troubleshoot-flutter",
+      "target": "cards/flutter/flutter-register-fcm-errors.md",
+      "match_any": [
+        "Default FirebaseApp is not initialized",
+        "FirebaseApp.initializeApp",
+        "Flutter registerPush 账号被踢",
+        "registerPush 账号被踢出",
+        "setPushBrandId",
+        "Flutter OPPO FCM",
+        "Flutter FCM 初始化"
+      ]
+    },
+    {
+      "id": "link-android-samsung-brands",
+      "priority": 62,
+      "type": "link",
+      "platform": "android",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-android-samsung-brands",
+      "match_any": [
+        "三星 推送",
+        "中兴 推送",
+        "传音 推送",
+        "支持哪些手机品牌",
+        "哪些厂商支持离线推送",
+        "哪些手机支持离线推送"
+      ]
+    },
+    {
+      "id": "link-android-sdk-conflict",
+      "priority": 64,
+      "type": "link",
+      "platform": "android",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-android-sdk-conflict",
+      "match_any": [
+        "第三方推送 SDK 冲突",
+        "推送 SDK 冲突",
+        "TIMPush 冲突",
+        "极光 TIMPush",
+        "JPush 冲突",
+        "个推 TIMPush",
+        "集成冲突"
+      ]
+    },
+    {
+      "id": "link-android-agconnect-build",
+      "priority": 66,
+      "type": "link",
+      "platform": "android",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-android-agconnect-build",
+      "match_any": [
+        "Failed to apply plugin 'com.huawei.agconnect'",
+        "Failed to apply plugin com.huawei.agconnect",
+        "agcp 版本",
+        "agconnect 插件 编译失败",
+        "agcp:1.6.0.300"
+      ]
+    },
+    {
+      "id": "link-android-vivo-channel-id",
+      "priority": 64,
+      "type": "link",
+      "platform": "android",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-android-vivo-channel-id",
+      "match_any": [
+        "vivo CHANNEL_ID",
+        "vivo channelid",
+        "vivo 本地通知 渠道",
+        "vivo 自定义渠道"
+      ]
+    },
+    {
+      "id": "link-android-honor-maven-missing",
+      "priority": 97,
+      "type": "link",
+      "platform": "android",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "ts-chain-register",
+      "match_any": [
+        "com.hihonor.mcs:push",
+        "hihonor mcs push 找不到",
+        "荣耀 依赖 找不到"
+      ]
+    },
+    {
+      "id": "link-android-xiaomi-plugin-missing",
+      "priority": 97,
+      "type": "link",
+      "platform": "android",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "ts-chain-register",
+      "match_any": [
+        "TIMXiaoMiPushPlugin",
+        "can't find service : TIMXiaoMiPushPlugin",
+        "小米 找不到 service"
+      ]
+    },
+    {
+      "id": "link-android-oppo-error-67",
+      "priority": 97,
+      "type": "link",
+      "platform": "android",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "ts-chain-vendor",
+      "match_any": [
+        "private classify channel need permission",
+        "OPPO 错误码 67",
+        "OPPO 67",
+        "oppo 私信通道 权限"
+      ]
+    },
+    {
+      "id": "link-ios-apns-voip",
+      "priority": 62,
+      "type": "link",
+      "platform": "ios",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-ios-apns-voip",
+      "match_any": [
+        "APNs VoIP 区别",
+        "VoIP 推送",
+        "LiveActivity",
+        "APNs 和 VoIP"
+      ]
+    },
+    {
+      "id": "link-ios-library-not-loaded",
+      "priority": 66,
+      "type": "link",
+      "platform": "ios",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-ios-library-not-loaded",
+      "match_any": [
+        "Library not loaded: ImSDK_Plus",
+        "Library not loaded ImSDK_Plus",
+        "ImSDK_Plus 找不到",
+        "dyld ImSDK_Plus"
+      ]
+    },
+    {
+      "id": "link-other-miniprogram-batch",
+      "priority": 62,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-other-miniprogram-batch",
+      "match_any": [
+        "小程序 batch",
+        "小程序 batch 接口",
+        "batch 接口 控制台没有记录"
+      ]
+    },
+    {
+      "id": "link-common-overseas",
+      "priority": 62,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-overseas",
+      "match_any": [
+        "海外推送",
+        "海外 FCM 配置",
+        "出海 推送"
+      ]
+    },
+    {
+      "id": "link-common-chat-offline",
+      "priority": 62,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-chat-offline",
+      "match_any": [
+        "Chat 自带离线推送",
+        "Chat 是否需要开通 Push",
+        "聊天 离线推送 要不要开通 Push"
+      ]
+    },
+    {
+      "id": "link-common-sdkappid-diff",
+      "priority": 62,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-sdkappid-diff",
+      "match_any": [
+        "Chat 和 Push 的 SDKAppID",
+        "Push 密钥 和 Chat 密钥",
+        "SDKAppID 区别"
+      ]
+    },
+    {
+      "id": "link-common-vs-selfbuild",
+      "priority": 60,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-vs-selfbuild",
+      "match_any": [
+        "Push 和自行集成区别",
+        "自研推送 对比",
+        "为什么使用 Push 服务"
+      ]
+    },
+    {
+      "id": "link-common-disable-offline",
+      "priority": 62,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-disable-offline",
+      "match_any": [
+        "关闭离线推送",
+        "不接收离线推送",
+        "关闭推送接收",
+        "用户关闭推送"
+      ]
+    },
+    {
+      "id": "link-common-plugin-expire",
+      "priority": 62,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-plugin-expire",
+      "match_any": [
+        "推送插件到期",
+        "插件费用到期",
+        "Push 欠费",
+        "推送服务到期"
+      ]
+    },
+    {
+      "id": "link-common-privacy",
+      "priority": 60,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-privacy",
+      "match_any": [
+        "隐私合规",
+        "上架 隐私",
+        "应用市场 隐私合规"
+      ]
+    },
+    {
+      "id": "link-common-custom-msg-offline",
+      "priority": 70,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-common-custom-msg-offline",
+      "match_any": [
+        "自定义消息 离线推送",
+        "自定义消息收不到离线推送",
+        "自定义消息 desc",
+        "自定义消息 不推送"
+      ]
+    },
+    {
+      "id": "link-flutter-click",
+      "priority": 72,
+      "type": "link",
+      "platform": "flutter",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-flutter-click",
+      "match_any": [
+        "Flutter onNotificationClicked 不触发",
+        "Flutter 点击通知 不触发回调",
+        "onNotificationClicked 不触发"
+      ]
+    },
+    {
+      "id": "link-flutter-callkit",
+      "priority": 72,
+      "type": "link",
+      "platform": "flutter",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "faq-flutter-callkit",
+      "match_any": [
+        "TUICallKit 点击通知 不跳转",
+        "通话通知 点击 不跳转",
+        "来电通知 点击 没有跳转"
+      ]
+    },
+    {
+      "id": "link-common-ticket-info",
+      "priority": 60,
+      "type": "link",
+      "platform": "common",
+      "workflow_id": null,
+      "target": null,
+      "doc_key": "ts-ticket-info",
+      "match_any": [
+        "提交工单 准备 信息",
+        "提工单 需要什么信息",
+        "工单 需要提供什么"
       ]
     }
   ],

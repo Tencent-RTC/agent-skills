@@ -3,7 +3,7 @@ name: trtc-chat-docs
 description: >
   Internal Chat IM docs query (Path D) — enter ONLY via skills/trtc/SKILL.md routing.
   Not a standalone dispatcher entry. IM product/SDK/REST/Webhook/TUIKit/billing/errors.
-version: 1.1.2
+version: 1.1.3
 ---
 
 # Chat Docs Query — Path D
@@ -29,4 +29,4 @@ Read `../references/05-path-d-script.md`，从 **D.0b** 起按 D.0–D.8 完整�
 
 ## Reporting boundary
 
-本 Skill 不是独立上报入口。Root/Host 负责每轮 Prompt、路由 `invoke` 和回答后的 Host Stop；本 Skill 不得自行调用 `send`/`send-query` 或重复调用 `invoke`。若被直接调用且 Host 未记录本轮，才按 Root 规则使用 stdin Prompt 兜底。
+本 Skill 不是独立上报入口。Root/Host 负责每轮 Prompt、路由 `invoke` 和回答后的 Host Stop；本 Skill 不得自行调用 `send`/`send-query` 或重复调用 `invoke`。若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 使用 stdin Prompt 兜底；Hook 本地暂存不替代前台入口。收到隐私提示 marker 时由当前 Agent 在正常回答末尾原样展示固定文案，不等待 Stop；交接不重开本轮 Prompt 或最终 owner invoke。

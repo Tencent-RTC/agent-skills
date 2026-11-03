@@ -1,3 +1,12 @@
+---
+doc_source:
+  - faq-other-miniprogram-batch
+  - ts-by-type
+  - doc-troubleshoot-tool
+  - faq-ios-click-ext
+doc_revision: d907bbef
+---
+
 # 服务端 API / 全员推送 / 点击跳转 / 统计查询排查流程
 
 ## 与 MCP 的关系
@@ -17,7 +26,7 @@
 ## 首轮证据
 
 - 接口类型：单推、批量、全员推送、IM 消息离线推送。
-- 请求时间、`TaskId`、`MsgKey`。
+- 请求时间；`TaskId`（全员 / 标签 / 指定用户推送）或 Push ID（消息服务推送，在控制台推送记录里复制）。`MsgKey` 〔待确认：官网排查工具不按 MsgKey 查询，仅在推送回调文档出现〕。
 - 目标 UserID / 标签 / 全员范围。
 - 请求体中的 `OfflinePushInfo`、`PushFlag`、`OnlineOnlyFlag`、`Ext`。
 - 推送类型：在线 / 离线 / 同时。
@@ -27,10 +36,10 @@
 ## 排查顺序
 
 1. 先确认接口返回成功是否只代表请求受理成功。
-2. 用 `TaskId` / `MsgKey` 查询单用户链路状态。
+2. 用排查工具查单用户链路：全员 / 标签 / 指定用户推送用推送记录里的 Task ID + 接收方 UserID；消息服务推送用推送记录里的 Push ID（官网《排查工具》）。
 3. 检查 `OfflinePushInfo` 是否包含 title、desc、ext、badge 等业务需要字段。
-4. 检查 `PushFlag` / `OnlineOnlyFlag` 是否符合在线 / 离线预期。
-5. 如果是全员推送，解释全员 API 和逐用户失败列表 / 统计口径的差异。
+4. 检查 `PushFlag` / `OnlineOnlyFlag` 是否符合在线 / 离线预期（字段含义见服务端 API 文档；「怎么据此判断在线 / 离线预期」 〔待确认：官网暂无说明〕）。
+5. 如果是全员推送，用控制台排查工具和《数据统计》的推送转化漏斗查状态（全员 API 与逐用户失败列表 / 统计口径的差异 〔待确认：官网暂无说明〕）。
 6. 如果通知能展示但点击不跳转，检查 `Ext` 和客户端点击回调。
 7. 若厂商已送达但终端不展示，转 `../android/delivered-not-displayed.md`。
 
@@ -40,13 +49,13 @@
 |---|---|---|
 | `Ext` 缺失或格式不符 | 点击后无法解析 senderId / 会话 | 服务端补充业务跳转字段，客户端解析 |
 | 在线 / 离线参数错误 | 推送时机与预期不符 | 核对 `PushFlag` / `OnlineOnlyFlag` |
-| 全员推送统计疑问 | API 无逐用户 ErrorList | 用控制台排查工具和转化漏斗查状态 |
-| TaskId 查询方式错误 | 控制台查不到记录 | 使用正确 TaskId / MsgKey / 时间范围 |
+| 全员推送统计疑问 | 要看逐用户结果 | 用控制台排查工具（Task ID + UserID）和转化漏斗查状态 |
+| 查询字段错误 | 控制台查不到记录 | 使用推送记录里复制的正确 Task ID / Push ID 与发送时间；接口返回成功只代表服务端已受理，目标端实际收到推送后控制台才有记录 |
 | 接口成功但设备不展示 | 厂商回执后仍无通知 | 转送达后不展示流程 |
 
 ## 验证信号
 
-- 能用 `TaskId` / `MsgKey` 查到目标用户链路。
+- 能用 Task ID / Push ID 查到目标用户链路。
 - 请求体参数和业务预期一致。
 - 客户端收到的 payload 含跳转所需字段。
 - 点击通知后客户端回调触发并跳转到目标页面。

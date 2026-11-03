@@ -1,3 +1,10 @@
+---
+doc_source:
+  - faq-common-cert-limit
+  - faq-ios-cert-expired
+doc_revision: aa243341
+---
+
 # 厂商证书数量 / 套餐上限
 
 ## 与 MCP 的关系

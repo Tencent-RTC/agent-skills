@@ -641,7 +641,7 @@ function resolveCodexStateRoot(projectRoot, { explicitStateRoot, env = process.e
 }
 
 function writeHostStateRootBinding(projectRoot, {
-  stateRoot, generation, status = "ready", now = new Date(), installerVersion = "unknown",
+  stateRoot, generation, status = "ready", now = new Date(), installerVersion = "unknown", storageVersion,
 } = {}) {
   if (!hostStateRootGeneration(generation)) {
     const error = new Error("host state-root generation is invalid"); error.code = "HOST_STATE_ROOT_GENERATION_INVALID"; throw error;
@@ -660,7 +660,8 @@ function writeHostStateRootBinding(projectRoot, {
   }
   const bindings = previous.valid && previous.value.schema_version === HOST_STATE_ROOT_SCHEMA_VERSION
     && previous.value.bindings && typeof previous.value.bindings === "object" ? { ...previous.value.bindings } : {};
-  bindings.codex = { state_root: checked.path, generation, status };
+  bindings.codex = { state_root: checked.path, generation, status,
+    ...(storageVersion === 2 ? { storage_version: 2 } : {}) };
   const value = {
     schema_version: HOST_STATE_ROOT_SCHEMA_VERSION,
     installer_version: String(installerVersion).slice(0, 128),

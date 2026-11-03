@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-ios-xcodegen
+doc_revision: b8f5102b
+---
+
 # iOS：No such module 'TIMPush'（XcodeGen 清掉 CocoaPods 脚本）
 
 ## 与 MCP 的关系

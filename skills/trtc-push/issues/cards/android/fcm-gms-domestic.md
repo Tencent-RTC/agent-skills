@@ -1,3 +1,10 @@
+---
+doc_source:
+  - faq-android-fcm-no-receive
+  - faq-android-fcm-notes
+doc_revision: db090eee
+---
+
 # FCM / GMS 国内环境限制
 
 ## 与 MCP 的关系
@@ -47,9 +54,10 @@ FCM 注册和离线投递。
 1. 若用户只给了 `800005`：先打开 `error-codes.md#800005`，确认是否真的是 FCM 子因。
 2. 确认实际走的是 FCM 通道还是国内厂商通道。
 3. 如果设备是国内三星或普通国内 Android 机，先确认是否具备可用 GMS。
-4. 核对 `google-services.json`、Firebase 初始化和 FCM Sender ID。
+4. 核对 IM 控制台 FCM 证书是否正确上传和配置（官网 FAQ 将其列为「Google FCM 收不到推送」的原因），再核对 `google-services.json`、Firebase 初始化和 FCM Sender ID。
+   需要优先走 FCM 通道时使用 `forceUseFCMPushChannel` 接口；FCM 消息可能拉起应用进程，不要在 `Application.onCreate()` 里做登录、数据上报等不适合高频并发的逻辑。
 5. 使用 Pixel、国际版真机或带 Google Play 的模拟器做对照测试。
-6. 如果 FCM 注册成功但仍收不到，继续检查自启动、后台、电池优化和通知权限。
+6. 如果 FCM 注册成功但仍收不到，继续检查网络防火墙是否放行 FCM 端口，以及设备是否处于 Doze / App Standby（普通优先级 FCM 消息会延迟到维护窗口或设备被唤醒后送达），见官网《Google FCM 收不到推送，如何处理？》；再检查自启动、后台和通知权限。
 7. 国内业务场景优先配置国内厂商通道，不要把 FCM 当作稳定兜底通道。
 
 ## 解决方案

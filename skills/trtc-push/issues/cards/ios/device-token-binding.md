@@ -1,3 +1,10 @@
+---
+doc_source:
+  - faq-ios-token-sporadic
+  - faq-ios-bad-devicetoken
+doc_revision: 62031e53
+---
+
 # iOS deviceToken 注册与上报
 
 ## 与 MCP 的关系

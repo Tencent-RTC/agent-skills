@@ -1,3 +1,11 @@
+---
+doc_source:
+  - faq-common-qps
+  - faq-common-plugin-expire
+  - faq-common-cert-limit
+doc_revision: 11baf287
+---
+
 # 产品能力 / 套餐 / 控制台限制咨询处理流程
 
 ## 与 MCP 的关系
@@ -9,7 +17,7 @@
 
 ## 入口现象
 
-用户咨询套餐版本、证书数量、控制台入口、推送总量、QPS、角标、撤回、定时、全员推送统计
+用户咨询套餐版本、证书数量、控制台入口、推送总量、QPS、角标、全员推送统计（撤回、定时 〔待确认：官网暂无产品边界说明，仅有对应 API 文档〕）
 等产品能力边界，或误把能力限制当成接入故障。
 
 这类问题优先按 FAQ / 产品边界处理，不要直接进入 SDK 接入排障。
@@ -39,10 +47,10 @@
 | 证书数量上限 | `cert limit exceeded`、证书数量已达上限 | 查 `../../cards/common/console-certificate-quota.md` |
 | 插件到期停服 | 试用/正式插件过期后推送全停 | 引导续费/购买；说明到期即停服属产品行为 |
 | 自助排查工具 | 用户不知如何查链路、要 pushID/TaskId | 引导 [离线测试工具](https://console.cloud.tencent.com/im/push-plugin-push-check) 与 [排查工具文档](https://cloud.tencent.com/document/product/269/100629) |
-| 只接 Push / RegistrationID | 不接 Chat、问能否只用 RegistrationID | 查 `../../cards/common/timpush-only-registrationid.md` |
+| 只接 Push / RegistrationID | 不接 Chat、问能否只用 RegistrationID | 无独立卡；ROUTER link-only 规则 `link-common-push-only`，引导官网 FAQ「不接入 IM 聊天能力，只使用推送服务可以吗？」 |
 | 推送总量 / QPS | 咨询总量限制、解除限制 | 区分腾讯云 QPS 与厂商每日额度 |
 | 控制台入口 / 查询方式 | 找不到入口或查不到记录 | 指引正确控制台路径和查询条件 |
-| 产品不支持 | 角标图片、部分厂商角标、特殊控制能力 | 明确不支持并给替代方案 |
+| 产品 / 厂商不支持 | 部分厂商自定义角标（小米 / vivo / OPPO / 魅族 / FCM 跟随系统，见 `badge.md`） | 明确不支持并给替代方案 |
 | 厂商权益 | 即时通信分类、私信通道、厂商限流 | 引导用户到厂商控制台申请或确认；Android 限额见 `message-category-limit` card |
 
 ## 验证信号

@@ -63,6 +63,9 @@ function installedFixture() {
     fs.mkdirSync(directory, { recursive: true });
   }
   fs.writeFileSync(join(project, 'package.json'), '{}\n');
+  fs.writeFileSync(join(project, '.trtc-skill-state/preference.json'), JSON.stringify({
+    continuation_choice: 'allowed', continuation_choice_version: 1, prompt_reporting_enabled: true,
+  }));
   fs.writeFileSync(join(project, '.trtc-skill-state', 'install-mode.json'), JSON.stringify({
     schema_version: 2, mode: 'node_v2', installer_version: '1.1.0',
     updated_at: new Date().toISOString(), install_generation: 'e'.repeat(32),
@@ -233,25 +236,20 @@ test('Codex read-only global state: real Python foreground persists both AI owne
   await verifyPermissionBoundary(t, 'posix');
 });
 
-test('Codex read-only global state: real Python accepts one natural refusal and closes every reporting scope', async (t) => {
+test('Codex read-only global state: real Python accepts one natural refusal and preserves independent runtime reporting', async (t) => {
   if (process.platform === 'win32' || typeof process.getuid !== 'function' || process.getuid() === 0) {
     t.skip('requires an unprivileged POSIX process');
     return;
   }
   const { projectKey, readPreferenceState, isReportingEnabledForScope } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/preference.js')));
-  const { ensureNoticeObligation, acknowledgeNoticeObligation, writeNoticeReceipt, noticeStatus } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/control.js')));
+  const { runCli } = await import(pathToFileURL(join(repo, 'skills/trtc/runtime/telemetry.js')));
   const f = installedFixture();
   let restore;
   try {
-    const key = projectKey(f.project);
-    const attempt = '1234567890abcdef1234567890abcdef';
-    ensureNoticeObligation(f.state, key, 'readonly-deny-first');
-    acknowledgeNoticeObligation(f.state, key, 'readonly-deny-first');
-    writeNoticeReceipt(f.state, key, {
-      event_id: 'readonly-deny-first', notice_attempt_id: attempt,
-      sessionid: 'sess_0123456789abcdef0123456789abcdef',
-    });
-    noticeStatus(f.state, key, attempt, null);
+    fs.writeFileSync(join(f.project, '.trtc-skill-state/preference.json'), '{}');
+    const notice = await runCli(['stage-prompt', '--ide', 'codex'], { cwd: f.project,
+      stateRoot: f.state, env: f.env, stdin: input({ text: 'first held Prompt', cwd: f.project, ide: 'codex' }) });
+    assert.equal(notice.marker, 'TRTC_REPORTING_NOTICE_REQUIRED_V1');
     f.env.CODEX_THREAD_ID = 'desktop-opaque-task';
     const globalBefore = snapshotFiles(f.state);
     restore = makeReadOnly(f.state);
@@ -262,7 +260,7 @@ test('Codex read-only global state: real Python accepts one natural refusal and 
     assert.equal(denied.stdout.trim(), 'TRTC_REPORTING_DISABLED_V1', JSON.stringify(denied));
     assert.equal(readPreferenceState(f.project).value.continuation_choice, 'denied');
     assert.equal(isReportingEnabledForScope(f.project, 'experience', f.env), false);
-    assert.equal(isReportingEnabledForScope(f.project, 'runtime', f.env), false);
+    assert.equal(isReportingEnabledForScope(f.project, 'runtime', f.env), true);
     const next = childWithBoundary(f, [f.script, 'prompt', '--input-stdin', '--require-input'], {
       text: '下一条普通提示词', cwd: f.project, ide: 'codex',
     }, 'posix', process.env.PYTHON_BIN || 'python3');

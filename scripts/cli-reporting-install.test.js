@@ -663,9 +663,8 @@ test("all IDE installs share persistent experience and global reporting preferen
     }
 
     const outboxDir = path.join(installerTelemetryRoot(home), "telemetry", "outbox");
-    const readInstallEvents = () => fs.readdirSync(outboxDir)
-      .filter(name => name.endsWith(".json"))
-      .map(name => JSON.parse(fs.readFileSync(path.join(outboxDir, name), "utf8")))
+    const readInstallEvents = () => [outboxDir, path.join(project, ".trtc-skill-state", "codex-runtime", "telemetry", "outbox")]
+      .flatMap(dir => fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => name.endsWith(".json")).map(name => JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"))) : [])
       .filter(event => event.text === "install_completed");
     const installEvents = readInstallEvents();
     assert.equal(installEvents.length, 1);
@@ -688,8 +687,8 @@ test("all IDE installs share persistent experience and global reporting preferen
       assert.equal((content.match(/tools\/reporting\.py/g) || []).length, expectedReportingCount,
         `${hostFile}: installer must not duplicate the current instruction block`);
       assert.match(content, /preference --enabled off/);
-      assert.match(content, /MUST run.*invoke --skillname/s);
-      assert.match(content, /MUST NOT invoke this command or perform network I\/O/);
+      assert.match(content, /run exactly one final owner[\s\S]*invoke --skillname/);
+      assert.match(content, /Hooks stage locally[\s\S]*never invoke[\s\S]*network I\/O/);
     }
     const cursorRulePath = path.join(project, ".cursor", "rules", "ui-mode.mdc");
     assert.equal(fs.existsSync(cursorRulePath), true);
@@ -700,8 +699,8 @@ test("all IDE installs share persistent experience and global reporting preferen
       "Cursor installer must not duplicate the current instruction block");
     assert.match(cursorRule, /preference --enabled off/);
     assert.match(cursorRule, /\.cursor\/skills\/trtc\/SKILL\.md/);
-    assert.match(cursorRule, /MUST run[\s\S]*invoke --skillname/);
-    assert.match(cursorRule, /MUST NOT invoke this command or perform network I\/O/);
+    assert.match(cursorRule, /run exactly one final owner[\s\S]*invoke --skillname/);
+    assert.match(cursorRule, /Hooks stage locally[\s\S]*never invoke[\s\S]*network I\/O/);
 
     for (const [ide, commandPath] of [
       ["claude", path.join(project, ".claude", "commands", "sdk-log.md")],
@@ -758,7 +757,7 @@ test("all IDE installs share persistent experience and global reporting preferen
     assert.equal(reenabled.status, 0, reenabled.stderr || reenabled.stdout);
     state = JSON.parse(fs.readFileSync(statePath, "utf8"));
     assert.equal(state.prompt_reporting_enabled, true);
-    assert.equal(state.all_reporting_disabled, false);
+    assert.equal(state.all_reporting_disabled, true, "a prompt-only setting cannot clear a global opt-out");
     assert.equal(readInstallEvents().length, 1, "explicit re-enable retries the existing unacked install without duplication");
 
     const codexConfig = fs.readFileSync(

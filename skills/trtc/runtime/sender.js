@@ -48,7 +48,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_ENDPOINT = 'https://ap-nanjing.cls.tencentcs.com';
-const DEFAULT_TOPIC_ID = 'a1310e66-a3f5-4572-a1c3-7a327a27496d';
+const DEFAULT_TOPIC_ID = 'cfcf2001-477c-461c-aff7-82fda8721986';
 
 const DEFAULT_MAX_COUNT = 50;
 const DEFAULT_MAX_DURATION_MS = 5000;
@@ -539,6 +539,14 @@ export async function flushOutbox(root, opts = {}) {
       let response;
       let transportPromise;
       try {
+        // Identity enrichment and ACK/schema work above may take time. A
+        // refusal committed during that work must close this final boundary,
+        // even when the event was eligible at the start of the flush.
+        if (isEventEnabled(event) === false
+          || (projectKey && !readProjectDenyGate(root, projectKey).allowed)) {
+          result.skipped++;
+          continue;
+        }
         transportPromise = transport(url, clsBody, {
           ...(opts._transportOpts || {}),
           // timeoutMs MUST come last — _transportOpts cannot override

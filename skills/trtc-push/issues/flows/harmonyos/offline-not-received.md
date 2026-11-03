@@ -1,3 +1,15 @@
+---
+doc_source:
+  - faq-harmony-android-plan
+  - faq-harmony-1000900010
+  - faq-harmony-80300002
+  - faq-harmony-ohmurl
+  - ts-chain-cert
+  - faq-other-uniapp
+  - ts-by-type
+doc_revision: 5723af23
+---
+
 # HarmonyOS / 鸿蒙推送不达与适配排查流程
 
 ## 与 MCP 的关系
@@ -13,8 +25,9 @@
 | state | 主链步骤 | kind |
 |-------|----------|------|
 | `stage-0-investigation-plan` | 排查计划确认（开场闸口） | plan |
-| `stage-1-console-validity` | 控制台有效性（服务 + 鸿蒙证/签名证） | verify |
+| `stage-1-console-validity` | 控制台有效性（服务 + 鸿蒙证书凭证：IM 控制台上传的是华为 API Console 的 Service Account JSON，不是应用签名用的 `.cer`） | verify |
 | `stage-2-scenario` | 测法与系统/应用形态 | collect |
+| `stage-2b-online-check` | 在线分支（stage-2 选 `channel_path=online` 时进入；只查前台开关 / 发送端推送信息 / `onRecvPushMessage`，不涉及厂商证书与 token 绑定） | verify |
 | `stage-3-config-alignment` | 配置对齐（包名四方 / client_id / 密钥 / Profile） | verify |
 | `stage-4-register-observation` | registerPush 观测 | observe |
 | `stage-5-token-binding` | 推送 token 绑定 | observe |
@@ -22,7 +35,7 @@
 
 **RegistrationID ≠ 推送 token**。
 
-Flutter / uni-app 涉及鸿蒙时引导进入该 workflow，再按本文下钻形态差异。
+Flutter / uni-app 涉及鸿蒙时引导进入该 workflow，再按本文下钻形态差异；两者官网接入页均支持 HarmonyOS。
 
 ## 入口现象
 
@@ -43,12 +56,13 @@ Flutter / uni-app 涉及鸿蒙时引导进入该 workflow，再按本文下钻�
 
 | 分支 | 判断信号 | 处理动作 |
 |---|---|---|
-| 服务未开通 / 到期或证书无效 | 插件关闭、套餐过期、签名证过期 | `../../cards/common/console-validity-gate.md`；MCP stage-1 |
+| 在线通道收不到 | App 在前台才收不到通知，或 `onRecvPushMessage` 不触发 | MCP stage-2 选 `channel_path=online` → `stage-2b-online-check`；知识见 `../../cards/common/online-not-received.md` |
+| 服务未开通 / 到期或证书无效 | 插件关闭、套餐过期、控制台没有上传 Service Account JSON（误传 `.cer`）或证书凭证不在正确项目下 | `../../cards/common/console-validity-gate.md`；MCP stage-1 |
 | 纯血 HarmonyOS 使用 Android APK 方案 | NEXT 系统，Android 通道不通 | 改用鸿蒙原生 Push 接入 |
 | Android 兼容华为通道异常 | AGConnect / 签名错误 | `../../cards/android/vendor-huawei.md`；`800006` 先查 error-codes |
 | 注册失败 | `registerPush` 失败、无 RegID | 下方「注册失败」+ error-codes / 1000900010 |
 | 密钥类型错误 | 用服务器密钥注册客户端 Push | 改用客户端密钥 |
-| 跨端插件不支持 | Flutter / uni-app 不支持鸿蒙 | 原生混合接入或等产品适配 |
+| Flutter / uni-app 接入鸿蒙 | 跨端工程在鸿蒙上异常 | 官网 Flutter、uni-app 接入页均有 HarmonyOS 页签：Flutter 需用 Flutter-OH 构建并按页内 `dependency_overrides` 配置；uni-app 的 Harmony 不需要自定义基座。按接入页核对，再回到本主链 |
 | 点击崩溃 OHMUrl | `useNormalizedOHMUrl` | `../../cards/harmonyos/click-ohmurl-crash.md` |
 | 1000900010 | `Illegal application identity` | 下方清单 |
 | 80300002 | 服务端回执 | `../../cards/android/error-codes.md` 80300002 节 |

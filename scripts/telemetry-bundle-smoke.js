@@ -46,6 +46,9 @@ const project = join(base, 'project');
 const state = join(base, 'state');
 mkdirSync(project, { recursive: true });
 writeFileSync(join(project, 'package.json'), '{}');
+// Standalone delivery smoke represents an explicitly consenting legacy project.
+mkdirSync(join(project, '.trtc-skill-state'), { recursive: true });
+writeFileSync(join(project, '.trtc-skill-state/preference.json'), JSON.stringify({ continuation_choice: 'allowed', continuation_choice_version: 1, prompt_reporting_enabled: true }));
 
 try {
   const common = ['--state-root', state, '--cwd', project];

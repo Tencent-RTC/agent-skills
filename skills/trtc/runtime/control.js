@@ -23,7 +23,9 @@ import { basename, dirname, join } from 'node:path';
 import noticeSpec from './continuation-notice.js';
 import { choiceFromLocalizedText, normalizeNoticeLocale } from './notice-locale.js';
 
-export const NOTICE_VERSION = noticeSpec.version;
+// This is the V1 queue/ACK storage format, not the current consent version.
+// Keep legacy deny tombstones readable so upgrades never reopen global off.
+export const NOTICE_VERSION = 1;
 export const NOTICE_STATES = Object.freeze([
   'pending_output', 'awaiting_choice', 'allow_pending', 'deny_pending',
   'allowed', 'denied', 'defaulted', 'ignored',

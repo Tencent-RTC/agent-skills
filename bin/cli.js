@@ -2864,6 +2864,8 @@ async function mainUnlocked() {
   // corrupt marker is fail-closed; silently switching to an inherited env
   // root would revive the cross-project queue split this binding fixes.
   let codexStateRoot = null;
+  let codexStorageSource = null;
+  let codexStorage = null;
   if (ideList.includes("codex")) {
     const resolvedStateRoot = resolveCodexStateRoot(resolvedRoot, {
       explicitStateRoot: explicitStateRootArg,
@@ -2873,7 +2875,14 @@ async function mainUnlocked() {
       const reason = resolvedStateRoot.reason || resolvedStateRoot.status || "state_root_unavailable";
       throw new Error(`state_root_unavailable:${reason}`);
     }
-    codexStateRoot = resolvedStateRoot.stateRoot;
+    codexStorageSource = resolvedStateRoot.stateRoot;
+    codexStorage = await import(require("url").pathToFileURL(
+      path.join(PKG_ROOT, "skills/trtc/runtime/codex-storage.js")).href);
+    codexStateRoot = codexStorage.initializeCodexStorage({
+      projectRoot: resolvedRoot, sourceRoot: codexStorageSource,
+      initializeIdentity: !noReport && !readAllReportingDisabled(resolvedRoot)
+        && process.env.TRTC_REPORTING !== "off",
+    }).stateRoot;
   }
   const home = process.env.HOME || os.homedir();
   const legacyUpgradeIdes = reportingModeResult.reason === "explicit_upgrade"
@@ -2917,7 +2926,8 @@ async function mainUnlocked() {
     allReportingDisabled = true;
   } else if (promptReportingArg !== undefined) {
     promptReportingEnabled = parsePromptReportingValue(promptReportingArg);
-    allReportingDisabled = promptReportingEnabled ? false : savedAllReportingDisabled;
+    // A prompt setting is not permission to reopen globally disabled data.
+    allReportingDisabled = savedAllReportingDisabled;
   } else {
     const existingPreference = readPromptReportingPreference(resolvedRoot);
     if (typeof existingPreference === "boolean") {
@@ -2925,7 +2935,7 @@ async function mainUnlocked() {
       allReportingDisabled = savedAllReportingDisabled;
     } else {
       promptReportingEnabled = true;
-      allReportingDisabled = false;
+      allReportingDisabled = savedAllReportingDisabled;
     }
   }
 
@@ -3258,11 +3268,13 @@ async function mainUnlocked() {
         } catch { return false; }
       })();
     try {
-      writeHostStateRootBinding(resolvedRoot, {
-        stateRoot: codexStateRoot,
-        generation: stage.ownerToken,
-        status: codexBindingReady ? "ready" : "unavailable",
-        installerVersion: PKG_VERSION,
+      if (!codexBindingReady) throw Object.assign(new Error("runtime_binding_unavailable"), { code: "RUNTIME_BINDING_UNAVAILABLE" });
+      await codexStorage.prepareCodexStorage({ projectRoot: resolvedRoot, sourceRoot: codexStorageSource,
+        initializeIdentity: false,
+        commit: (stateRoot) => writeHostStateRootBinding(resolvedRoot, {
+          stateRoot, generation: stage.ownerToken, status: "ready", storageVersion: 2,
+          installerVersion: PKG_VERSION,
+        }),
       });
       if (!codexBindingReady) installHealthStatus = "partial";
     } catch (error) {

@@ -27,6 +27,7 @@ starts the user's app or captures its logs.
 | `schema.js` | Internal envelope validation and the only internal-to-CLS field mapping boundary. |
 | `sender.js` | Strict HTTPS, total request deadline, retry metadata, and removal only after CLS 2xx. |
 | `hook-activation.js` | Deterministic `hook_activated` creation and acknowledgement after delivery. |
+| `platform-memory.js` | Project+product scoped platform continuity at `<stateRoot>/telemetry/platform-memory.json`. Never writes to the project directory. |
 
 For payload fields, preferences, event types, SDKAppID rules, and query
 semantics, read `REPORTING.md`.

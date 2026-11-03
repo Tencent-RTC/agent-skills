@@ -35,20 +35,20 @@ var continuation_notice_default;
 var init_continuation_notice = __esm({
   "skills/trtc/runtime/continuation-notice.js"() {
     continuation_notice_default = {
-      "version": 1,
-      "body": "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。\n如果跳过此问题，则默认会收集您在使用过程中的提示词。",
-      "allow_label": "同意继续体验数据上报",
-      "deny_label": "停止后续体验数据上报",
+      "version": 2,
+      "body": "哪些回答没帮上忙？哪些接入步骤还不够顺畅？分享使用中的提示词和项目中的 SDKAppID（如有），能帮助我们发现这些问题，持续改进 Skill。\n\n提示词会**先脱敏，再上报**，不主动收集或上报密钥等敏感凭证，也不上传项目源码。\n\n**明确同意后才会上报上述数据**，可随时关闭；关闭不影响正常使用。",
+      "allow_label": "同意上报",
+      "deny_label": "关闭上报",
       "locales": {
         "zh-CN": {
-          "body": "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。\n如果跳过此问题，则默认会收集您在使用过程中的提示词。",
-          "allow_label": "同意继续体验数据上报",
-          "deny_label": "停止后续体验数据上报"
+          "body": "哪些回答没帮上忙？哪些接入步骤还不够顺畅？分享使用中的提示词和项目中的 SDKAppID（如有），能帮助我们发现这些问题，持续改进 Skill。\n\n提示词会**先脱敏，再上报**，不主动收集或上报密钥等敏感凭证，也不上传项目源码。\n\n**明确同意后才会上报上述数据**，可随时关闭；关闭不影响正常使用。",
+          "allow_label": "同意上报",
+          "deny_label": "关闭上报"
         },
         "en-US": {
-          "body": "To help us understand how the Skill is used and improve it, do you agree to let us collect de-identified prompts and any identifiable TRTC SDKAppID in your project?\nWe do not proactively collect or upload SecretKey, UserSig, Token, passwords, private keys, or source code. Prompts are redacted before upload.\nIf you skip this question, prompt collection remains enabled by default.",
-          "allow_label": "Agree and continue experience data collection",
-          "deny_label": "Stop future experience data collection"
+          "body": "Help us improve the Skill’s answers and make integration easier by sharing your prompts and your project’s TRTC SDKAppID (if available).\n\nPrompts are **redacted before upload** to remove sensitive information, including secret keys and other credentials. We don’t upload project source code.\n\n**This data is only sent if you opt in.** You can turn sharing off at any time and keep using the Skill either way.",
+          "allow_label": "Share data",
+          "deny_label": "Don’t share"
         }
       },
       "markers": {
@@ -58,7 +58,18 @@ var init_continuation_notice = __esm({
         "choice_retry": "TRTC_REPORTING_CHOICE_RETRY_V1",
         "disabled": "TRTC_REPORTING_DISABLED_V1",
         "disable_retry": "TRTC_REPORTING_DISABLE_RETRY_V1"
-      }
+      },
+      "legacy_replay_texts": [
+        "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。\n如果跳过此问题，则默认会收集您在使用过程中的提示词。\n\n同意继续体验数据上报    停止后续体验数据上报",
+        "To help us understand how the Skill is used and improve it, do you agree to let us collect de-identified prompts and any identifiable TRTC SDKAppID in your project?\nWe do not proactively collect or upload SecretKey, UserSig, Token, passwords, private keys, or source code. Prompts are redacted before upload.\nIf you skip this question, prompt collection remains enabled by default.\n\nAgree and continue experience data collection    Stop future experience data collection",
+        "为了帮助我们了解 Skill 的使用场景并持续优化表现，是否同意收集经脱敏的提示词，以及项目中可识别的 TRTC SDKAppID（如有）？\n我们不会主动收集或上传 SecretKey、UserSig、Token、密码、私钥等敏感凭证，也不会上传项目源码。提示词会在上传前进行脱敏处理。\n在您明确同意前，首条提示词仅经脱敏后暂存在本地，不会上传；同意后会补报该首条提示词，并上报后续体验数据。未回答、模糊回复或拒绝均不会开启体验数据上报。安装结果和 Hook 激活等运行统计单独保留现有上报规则。\n\n同意体验数据上报    不同意体验数据上报",
+        "To help us understand how the Skill is used and improve it, do you agree to let us collect de-identified prompts and any identifiable TRTC SDKAppID in your project?\nWe do not proactively collect or upload SecretKey, UserSig, Token, passwords, private keys, or source code. Prompts are redacted before upload.\nUntil you explicitly agree, only your first redacted prompt is held locally and is not uploaded. If you agree, that first prompt and future experience data will be reported. No answer, an unclear reply, or refusal keeps experience reporting off. Installation and Hook activation statistics follow their separate existing reporting settings.\n\nAgree to experience data reporting    Decline experience data reporting",
+        "**帮我们把 Skill 做得更好**\n\n愿意分享使用中的提示词，帮助我们优化 Skill 的回答和接入体验吗？\n\n- **上传前脱敏**：处理提示词中的敏感数据，不主动收集 SecretKey、UserSig、Token、密码、私钥等凭证，也不上传项目源码。\n- **同意后才上报**：包括首条及后续提示词、项目中的 TRTC SDKAppID（如有）和接入体验数据。你可以随时关闭。\n\n同意前，首条仅脱敏暂存在本地；未明确同意就不上报上述数据，仍可继续使用 Skill。\n\n安装及 Hook 激活统计按独立规则上报。\n\n同意体验数据上报    不同意体验数据上报",
+        "**Help us make the Skill better**\n\nWould you share your prompts to help us improve the Skill’s answers and integration experience?\n\n- **Redacted before upload:** sensitive data in prompts is redacted. We do not proactively collect credentials such as SecretKey, UserSig, tokens, passwords or private keys, or upload project source code.\n- **Only after you agree:** we report your first and future prompts, any identifiable TRTC SDKAppID in your project, and integration experience data. You can turn this off anytime.\n\nBefore agreement, only the first redacted prompt is held locally. Without clear agreement, the data above is not uploaded and you can keep using the Skill.\n\nInstallation and Hook activation statistics are reported separately.\n\nAgree to experience data reporting    Decline experience data reporting",
+        "**愿意分享提示词，帮我们优化 Skill 吗？**\n\n- **上报提示词，帮助优化 Skill**：分享你的使用需求，帮助我们改进回答质量和接入体验。上报内容包括首条及后续提示词、TRTC SDKAppID（如有）和接入体验数据。\n- **关闭上报**：不上传上述数据，不影响正常使用 Skill。\n\n**上传前脱敏**：不主动收集密钥、Token 等敏感凭证，也不上传项目源码。\n\n明确同意前，首条仅脱敏暂存在本地，不会上报。你可以随时关闭。\n\n上报提示词，帮助优化 Skill    关闭上报",
+        "**Would you share prompts to help us improve the Skill?**\n\n- **Share prompts to improve the Skill**: help us understand your needs and improve answers and the integration experience. Reporting includes your first and future prompts, any identifiable TRTC SDKAppID, and integration experience data.\n- **Turn off reporting**: none of the data above is uploaded. You can keep using the Skill normally.\n\n**Redacted before upload**: we do not proactively collect credentials such as keys or tokens, or upload project source code.\n\nUntil you explicitly agree, only the first redacted prompt is held locally and is not uploaded. You can turn reporting off anytime.\n\nShare prompts to improve the Skill    Turn off reporting",
+        "Which answers weren’t helpful? Which integration steps could be smoother? Sharing your prompts and your project’s SDKAppID (if available) helps us identify these issues and improve the Skill.\n\nPrompts are **redacted before upload**. We do not proactively collect or upload sensitive credentials such as secret keys, and we do not upload project source code.\n\n**We only upload this data after you explicitly agree.** You can turn reporting off at any time; doing so does not affect your use of the Skill.\n\nAllow reporting    Turn off reporting"
+      ]
     };
   }
 });
@@ -123,13 +134,33 @@ ${notice.allow_label}    ${notice.deny_label}`;
 function isNoticeReplayText(text) {
   if (typeof text !== "string")
     return false;
-  const normalized = text.replace(/\s/gu, "");
-  return SUPPORTED_NOTICE_LOCALES.some((locale) => normalized === noticeTextForLocale(locale).replace(/\s/gu, ""));
+  const presentation = (value) => value.replace(/\*\*/g, "").replace(/(^|\s)[-*]\s+/g, "$1").replace(/\s/gu, "");
+  const normalized = presentation(text);
+  return [...SUPPORTED_NOTICE_LOCALES.map(noticeTextForLocale), ...continuation_notice_default.legacy_replay_texts || []].some((body) => normalized === presentation(body));
 }
 function choiceFromLocalizedText(text) {
   if (typeof text !== "string")
     return null;
   const normalized = text.trim().replace(/[。.!！?？\s]+$/u, "");
+  if ([
+    "同意继续体验数据上报",
+    "Agree and continue experience data collection",
+    "同意体验数据上报",
+    "Agree to experience data reporting",
+    "上报提示词，帮助优化 Skill",
+    "Share prompts to improve the Skill",
+    "Allow reporting"
+  ].includes(normalized))
+    return "allowed";
+  if ([
+    "停止后续体验数据上报",
+    "Stop future experience data collection",
+    "不同意体验数据上报",
+    "Decline experience data reporting",
+    "Turn off reporting",
+    "Don't share"
+  ].includes(normalized))
+    return "denied";
   for (const locale of SUPPORTED_NOTICE_LOCALES) {
     const notice = noticeForLocale(locale);
     if (normalized === notice.allow_label)
@@ -677,15 +708,54 @@ var init_identity = __esm({
   }
 });
 
+// skills/trtc/runtime/event-scope.js
+function isRuntimeEvent(event) {
+  return (event == null ? void 0 : event.__scope) === "runtime" && event.method === "event" && RUNTIME_TYPES.has(event.text) && Object.keys(event).every((key) => key.startsWith("__") || RUNTIME_FIELDS.has(key));
+}
+var RUNTIME_TYPES, RUNTIME_FIELDS;
+var init_event_scope = __esm({
+  "skills/trtc/runtime/event-scope.js"() {
+    RUNTIME_TYPES = /* @__PURE__ */ new Set([
+      "install_completed",
+      "install_failed",
+      "upgrade_started",
+      "upgrade_completed",
+      "upgrade_failed",
+      "hook_activated",
+      "test_run_started",
+      "test_run_completed",
+      "mcp_started",
+      "mcp_tool_invoked"
+    ]);
+    RUNTIME_FIELDS = /* @__PURE__ */ new Set([
+      "method",
+      "text",
+      "platform",
+      "schema_version",
+      "client_generation",
+      "event_id",
+      "time",
+      "useragent",
+      "identity_scope",
+      "identity_pending",
+      "ide",
+      "skillname",
+      "product",
+      "framework",
+      "version",
+      "os",
+      "install_mode",
+      "install_status",
+      "installed_ides",
+      "hook_results",
+      "delivery_guarantee"
+    ]);
+  }
+});
+
 // skills/trtc/runtime/control.js
 function isCanonicalOption(text) {
   return choiceFromLocalizedText(text);
-}
-function controlKey(projectKey2, option) {
-  if (!PROJECT_KEY_RE.test(projectKey2) || !["allowed", "denied"].includes(option))
-    return null;
-  const fingerprint = (0, import_node_crypto2.createHash)("sha256").update(option === "allowed" ? ALLOW_LABEL : DENY_LABEL).digest("hex");
-  return (0, import_node_crypto2.createHash)("sha256").update(projectKey2).update("\0").update(fingerprint).update("\0").update(String(NOTICE_VERSION)).digest("hex");
 }
 function validProjectKey(value) {
   return typeof value === "string" && PROJECT_KEY_RE.test(value);
@@ -951,11 +1021,6 @@ function validateNoticeObligation(value, projectKey2) {
     ...value.notice_locale ? { notice_locale: normalizeNoticeLocale(value.notice_locale) } : {}
   };
 }
-function validateTurn(value, projectKey2, expectedKey) {
-  if (!value || typeof value !== "object" || value.version !== NOTICE_VERSION || value.project_key !== projectKey2 || !validControlKey(value.control_key) || value.control_key !== expectedKey || !CONTROL_STATES.includes(value.control_status) || !["allowed", "denied"].includes(value.control_kind) || value.notice_version !== NOTICE_VERSION || !Number.isFinite(value.created_at))
-    return null;
-  return { ...value };
-}
 function readNoticeReceipt(stateRoot, projectKey2) {
   const p = paths(stateRoot, projectKey2);
   if (!p)
@@ -1172,44 +1237,6 @@ function readEventAcknowledgement(stateRoot, projectKey2, eventId) {
   const value = readJson(path2);
   return validateEventAck(value, projectKey2, eventId) ? { status: "valid", value } : { status: "corrupt" };
 }
-function writeNoticeReceipt(stateRoot, projectKey2, receipt) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p || !validAttempt(receipt == null ? void 0 : receipt.notice_attempt_id))
-    return { status: "error", reason: "invalid_receipt" };
-  const lock = acquireControlReservation(stateRoot, projectKey2, { timeoutMs: 100 });
-  if (!lock)
-    return { status: "error", reason: "control_busy" };
-  try {
-    const obligation = readNoticeObligation(stateRoot, projectKey2);
-    if (obligation.status === "valid" && (receipt == null ? void 0 : receipt.legacy) !== true && (obligation.value.first_event_id !== receipt.event_id || obligation.value.acknowledged !== true)) {
-      return { status: "not_ready", reason: "first_prompt_not_acknowledged", obligation: obligation.value };
-    }
-    if (obligation.status === "valid" && (obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status))) {
-      return { status: "terminal", obligation: obligation.value };
-    }
-    const existing = readNoticeReceipt(stateRoot, projectKey2);
-    if (existing.status === "valid")
-      return { status: "already_present", receipt: existing.value };
-    if (existing.status === "corrupt")
-      return { status: "error", reason: "receipt_corrupt" };
-    const value = {
-      version: NOTICE_VERSION,
-      notice_version: NOTICE_VERSION,
-      status: "pending_output",
-      project_key: projectKey2,
-      event_id: receipt.event_id,
-      sessionid: receipt.sessionid ?? null,
-      notice_attempt_id: receipt.notice_attempt_id,
-      created_at: Number.isFinite(receipt.created_at) ? receipt.created_at : Date.now(),
-      notice_locale: normalizeNoticeLocale(receipt.notice_locale) || "zh-CN"
-    };
-    if (!atomicWrite(p.notice, value))
-      return { status: "error", reason: "receipt_write_failed" };
-    return { status: "created", receipt: value };
-  } finally {
-    releaseControlReservation(lock);
-  }
-}
 function noticeStatus(stateRoot, projectKey2, attemptId, sessionid = null, opts = {}) {
   const p = paths(stateRoot, projectKey2);
   if (!p || !validAttempt(attemptId))
@@ -1273,73 +1300,6 @@ function noticeStatus(stateRoot, projectKey2, attemptId, sessionid = null, opts 
     releaseControlReservation(lock);
   }
 }
-function updateNoticeStatus(stateRoot, projectKey2, expected, status) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p || !NOTICE_STATES.includes(status))
-    return { status: "error", reason: "invalid_status" };
-  const lock = acquireControlReservation(stateRoot, projectKey2, { timeoutMs: 100 });
-  if (!lock)
-    return { status: "retry", reason: "control_busy" };
-  try {
-    const current = readNoticeReceipt(stateRoot, projectKey2);
-    if (current.status !== "valid")
-      return { status: "retry", reason: current.status };
-    if (expected && (current.value.status !== expected || expected.event_id && current.value.event_id !== expected.event_id)) {
-      return { status: "conflict", value: current.value };
-    }
-    const next = { ...current.value, status };
-    delete next.choice_retry_count;
-    delete next.choice_last_error;
-    delete next.choice_next_retry_at;
-    delete next.choice_retry_kind;
-    if (!atomicWrite(p.notice, next))
-      return { status: "error", reason: "notice_write_failed" };
-    if (["allowed", "denied", "defaulted"].includes(status)) {
-      const obligation = readNoticeObligation(stateRoot, projectKey2);
-      if (obligation.status === "valid" && obligation.value.first_event_id === next.event_id) {
-        const terminal = { ...obligation.value, notice_status: status };
-        if (!writeNoticeObligationLocked(p, terminal)) {
-          return { status: "retry", reason: "obligation_write_failed", value: next };
-        }
-      }
-    }
-    return { status: "updated", value: next };
-  } finally {
-    releaseControlReservation(lock);
-  }
-}
-function recordNoticeRetry(stateRoot, projectKey2, expected, reason, opts = {}) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p)
-    return { status: "error", reason: "invalid_project_key" };
-  const lock = acquireControlReservation(stateRoot, projectKey2, { timeoutMs: opts.timeoutMs ?? 100 });
-  if (!lock)
-    return { status: "retry", reason: "control_busy" };
-  try {
-    const current = readNoticeReceipt(stateRoot, projectKey2);
-    if (current.status !== "valid")
-      return { status: "retry", reason: current.status };
-    if (expected && current.value.status !== expected) {
-      return { status: "conflict", value: current.value };
-    }
-    const now = typeof opts.now === "function" ? opts.now() : Number.isFinite(opts.now) ? opts.now : Date.now();
-    const count = Number.isInteger(current.value.choice_retry_count) ? current.value.choice_retry_count + 1 : 1;
-    const delays = [60 * 1e3, 5 * 60 * 1e3, 30 * 60 * 1e3];
-    const delay = delays[Math.min(count - 1, delays.length - 1)] || 24 * 60 * 60 * 1e3;
-    const next = {
-      ...current.value,
-      choice_retry_count: count,
-      choice_last_error: typeof reason === "string" ? reason.slice(0, 128) : "state_write_failed",
-      choice_next_retry_at: now + delay,
-      ...opts.choiceRetryKind === "defaulted" ? { choice_retry_kind: "defaulted" } : {}
-    };
-    if (!atomicWrite(p.notice, next))
-      return { status: "error", reason: "notice_write_failed" };
-    return { status: "updated", value: next };
-  } finally {
-    releaseControlReservation(lock);
-  }
-}
 function readDenyTombstone(stateRoot, projectKey2) {
   const p = paths(stateRoot, projectKey2);
   if (!p)
@@ -1366,52 +1326,6 @@ function readProjectDenyGate(stateRoot, projectKey2) {
   if (result.status === "invalid")
     return { status: "invalid", allowed: false };
   return { status: "corrupt", allowed: false, reason: result.reason || "tombstone_unreadable" };
-}
-function quarantineDenyTombstone(stateRoot, projectKey2, opts = {}) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p)
-    return { status: "retryable", reason: "invalid_project_key" };
-  let stat;
-  try {
-    stat = (0, import_node_fs2.lstatSync)(p.tombstone);
-  } catch (err) {
-    if ((err == null ? void 0 : err.code) === "ENOENT")
-      return { status: "missing" };
-    return { status: "retryable", reason: (err == null ? void 0 : err.code) || "tombstone_lstat_failed" };
-  }
-  if (!stat.isFile() && !stat.isSymbolicLink()) {
-    return { status: "retryable", reason: "tombstone_special_file" };
-  }
-  try {
-    ensureDir2((0, import_node_path2.join)(p.dir, "quarantine"));
-    const destination = (0, import_node_path2.join)(p.dir, "quarantine", `deny-v1.${Date.now()}.${(0, import_node_crypto2.randomBytes)(8).toString("hex")}.quarantine`);
-    (0, import_node_fs2.renameSync)(p.tombstone, destination);
-    const synced = fsyncDirBestEffort2(p.dir, opts);
-    if (!synced.ok) {
-      try {
-        (0, import_node_fs2.renameSync)(destination, p.tombstone);
-        return { status: "retryable", reason: synced.code || "quarantine_dir_fsync_failed", restored: true };
-      } catch {
-        try {
-          const fd = (0, import_node_fs2.openSync)(p.tombstone, "wx", process.platform === "win32" ? void 0 : 384);
-          try {
-            writeAll(fd, '{"quarantine_pending":true}\n');
-          } finally {
-            (0, import_node_fs2.closeSync)(fd);
-          }
-          return { status: "retryable", reason: synced.code || "quarantine_dir_fsync_failed", fail_closed: true };
-        } catch (markerErr) {
-          if ((markerErr == null ? void 0 : markerErr.code) === "EEXIST") {
-            return { status: "retryable", reason: synced.code || "quarantine_dir_fsync_failed", fail_closed: true };
-          }
-          return { status: "retryable", reason: "quarantine_restore_failed", fail_closed: false };
-        }
-      }
-    }
-    return { status: "quarantined", path: destination };
-  } catch (err) {
-    return { status: "retryable", reason: (err == null ? void 0 : err.code) || "tombstone_quarantine_failed" };
-  }
 }
 function acquireFileReservation(lockPath2, owner, opts = {}) {
   const timeoutMs = Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : 100;
@@ -1625,156 +1539,6 @@ function listActiveProducerLeases(stateRoot, projectKey2, opts = {}) {
   }
   return { active, reclaimed, busy };
 }
-function writeDenyTombstoneFromHook(stateRoot, projectKey2, controlKeyValue, opts = {}) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p || !validControlKey(controlKeyValue))
-    return { status: "retryable", reason: "invalid_project_or_control_key" };
-  const deadline = performanceNow() + Math.min(25, Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : 25);
-  try {
-    const dirStat = (0, import_node_fs2.lstatSync)(p.dir);
-    if (!dirStat.isDirectory() || dirStat.isSymbolicLink())
-      return { status: "retryable", reason: "control_dir_invalid", marker: DISABLE_RETRY };
-  } catch {
-    return { status: "retryable", reason: "control_dir_missing", marker: DISABLE_RETRY };
-  }
-  if (performanceNow() > deadline)
-    return { status: "retryable", reason: "deadline" };
-  const value = {
-    version: NOTICE_VERSION,
-    project_key: projectKey2,
-    notice_version: NOTICE_VERSION,
-    control_kind: "denied",
-    control_key: controlKeyValue,
-    created_at: Date.now(),
-    random_token: (0, import_node_crypto2.randomBytes)(16).toString("hex")
-  };
-  try {
-    const fd = (0, import_node_fs2.openSync)(p.tombstone, "wx", process.platform === "win32" ? void 0 : 384);
-    try {
-      writeAll(fd, `${JSON.stringify(value)}
-`);
-    } finally {
-      (0, import_node_fs2.closeSync)(fd);
-    }
-    if (performanceNow() > deadline)
-      return { status: "retryable", reason: "deadline_after_close", marker: DISABLE_RETRY };
-    return { status: "pending", tombstone: value, marker: DISABLE_RETRY };
-  } catch (err) {
-    if ((err == null ? void 0 : err.code) === "EEXIST")
-      return { status: "already_present", marker: DISABLE_RETRY };
-    return { status: "retryable", reason: (err == null ? void 0 : err.code) || "tombstone_write_failed", marker: DISABLE_RETRY };
-  }
-}
-function writeDenyTombstone(stateRoot, projectKey2, controlKeyValue, opts = {}) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p || !validControlKey(controlKeyValue))
-    return { status: "error", reason: "invalid_control_key" };
-  ensureDir2(p.dir);
-  const existingPath = lstatRegularFile(p.tombstone);
-  if (existingPath.status === "invalid") {
-    return { status: "error", reason: "tombstone_conflict" };
-  }
-  if (existingPath.status === "error") {
-    return { status: "error", reason: existingPath.reason || "tombstone_stat_failed" };
-  }
-  if (existingPath.status === "regular") {
-    const existing = readDenyTombstone(stateRoot, projectKey2);
-    return existing.status === "valid" && existing.value.control_key === controlKeyValue ? durabilizeFile(p.tombstone, p.dir, opts) ? { status: "already_present", tombstone: existing.value } : { status: "error", reason: "tombstone_durability_failed" } : { status: "error", reason: "tombstone_conflict" };
-  }
-  const value = {
-    version: NOTICE_VERSION,
-    project_key: projectKey2,
-    notice_version: NOTICE_VERSION,
-    control_kind: "denied",
-    control_key: controlKeyValue,
-    created_at: Date.now(),
-    random_token: (0, import_node_crypto2.randomBytes)(16).toString("hex")
-  };
-  try {
-    const fd = (0, import_node_fs2.openSync)(p.tombstone, "wx", process.platform === "win32" ? void 0 : 384);
-    try {
-      writeAll(fd, `${JSON.stringify(value)}
-`);
-      (0, import_node_fs2.fsyncSync)(fd);
-    } finally {
-      (0, import_node_fs2.closeSync)(fd);
-    }
-    const synced = fsyncDirBestEffort2(p.dir, opts);
-    if (!synced.ok)
-      return { status: "error", reason: synced.code || "directory_fsync_failed" };
-    return { status: "created", tombstone: value };
-  } catch (err) {
-    if ((err == null ? void 0 : err.code) === "EEXIST") {
-      const raced = lstatRegularFile(p.tombstone);
-      if (raced.status !== "regular")
-        return { status: "error", reason: "tombstone_conflict" };
-      const existing = readDenyTombstone(stateRoot, projectKey2);
-      return existing.status === "valid" && existing.value.control_key === controlKeyValue ? durabilizeFile(p.tombstone, p.dir, opts) ? { status: "already_present", tombstone: existing.value } : { status: "error", reason: "tombstone_durability_failed" } : { status: "error", reason: "tombstone_conflict" };
-    }
-    return { status: "error", reason: (err == null ? void 0 : err.code) || "tombstone_write_failed" };
-  }
-}
-function turnPath(p, key) {
-  return (0, import_node_path2.join)(p.turns, `${key}.json`);
-}
-function readControlTurn(stateRoot, projectKey2, key) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p || !validControlKey(key))
-    return { status: "invalid" };
-  const path2 = turnPath(p, key);
-  const file = lstatRegularFile(path2);
-  if (file.status === "missing")
-    return { status: "missing" };
-  if (file.status !== "regular")
-    return { status: "corrupt" };
-  const value = validateTurn(readJson(path2), projectKey2, key);
-  return value ? { status: "valid", value } : { status: "corrupt" };
-}
-function writeControlTurn(stateRoot, projectKey2, key, value, opts = {}) {
-  const p = paths(stateRoot, projectKey2);
-  if (!p || !validControlKey(key))
-    return { status: "error", reason: "invalid_control_key" };
-  try {
-    ensureDir2(p.turns);
-  } catch (err) {
-    return { status: "error", reason: (err == null ? void 0 : err.code) || "control_dir_unavailable" };
-  }
-  const path2 = turnPath(p, key);
-  const next = {
-    version: NOTICE_VERSION,
-    project_key: projectKey2,
-    notice_version: NOTICE_VERSION,
-    control_key: key,
-    control_kind: value.control_kind,
-    control_status: value.control_status,
-    created_at: Number.isFinite(value.created_at) ? value.created_at : Date.now()
-  };
-  if (opts.firstWriter) {
-    try {
-      const fd = (0, import_node_fs2.openSync)(path2, "wx", process.platform === "win32" ? void 0 : 384);
-      try {
-        writeAll(fd, `${JSON.stringify(next)}
-`);
-        (0, import_node_fs2.fsyncSync)(fd);
-      } finally {
-        (0, import_node_fs2.closeSync)(fd);
-      }
-      const synced = fsyncDirBestEffort2(p.turns, opts);
-      if (!synced.ok)
-        return { status: "error", reason: synced.code || "directory_fsync_failed" };
-      return { status: "created", value: next };
-    } catch (err) {
-      if ((err == null ? void 0 : err.code) === "EEXIST") {
-        const existing = readControlTurn(stateRoot, projectKey2, key);
-        return existing.status === "valid" ? { status: "already_present", value: existing.value } : { status: "error", reason: "control_conflict" };
-      }
-      return { status: "error", reason: (err == null ? void 0 : err.code) || "control_write_failed" };
-    }
-  }
-  if (!atomicWrite(path2, next, opts))
-    return { status: "error", reason: "control_write_failed" };
-  return { status: "updated", value: next };
-}
 var import_node_crypto2, import_node_fs2, import_node_path2, NOTICE_VERSION, NOTICE_STATES, CONTROL_STATES, ALLOW_LABEL, DENY_LABEL, ALLOWED, CONTROL_RETRY, ALLOW_RETRY, DISABLED, DISABLE_RETRY, NOTICE_REQUIRED, PROJECT_KEY_RE, CONTROL_KEY_RE, ATTEMPT_RE, OWNER_FILE2, SEND_OWNER_FILE, ADMISSION_OWNER_FILE, NOTICE_OBLIGATION_FILE, EVENT_ACK_DIR, PRODUCER_DIR, LOCK_GRACE_MS, UNSUPPORTED_DIR_FSYNC, READY_PRODUCER_DIRS, SAFE_EVENT_ID_RE, NOTICE_ATTEMPT_MAX_AGE_MS;
 var init_control = __esm({
   "skills/trtc/runtime/control.js"() {
@@ -1783,7 +1547,7 @@ var init_control = __esm({
     import_node_path2 = require("node:path");
     init_continuation_notice();
     init_notice_locale();
-    NOTICE_VERSION = continuation_notice_default.version;
+    NOTICE_VERSION = 1;
     NOTICE_STATES = Object.freeze([
       "pending_output",
       "awaiting_choice",
@@ -2053,10 +1817,10 @@ function fsyncDirBestEffort3(dir) {
     }
   }
 }
-function readEvent(filePath) {
+function readEvent(filePath2) {
   let raw;
   try {
-    raw = (0, import_node_fs3.readFileSync)(filePath, "utf8");
+    raw = (0, import_node_fs3.readFileSync)(filePath2, "utf8");
   } catch (err) {
     if (err && err.code === "ENOENT")
       return null;
@@ -2088,9 +1852,9 @@ function listOutbox(root) {
 function listRejected(root) {
   return listDir(subdirs(root).rejected);
 }
-function remove(filePath) {
+function remove(filePath2) {
   try {
-    (0, import_node_fs3.unlinkSync)(filePath);
+    (0, import_node_fs3.unlinkSync)(filePath2);
   } catch (err) {
     if (err && err.code === "ENOENT")
       return;
@@ -2104,7 +1868,7 @@ function purgeProjectPromptEvents(root, targetProjectKey, opts = {}) {
   const result = { removed: 0, busy: 0, skipped: 0 };
   for (const path2 of [...listPending(root), ...listOutbox(root), ...listRejected(root)]) {
     const event = readEvent(path2);
-    if (!event || event.method !== "prompt" || event.__project_key !== targetProjectKey) {
+    if (!event || (opts.experience ? isRuntimeEvent(event) : event.method !== "prompt") || event.__project_key !== targetProjectKey) {
       result.skipped++;
       continue;
     }
@@ -2124,7 +1888,7 @@ function purgeProjectPromptEvents(root, targetProjectKey, opts = {}) {
     }
     try {
       const current = readEvent(path2);
-      if (current && current.method === "prompt" && current.__project_key === targetProjectKey) {
+      if (current && (opts.experience ? !isRuntimeEvent(current) : current.method === "prompt") && current.__project_key === targetProjectKey) {
         remove(path2);
         result.removed++;
       }
@@ -2133,6 +1897,9 @@ function purgeProjectPromptEvents(root, targetProjectKey, opts = {}) {
     }
   }
   return result;
+}
+function purgeProjectExperienceEvents(root, key, opts = {}) {
+  return purgeProjectPromptEvents(root, key, { ...opts, experience: true });
 }
 function purgeProjectEvents(root, targetProjectKey, opts = {}) {
   if (typeof targetProjectKey !== "string" || !/^[a-f0-9]{32}$/.test(targetProjectKey)) {
@@ -2527,8 +2294,8 @@ function updateOutboxMetadata(root, eventId, meta, opts = {}) {
     }
   }
   try {
-    const filePath = (0, import_node_path3.join)(d.outbox, payloadFilename(eventId));
-    const event = readEvent(filePath);
+    const filePath2 = (0, import_node_path3.join)(d.outbox, payloadFilename(eventId));
+    const event = readEvent(filePath2);
     if (event === null) {
       return { ok: false, error: "event_not_found" };
     }
@@ -2548,7 +2315,7 @@ function updateOutboxMetadata(root, eventId, meta, opts = {}) {
       (0, import_node_fs3.closeSync)(fd);
     }
     try {
-      (0, import_node_fs3.renameSync)(tmp, filePath);
+      (0, import_node_fs3.renameSync)(tmp, filePath2);
     } catch (err) {
       try {
         (0, import_node_fs3.unlinkSync)(tmp);
@@ -2597,8 +2364,8 @@ function updateAttributionInBucket(root, eventId, attribution, opts = {}, bucket
       return { ok: false, error: "reservation_timeout" };
   }
   try {
-    const filePath = (0, import_node_path3.join)(targetDir, payloadFilename(eventId));
-    const event = readEvent(filePath);
+    const filePath2 = (0, import_node_path3.join)(targetDir, payloadFilename(eventId));
+    const event = readEvent(filePath2);
     if (!event)
       return { ok: false, error: "event_not_found" };
     if (event.method !== "prompt")
@@ -2669,7 +2436,7 @@ function updateAttributionInBucket(root, eventId, attribution, opts = {}, bucket
       return { ok: false, error: `close: ${(err == null ? void 0 : err.code) || "unknown"}` };
     }
     try {
-      (0, import_node_fs3.renameSync)(tmp, filePath);
+      (0, import_node_fs3.renameSync)(tmp, filePath2);
       fsyncDirBestEffort3(targetDir);
     } catch (err) {
       try {
@@ -2760,6 +2527,7 @@ var init_outbox = __esm({
     import_node_fs3 = require("node:fs");
     import_node_path3 = require("node:path");
     init_identity();
+    init_event_scope();
     import_node_perf_hooks3 = require("node:perf_hooks");
     init_control();
     TELEMETRY_DIR = "telemetry";
@@ -3170,7 +2938,7 @@ function makeEnvelope(partial = {}) {
     platform: PLATFORM,
     schema_version: SCHEMA_VERSION,
     client_generation: CLIENT_GENERATION_V2,
-    event_id: p.event_id ?? (0, import_node_crypto7.randomUUID)(),
+    event_id: p.event_id ?? (0, import_node_crypto8.randomUUID)(),
     time: p.time ?? Date.now()
   };
 }
@@ -3258,10 +3026,10 @@ function validateEvent(event) {
   }
   return true;
 }
-var import_node_crypto7, EVENT_TYPES, VALID_EVENT_TEXTS, SCHEMA_VERSION, CLIENT_GENERATION_V2, CLIENT_GENERATION_LEGACY, PLATFORM, METHOD, VALID_METHODS, INTERNAL_TO_WIRE, WIRE_ONLY_KEYS, WIRE_STRIPPED_INTERNAL_KEYS;
+var import_node_crypto8, EVENT_TYPES, VALID_EVENT_TEXTS, SCHEMA_VERSION, CLIENT_GENERATION_V2, CLIENT_GENERATION_LEGACY, PLATFORM, METHOD, VALID_METHODS, INTERNAL_TO_WIRE, WIRE_ONLY_KEYS, WIRE_STRIPPED_INTERNAL_KEYS;
 var init_schema = __esm({
   "skills/trtc/runtime/schema.js"() {
-    import_node_crypto7 = require("node:crypto");
+    import_node_crypto8 = require("node:crypto");
     EVENT_TYPES = Object.freeze({
       INSTALL_COMPLETED: "install_completed",
       INSTALL_FAILED: "install_failed",
@@ -3316,21 +3084,21 @@ __export(state_exports, {
   promote: () => promote
 });
 function pendingDirFor(root) {
-  return (0, import_node_path10.join)(resolveTelemetryRoot(root), PENDING2);
+  return (0, import_node_path12.join)(resolveTelemetryRoot(root), PENDING2);
 }
 function pendingPathFor(root, eventId) {
-  return (0, import_node_path10.join)(pendingDirFor(root), `${eventId}.json`);
+  return (0, import_node_path12.join)(pendingDirFor(root), `${eventId}.json`);
 }
 function outboxPathFor(root, eventId) {
-  return (0, import_node_path10.join)(resolveTelemetryRoot(root), OUTBOX2, `${eventId}.json`);
+  return (0, import_node_path12.join)(resolveTelemetryRoot(root), OUTBOX2, `${eventId}.json`);
 }
 function droppedPathFor(root, eventId) {
-  return (0, import_node_path10.join)(resolveTelemetryRoot(root), DROPPED2, `${eventId}.json`);
+  return (0, import_node_path12.join)(resolveTelemetryRoot(root), DROPPED2, `${eventId}.json`);
 }
 function promoteClaimPath(root, eventId) {
-  return (0, import_node_path10.join)(
+  return (0, import_node_path12.join)(
     pendingDirFor(root),
-    `.claim-${process.pid}-${(0, import_node_crypto10.randomBytes)(4).toString("hex")}.${eventId}.json`
+    `.claim-${process.pid}-${(0, import_node_crypto11.randomBytes)(4).toString("hex")}.${eventId}.json`
   );
 }
 function safeStringifyForReason(v) {
@@ -3351,7 +3119,7 @@ function safeStringifyForReason(v) {
 }
 function cleanStaleTombstone(root, eventId) {
   try {
-    (0, import_node_fs10.unlinkSync)(droppedPathFor(root, eventId));
+    (0, import_node_fs12.unlinkSync)(droppedPathFor(root, eventId));
   } catch (err) {
     if (err && err.code !== "ENOENT")
       throw err;
@@ -3359,7 +3127,7 @@ function cleanStaleTombstone(root, eventId) {
 }
 function cleanStalePending(root, eventId) {
   try {
-    (0, import_node_fs10.unlinkSync)(pendingPathFor(root, eventId));
+    (0, import_node_fs12.unlinkSync)(pendingPathFor(root, eventId));
   } catch (err) {
     if (err && err.code !== "ENOENT")
       throw err;
@@ -3368,12 +3136,12 @@ function cleanStalePending(root, eventId) {
 function isPending(root, eventId) {
   if (!isSafeEventId(eventId))
     return false;
-  return (0, import_node_fs10.existsSync)(pendingPathFor(root, eventId));
+  return (0, import_node_fs12.existsSync)(pendingPathFor(root, eventId));
 }
 function isOutbox(root, eventId) {
   if (!isSafeEventId(eventId))
     return false;
-  return (0, import_node_fs10.existsSync)(outboxPathFor(root, eventId));
+  return (0, import_node_fs12.existsSync)(outboxPathFor(root, eventId));
 }
 function promote(root, eventId, enrichment, opts = {}) {
   if (!isSafeEventId(eventId)) {
@@ -3395,10 +3163,10 @@ function _promoteLocked(root, eventId, enrichment, opts) {
   const pendingPath = pendingPathFor(root, eventId);
   const claimPath = promoteClaimPath(root, eventId);
   try {
-    (0, import_node_fs10.renameSync)(pendingPath, claimPath);
+    (0, import_node_fs12.renameSync)(pendingPath, claimPath);
   } catch (err) {
     if (err && err.code === "ENOENT") {
-      if ((0, import_node_fs10.existsSync)(outboxPathFor(root, eventId))) {
+      if ((0, import_node_fs12.existsSync)(outboxPathFor(root, eventId))) {
         cleanStaleTombstone(root, eventId);
         cleanStalePending(root, eventId);
         return {
@@ -3415,7 +3183,7 @@ function _promoteLocked(root, eventId, enrichment, opts) {
   const base = readEvent(claimPath);
   if (base === null) {
     try {
-      (0, import_node_fs10.unlinkSync)(claimPath);
+      (0, import_node_fs12.unlinkSync)(claimPath);
     } catch {
     }
     return { status: "invalid", event_id: eventId, error: "claim readEvent returned null" };
@@ -3423,7 +3191,7 @@ function _promoteLocked(root, eventId, enrichment, opts) {
   const preGate = checkProjectWriteGate(root, base, opts);
   if (!preGate.allowed) {
     try {
-      (0, import_node_fs10.unlinkSync)(claimPath);
+      (0, import_node_fs12.unlinkSync)(claimPath);
     } catch {
     }
     return { status: "blocked", event_id: eventId, error: preGate.reason };
@@ -3434,7 +3202,7 @@ function _promoteLocked(root, eventId, enrichment, opts) {
       moveToRejected(root, claimPath, reason, { ...opts, fallbackEventId: eventId });
     } catch (mvErr) {
       try {
-        (0, import_node_fs10.unlinkSync)(claimPath);
+        (0, import_node_fs12.unlinkSync)(claimPath);
       } catch {
       }
       if (mvErr && mvErr.code === "ENOENT") {
@@ -3454,7 +3222,7 @@ function _promoteLocked(root, eventId, enrichment, opts) {
       moveToRejected(root, claimPath, reason, opts);
     } catch (mvErr) {
       try {
-        (0, import_node_fs10.unlinkSync)(claimPath);
+        (0, import_node_fs12.unlinkSync)(claimPath);
       } catch {
       }
       if (mvErr && mvErr.code === "ENOENT") {
@@ -3477,7 +3245,7 @@ function _promoteLocked(root, eventId, enrichment, opts) {
       moveToRejected(root, claimPath, `schema:${err.message}`, opts);
     } catch (mvErr) {
       try {
-        (0, import_node_fs10.unlinkSync)(claimPath);
+        (0, import_node_fs12.unlinkSync)(claimPath);
       } catch {
       }
       if (mvErr && mvErr.code === "ENOENT") {
@@ -3490,7 +3258,7 @@ function _promoteLocked(root, eventId, enrichment, opts) {
   const outcome = writeOutbox(root, merged, { ...opts, _locked: true });
   if ((outcome == null ? void 0 : outcome.status) === "blocked") {
     try {
-      (0, import_node_fs10.unlinkSync)(claimPath);
+      (0, import_node_fs12.unlinkSync)(claimPath);
     } catch {
     }
     return { status: "blocked", event_id: eventId, error: outcome.reason };
@@ -3498,7 +3266,7 @@ function _promoteLocked(root, eventId, enrichment, opts) {
   cleanStaleTombstone(root, eventId);
   cleanStalePending(root, eventId);
   try {
-    (0, import_node_fs10.unlinkSync)(claimPath);
+    (0, import_node_fs12.unlinkSync)(claimPath);
   } catch (err) {
     if (err && err.code !== "ENOENT")
       throw err;
@@ -3512,12 +3280,12 @@ function _promoteLocked(root, eventId, enrichment, opts) {
     degraded: outcome.degraded
   };
 }
-var import_node_fs10, import_node_path10, import_node_crypto10, PENDING2, OUTBOX2, DROPPED2;
+var import_node_fs12, import_node_path12, import_node_crypto11, PENDING2, OUTBOX2, DROPPED2;
 var init_state = __esm({
   "skills/trtc/runtime/state.js"() {
-    import_node_fs10 = require("node:fs");
-    import_node_path10 = require("node:path");
-    import_node_crypto10 = require("node:crypto");
+    import_node_fs12 = require("node:fs");
+    import_node_path12 = require("node:path");
+    import_node_crypto11 = require("node:crypto");
     init_outbox();
     init_schema();
     PENDING2 = "pending";
@@ -3544,7 +3312,7 @@ function gcProjectEventAcknowledgements(root, projectKey2, currentEventId, opts 
     return;
   if (opts.gcState)
     opts.gcState.ran = true;
-  if (Number.isFinite(opts.deadlineMono) && opts.deadlineMono - import_node_perf_hooks8.performance.now() < 50)
+  if (Number.isFinite(opts.deadlineMono) && opts.deadlineMono - import_node_perf_hooks7.performance.now() < 50)
     return;
   try {
     const protectedEventIds = /* @__PURE__ */ new Set();
@@ -3661,16 +3429,16 @@ async function flushOutbox(root, opts = {}) {
   const endpoint = env.TRTC_TELEMETRY_ENDPOINT || DEFAULT_ENDPOINT;
   const topicId = env.TRTC_TELEMETRY_TOPIC_ID || DEFAULT_TOPIC_ID;
   const url = `${endpoint}/tracklog?topic_id=${topicId}`;
-  const deadlineMono = import_node_perf_hooks8.performance.now() + maxDurationMs;
+  const deadlineMono = import_node_perf_hooks7.performance.now() + maxDurationMs;
   let paths2 = listOutbox(root);
-  const queuedEventIds = paths2.map((path2) => (0, import_node_path11.basename)(path2).replace(/\.json$/, "")).filter((id) => typeof id === "string" && id.length > 0);
+  const queuedEventIds = paths2.map((path2) => (0, import_node_path13.basename)(path2).replace(/\.json$/, "")).filter((id) => typeof id === "string" && id.length > 0);
   if (eventIds) {
-    paths2 = paths2.filter((path2) => eventIds.has((0, import_node_path11.basename)(path2).replace(/\.json$/, "")));
+    paths2 = paths2.filter((path2) => eventIds.has((0, import_node_path13.basename)(path2).replace(/\.json$/, "")));
   }
   if (priorityEventIds.size > 0) {
     paths2.sort((a, b) => {
-      const aid = (0, import_node_path11.basename)(a).replace(/\.json$/, "");
-      const bid = (0, import_node_path11.basename)(b).replace(/\.json$/, "");
+      const aid = (0, import_node_path13.basename)(a).replace(/\.json$/, "");
+      const bid = (0, import_node_path13.basename)(b).replace(/\.json$/, "");
       return Number(priorityEventIds.has(bid)) - Number(priorityEventIds.has(aid));
     });
   }
@@ -3680,10 +3448,10 @@ async function flushOutbox(root, opts = {}) {
   for (const path2 of paths2) {
     if (processed >= maxCount)
       break;
-    let remaining2 = deadlineMono - import_node_perf_hooks8.performance.now();
+    let remaining2 = deadlineMono - import_node_perf_hooks7.performance.now();
     if (remaining2 <= 0)
       break;
-    const filename = (0, import_node_path11.basename)(path2);
+    const filename = (0, import_node_path13.basename)(path2);
     const eid = filename.replace(/\.json$/, "");
     if (!isSafeEventId(eid)) {
       result.skipped++;
@@ -3726,7 +3494,7 @@ async function flushOutbox(root, opts = {}) {
       continue;
     }
     try {
-      remaining2 = deadlineMono - import_node_perf_hooks8.performance.now();
+      remaining2 = deadlineMono - import_node_perf_hooks7.performance.now();
       if (remaining2 <= 0)
         break;
       const event = readEvent(path2);
@@ -3769,7 +3537,7 @@ async function flushOutbox(root, opts = {}) {
             const ensured = ensureNoticeObligation(root, projectKey2, eid, {
               acknowledgedAt: nowFn(),
               noticeLocale: event.notice_locale,
-              timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now())),
+              timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks7.performance.now())),
               allowCorruptReplacement: event.__first_prompt_candidate === true
             });
             if (["created", "already_present"].includes(ensured.status)) {
@@ -3794,7 +3562,7 @@ async function flushOutbox(root, opts = {}) {
               const ack = await ackFn(root, event, projectKey2, {
                 acknowledgedAt: nowFn(),
                 noticeLocale: event.notice_locale,
-                timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now()))
+                timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks7.performance.now()))
               });
               if (!ack || !["updated", "already_present"].includes(ack.status)) {
                 throw new Error((ack == null ? void 0 : ack.reason) || "prompt_ack_not_persisted");
@@ -3845,7 +3613,7 @@ async function flushOutbox(root, opts = {}) {
       }
       let sendEvent = event;
       if (!isValidIdentityRecord(event)) {
-        remaining2 = deadlineMono - import_node_perf_hooks8.performance.now();
+        remaining2 = deadlineMono - import_node_perf_hooks7.performance.now();
         if (remaining2 <= 0)
           break;
         try {
@@ -3887,6 +3655,10 @@ async function flushOutbox(root, opts = {}) {
       let response;
       let transportPromise;
       try {
+        if (isEventEnabled(event) === false || projectKey2 && !readProjectDenyGate(root, projectKey2).allowed) {
+          result.skipped++;
+          continue;
+        }
         transportPromise = transport(url, clsBody, {
           ...opts._transportOpts || {},
           // timeoutMs MUST come last — _transportOpts cannot override
@@ -3945,7 +3717,7 @@ async function flushOutbox(root, opts = {}) {
           if (obligation.status === "missing" || obligation.status === "corrupt" && event.__first_prompt_candidate === true) {
             const ensured = ensureNoticeObligation(root, projectKey2, eid, {
               acknowledgedAt: nowFn(),
-              timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now())),
+              timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks7.performance.now())),
               allowCorruptReplacement: event.__first_prompt_candidate === true
             });
             if (["created", "already_present"].includes(ensured.status)) {
@@ -3966,7 +3738,7 @@ async function flushOutbox(root, opts = {}) {
                 {
                   acknowledgedAt: nowFn(),
                   noticeLocale: opts.noticeLocale,
-                  timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks8.performance.now()))
+                  timeoutMs: Math.min(100, Math.max(1, deadlineMono - import_node_perf_hooks7.performance.now()))
                 }
               ));
               const ack = await ackFn(root, event, projectKey2);
@@ -4058,13 +3830,13 @@ async function flushOutbox(root, opts = {}) {
   }
   return result;
 }
-var import_node_https, import_node_url, import_node_path11, import_node_perf_hooks8, DEFAULT_ENDPOINT, DEFAULT_TOPIC_ID, DEFAULT_MAX_COUNT, DEFAULT_MAX_DURATION_MS, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RESERVATION_TIMEOUT_MS2, BACKOFF_TABLE, RESPONSE_BODY_CAP;
+var import_node_https, import_node_url, import_node_path13, import_node_perf_hooks7, DEFAULT_ENDPOINT, DEFAULT_TOPIC_ID, DEFAULT_MAX_COUNT, DEFAULT_MAX_DURATION_MS, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RESERVATION_TIMEOUT_MS2, BACKOFF_TABLE, RESPONSE_BODY_CAP;
 var init_sender = __esm({
   "skills/trtc/runtime/sender.js"() {
     import_node_https = require("node:https");
     import_node_url = require("node:url");
-    import_node_path11 = require("node:path");
-    import_node_perf_hooks8 = require("node:perf_hooks");
+    import_node_path13 = require("node:path");
+    import_node_perf_hooks7 = require("node:perf_hooks");
     init_schema();
     init_redact();
     init_identity();
@@ -4072,7 +3844,7 @@ var init_sender = __esm({
     init_outbox();
     init_control();
     DEFAULT_ENDPOINT = "https://ap-nanjing.cls.tencentcs.com";
-    DEFAULT_TOPIC_ID = "a1310e66-a3f5-4572-a1c3-7a327a27496d";
+    DEFAULT_TOPIC_ID = "cfcf2001-477c-461c-aff7-82fda8721986";
     DEFAULT_MAX_COUNT = 50;
     DEFAULT_MAX_DURATION_MS = 5e3;
     DEFAULT_REQUEST_TIMEOUT_MS = 2e3;
@@ -4101,11 +3873,11 @@ __export(telemetry_exports, {
   runCli: () => runCli
 });
 module.exports = __toCommonJS(telemetry_exports);
-var import_node_crypto11 = require("node:crypto");
-var import_node_fs11 = require("node:fs");
-var import_node_path12 = require("node:path");
+var import_node_crypto12 = require("node:crypto");
+var import_node_fs13 = require("node:fs");
+var import_node_path14 = require("node:path");
 var import_node_os3 = require("node:os");
-var import_node_perf_hooks9 = require("node:perf_hooks");
+var import_node_perf_hooks8 = require("node:perf_hooks");
 var import_node_module = require("node:module");
 var import_node_url2 = require("node:url");
 init_continuation_notice();
@@ -4362,11 +4134,10 @@ init_outbox();
 init_hook_activation();
 
 // skills/trtc/runtime/preference.js
-var import_node_fs6 = require("node:fs");
+var import_node_fs8 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path6 = require("node:path");
-var import_node_crypto5 = require("node:crypto");
-var import_node_perf_hooks5 = require("node:perf_hooks");
+var import_node_path8 = require("node:path");
+var import_node_crypto7 = require("node:crypto");
 init_control();
 
 // skills/trtc/runtime/project-state.js
@@ -4399,1042 +4170,16 @@ function resolveProjectStateDir(projectRoot) {
   return current;
 }
 
-// skills/trtc/runtime/preference.js
-var FALSE_VALUES = /* @__PURE__ */ new Set(["0", "false", "no", "off", "disabled"]);
-var TRUE_VALUES = /* @__PURE__ */ new Set(["1", "true", "yes", "on", "enabled"]);
-var PREF_FILE = "preference.json";
-var LEGACY_STATE_FILE = "state.json";
-var LOCK_FILE = ".pref-owner.json";
-var LOCK_GRACE_FOREGROUND_MS = 5e3;
-var VALID_CONTINUATION_CHOICES = /* @__PURE__ */ new Set(["unanswered", "allowed", "denied"]);
-function noticeCapabilityFresh(receipt) {
-  var _a;
-  if ((receipt == null ? void 0 : receipt.status) !== "valid")
-    return false;
-  const state = (_a = receipt.value) == null ? void 0 : _a.status;
-  if (["allow_pending", "deny_pending"].includes(state))
-    return true;
-  if (!["pending_output", "awaiting_choice"].includes(state))
-    return true;
-  return Number.isFinite(receipt.value.created_at) && Date.now() - receipt.value.created_at <= NOTICE_ATTEMPT_MAX_AGE_MS;
-}
-function controlTurnAccepted(turn, choice) {
-  var _a;
-  if ((turn == null ? void 0 : turn.status) !== "valid" || ((_a = turn.value) == null ? void 0 : _a.control_kind) !== choice)
-    return false;
-  return choice === "allowed" ? ["allowed_pending", "allowed", "retryable"].includes(turn.value.control_status) : ["deny_pending", "denied", "retryable"].includes(turn.value.control_status);
-}
-function acceptedControlFact(stateRoot, key, choice, turn = null, tombstone = null) {
-  if (controlTurnAccepted(turn || readControlTurn(stateRoot, key, controlKey(key, choice)), choice))
-    return true;
-  return choice === "denied" && (tombstone || readDenyTombstone(stateRoot, key)).status === "valid";
-}
-function writeDenyWithAdmission(stateRoot, key, controlKeyValue, opts = {}) {
-  const hook = opts.source === "hook";
-  const requested = Number.isFinite(opts.timeoutMs) ? Math.max(0, opts.timeoutMs) : hook ? 25 : 120;
-  const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks5.performance.now() + requested;
-  const lock = acquireProjectAdmissionReservation(stateRoot, key, {
-    timeoutMs: Math.min(requested, Math.max(0, deadlineMono - import_node_perf_hooks5.performance.now())),
-    deadlineMono,
-    _hookMode: hook
-  });
-  if (!lock)
-    return { status: hook ? "retryable" : "error", reason: "admission_busy" };
-  try {
-    const writerOpts = {
-      ...opts,
-      timeoutMs: Math.min(requested, Math.max(0, deadlineMono - import_node_perf_hooks5.performance.now())),
-      deadlineMono
-    };
-    return hook ? writeDenyTombstoneFromHook(stateRoot, key, controlKeyValue, writerOpts) : writeDenyTombstone(stateRoot, key, controlKeyValue, writerOpts);
-  } finally {
-    releaseProjectAdmissionReservation(lock);
-  }
-}
-var OFF_TEXTS = /* @__PURE__ */ new Set([
-  "关闭体验上报",
-  "停止体验上报",
-  "关闭提示词上报",
-  "停止提示词上报",
-  "关闭prompt上报",
-  "停止prompt上报",
-  "turn off experience reporting",
-  "disable experience reporting",
-  "stop experience reporting",
-  "turn off prompt reporting",
-  "disable prompt reporting",
-  "stop prompt reporting"
-]);
-var ON_TEXTS = /* @__PURE__ */ new Set([
-  "开启体验上报",
-  "恢复体验上报",
-  "开启提示词上报",
-  "恢复提示词上报",
-  "开启prompt上报",
-  "恢复prompt上报",
-  "turn on experience reporting",
-  "enable experience reporting",
-  "resume experience reporting",
-  "turn on prompt reporting",
-  "enable prompt reporting",
-  "resume prompt reporting"
-]);
-function writeObjectAtomic(path2, value) {
-  const dir = (0, import_node_path6.dirname)(path2);
-  (0, import_node_fs6.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
-  const tmp = (0, import_node_path6.join)(dir, `.${(0, import_node_crypto5.randomBytes)(8).toString("hex")}.${PREF_FILE}.tmp`);
-  let fd;
-  try {
-    fd = (0, import_node_fs6.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
-    const body = `${JSON.stringify(value, null, 2)}
-`;
-    (0, import_node_fs6.writeSync)(fd, body, null, "utf8");
-    (0, import_node_fs6.fsyncSync)(fd);
-    (0, import_node_fs6.closeSync)(fd);
-    fd = void 0;
-    (0, import_node_fs6.renameSync)(tmp, path2);
-    try {
-      const dirFd = (0, import_node_fs6.openSync)(dir, "r");
-      try {
-        (0, import_node_fs6.fsyncSync)(dirFd);
-      } finally {
-        (0, import_node_fs6.closeSync)(dirFd);
-      }
-    } catch (err) {
-      if (!err || !["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT"].includes(err.code))
-        throw err;
-    }
-    return true;
-  } catch {
-    if (fd !== void 0)
-      try {
-        (0, import_node_fs6.closeSync)(fd);
-      } catch {
-      }
-    try {
-      (0, import_node_fs6.unlinkSync)(tmp);
-    } catch {
-    }
-    return false;
-  }
-}
-function ancestors(projectRoot) {
-  const result = [];
-  let current = canonicalRoot(projectRoot);
-  while (true) {
-    result.push(current);
-    const parent = (0, import_node_path6.dirname)(current);
-    if (parent === current)
-      break;
-    current = parent;
-  }
-  return result;
-}
-function canonicalRoot(projectRoot) {
-  const absolute = (0, import_node_path6.resolve)(projectRoot);
-  try {
-    return (0, import_node_fs6.realpathSync)(absolute);
-  } catch {
-    return absolute;
-  }
-}
-function _lockMode() {
-  return process.platform === "win32" ? void 0 : 384;
-}
-function _staleCheckAndClaim(lockPath2, newToken, newOwnerData, graceMs) {
-  let stat;
-  try {
-    stat = (0, import_node_fs6.lstatSync)(lockPath2);
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      try {
-        (0, import_node_fs6.writeFileSync)(lockPath2, newOwnerData, { flag: "wx", mode: _lockMode() });
-        return { acquired: true, token: newToken, lockPath: lockPath2 };
-      } catch {
-        return { acquired: false, reason: "busy" };
-      }
-    }
-    return { acquired: false, reason: "busy" };
-  }
-  const age = Date.now() - stat.mtimeMs;
-  if (age < graceMs)
-    return { acquired: false, reason: "busy" };
-  let pid = null;
-  try {
-    const existing = JSON.parse((0, import_node_fs6.readFileSync)(lockPath2, "utf8"));
-    if (typeof (existing == null ? void 0 : existing.pid) === "number")
-      pid = existing.pid;
-  } catch {
-  }
-  if (pid !== null) {
-    try {
-      process.kill(pid, 0);
-      return { acquired: false, reason: "busy" };
-    } catch (err) {
-      if (err.code !== "ESRCH")
-        return { acquired: false, reason: "busy" };
-    }
-  }
-  const staleFile = lockPath2 + ".stale." + newToken;
-  try {
-    (0, import_node_fs6.renameSync)(lockPath2, staleFile);
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      try {
-        (0, import_node_fs6.writeFileSync)(lockPath2, newOwnerData, { flag: "wx", mode: _lockMode() });
-        return { acquired: true, token: newToken, lockPath: lockPath2 };
-      } catch {
-        return { acquired: false, reason: "busy" };
-      }
-    }
-    return { acquired: false, reason: "busy" };
-  }
-  try {
-    (0, import_node_fs6.writeFileSync)(lockPath2, newOwnerData, { flag: "wx", mode: _lockMode() });
-  } catch {
-    return { acquired: false, reason: "busy" };
-  }
-  try {
-    (0, import_node_fs6.unlinkSync)(staleFile);
-  } catch {
-  }
-  try {
-    const prefDir = (0, import_node_path6.dirname)(lockPath2);
-    for (const e of (0, import_node_fs6.readdirSync)(prefDir)) {
-      if (e.startsWith(LOCK_FILE + ".stale.")) {
-        try {
-          (0, import_node_fs6.unlinkSync)((0, import_node_path6.join)(prefDir, e));
-        } catch {
-        }
-      }
-    }
-  } catch {
-  }
-  return { acquired: true, token: newToken, lockPath: lockPath2 };
-}
-function _acquirePreferenceLock(prefDir, { graceMs = LOCK_GRACE_FOREGROUND_MS } = {}) {
-  (0, import_node_fs6.mkdirSync)(prefDir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
-  const lockPath2 = (0, import_node_path6.join)(prefDir, LOCK_FILE);
-  const token = (0, import_node_crypto5.randomBytes)(16).toString("hex");
-  const ownerData = JSON.stringify({ pid: process.pid, token, ts: Date.now() });
-  try {
-    (0, import_node_fs6.writeFileSync)(lockPath2, ownerData, { flag: "wx", mode: _lockMode() });
-    return { acquired: true, token, lockPath: lockPath2 };
-  } catch (err) {
-    if (err.code !== "EEXIST")
-      return { acquired: false, reason: "lock_io_error" };
-    return _staleCheckAndClaim(lockPath2, token, ownerData, graceMs);
-  }
-}
-function _releasePreferenceLock(lockPath2, token, _testHookAfterRename) {
-  if (!lockPath2 || !token)
-    return;
-  const releasingFile = lockPath2 + ".releasing." + token;
-  try {
-    (0, import_node_fs6.renameSync)(lockPath2, releasingFile);
-  } catch {
-    return;
-  }
-  _testHookAfterRename == null ? void 0 : _testHookAfterRename();
-  try {
-    const existing = JSON.parse((0, import_node_fs6.readFileSync)(releasingFile, "utf8"));
-    if ((existing == null ? void 0 : existing.token) === token) {
-      (0, import_node_fs6.unlinkSync)(releasingFile);
-    } else {
-      try {
-        (0, import_node_fs6.linkSync)(releasingFile, lockPath2);
-        (0, import_node_fs6.unlinkSync)(releasingFile);
-      } catch {
-        try {
-          (0, import_node_fs6.unlinkSync)(releasingFile);
-        } catch {
-        }
-      }
-    }
-  } catch {
-    try {
-      (0, import_node_fs6.unlinkSync)(releasingFile);
-    } catch {
-    }
-  }
-}
-function readPreferenceSourceAt(root, source) {
-  const fileName = source === "preferred" ? PREF_FILE : LEGACY_STATE_FILE;
-  let filePath = null;
-  for (const dir of projectStateDirs(root)) {
-    const candidate = (0, import_node_path6.join)(dir, fileName);
-    if ((0, import_node_fs6.existsSync)(candidate)) {
-      filePath = candidate;
-      break;
-    }
-  }
-  if (filePath === null)
-    return { status: "missing" };
-  let raw;
-  try {
-    raw = (0, import_node_fs6.readFileSync)(filePath, "utf8");
-  } catch {
-    return { status: "corrupt" };
-  }
-  let value;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return { status: "corrupt" };
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return { status: "corrupt" };
-  if (source === "preferred") {
-    const boolFields = ["prompt_reporting_enabled", "all_reporting_disabled", "purge_pending"];
-    for (const f of boolFields) {
-      if (value[f] !== void 0 && typeof value[f] !== "boolean")
-        return { status: "corrupt" };
-    }
-    const tsFields = ["prompt_reporting_updated_at", "all_reporting_updated_at", "continuation_choice_updated_at"];
-    for (const f of tsFields) {
-      if (value[f] !== void 0 && (!Number.isInteger(value[f]) || value[f] < 0))
-        return { status: "corrupt" };
-    }
-    if (value.continuation_choice !== void 0 && !VALID_CONTINUATION_CHOICES.has(value.continuation_choice)) {
-      return { status: "corrupt" };
-    }
-    if (value.continuation_choice_version !== void 0 && (!Number.isInteger(value.continuation_choice_version) || value.continuation_choice_version <= 0)) {
-      return { status: "corrupt" };
-    }
-    if (value.preference_revision !== void 0 && (!Number.isSafeInteger(value.preference_revision) || value.preference_revision < 0)) {
-      return { status: "corrupt" };
-    }
-  } else {
-    for (const f of ["prompt_reporting_enabled", "all_reporting_disabled"]) {
-      if (value[f] !== void 0 && typeof value[f] !== "boolean")
-        return { status: "corrupt" };
-    }
-  }
-  return { status: "valid", value };
-}
-function _readXdgLegacyCache(projectRoot, env) {
-  const cachePath2 = legacyCachePath(projectRoot, env);
-  if (!(0, import_node_fs6.existsSync)(cachePath2))
-    return { status: "missing" };
-  let raw;
-  try {
-    raw = (0, import_node_fs6.readFileSync)(cachePath2, "utf8");
-  } catch {
-    return { status: "corrupt" };
-  }
-  let value;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return { status: "corrupt" };
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return { status: "corrupt" };
-  for (const f of ["prompt_reporting_enabled", "all_reporting_disabled"]) {
-    if (value[f] !== void 0 && typeof value[f] !== "boolean")
-      return { status: "corrupt" };
-  }
-  return { status: "valid", value };
-}
-function resolveEffectivePreference(projectRoot, env = process.env, scope = "experience") {
-  if (envBoolean(env.TRTC_REPORTING) === false)
-    return false;
-  if (scope !== "runtime" && envBoolean(env.TRTC_PROMPT_REPORTING) === false)
-    return false;
-  let promptPreference = null;
-  const allRoots = ancestors(projectRoot);
-  for (let i = 0; i < allRoots.length; i++) {
-    const root = allRoots[i];
-    const preferred = readPreferenceSourceAt(root, "preferred");
-    let prefValue;
-    if (preferred.status === "valid") {
-      prefValue = preferred.value;
-    } else if (preferred.status === "corrupt") {
-      return false;
-    } else {
-      const legacy = readPreferenceSourceAt(root, "legacy");
-      if (legacy.status === "valid") {
-        prefValue = legacy.value;
-      } else if (legacy.status === "corrupt") {
-        return false;
-      } else {
-        if (i === 0) {
-          const xdg = _readXdgLegacyCache(root, env);
-          if (xdg.status === "valid") {
-            prefValue = xdg.value;
-          } else if (xdg.status === "corrupt") {
-            return false;
-          } else {
-            continue;
-          }
-        } else {
-          continue;
-        }
-      }
-    }
-    if ((prefValue.continuation_choice ?? "unanswered") === "denied")
-      return false;
-    if (prefValue.all_reporting_disabled === true)
-      return false;
-    if (scope !== "runtime" && promptPreference === null && typeof prefValue.prompt_reporting_enabled === "boolean") {
-      promptPreference = prefValue.prompt_reporting_enabled;
-    }
-  }
-  if (scope !== "runtime" && envBoolean(env.TRTC_PROMPT_REPORTING) === true)
-    return true;
-  if (scope === "runtime")
-    return true;
-  return promptPreference ?? true;
-}
-function envBoolean(value) {
-  if (value == null)
-    return null;
-  const normalized = String(value).trim().toLowerCase();
-  if (FALSE_VALUES.has(normalized))
-    return false;
-  if (TRUE_VALUES.has(normalized))
-    return true;
-  return null;
-}
-function projectKey(projectRoot) {
-  return (0, import_node_crypto5.createHash)("sha256").update(canonicalRoot(projectRoot)).digest("hex").slice(0, 32);
-}
-function preferencePath(projectRoot) {
-  return (0, import_node_path6.join)(resolveProjectStateDir(canonicalRoot(projectRoot)), PREF_FILE);
-}
-function isReportingEnabled(projectRoot, env = process.env) {
-  return resolveEffectivePreference(projectRoot, env, "experience");
-}
-function isReportingEnabledForScope(projectRoot, scope = "experience", env = process.env) {
-  return resolveEffectivePreference(projectRoot, env, scope === "runtime" ? "runtime" : "experience");
-}
-function setReportingPreference(projectRoot, enabled, opts = {}) {
-  var _a;
-  const filePath = preferencePath(projectRoot);
-  const dir = (0, import_node_path6.dirname)(filePath);
-  const graceMs = opts.graceMs ?? LOCK_GRACE_FOREGROUND_MS;
-  const lock = _acquirePreferenceLock(dir, { graceMs });
-  if (!lock.acquired) {
-    return { action: "skip", reason: lock.reason ?? "busy", enabled: Boolean(enabled), all_reporting_disabled: false, path: filePath };
-  }
-  try {
-    const source = readPreferenceSourceAt(canonicalRoot(projectRoot), "preferred");
-    if (source.status === "corrupt") {
-      return { action: "skip", reason: "preference_corrupt", enabled: Boolean(enabled), all_reporting_disabled: false, path: filePath };
-    }
-    const current = source.status === "valid" ? source.value : {};
-    const next = {
-      ...current,
-      prompt_reporting_enabled: Boolean(enabled),
-      prompt_reporting_updated_at: Math.floor((((_a = opts.now) == null ? void 0 : _a.call(opts)) ?? Date.now()) / 1e3)
-    };
-    if (opts.purgePending !== void 0)
-      next.purge_pending = Boolean(opts.purgePending);
-    if (opts.allReportingDisabled !== void 0) {
-      next.all_reporting_disabled = Boolean(opts.allReportingDisabled);
-      next.all_reporting_updated_at = next.prompt_reporting_updated_at;
-    }
-    const persisted = writeObjectAtomic(filePath, next);
-    return {
-      action: persisted ? "updated" : "skip",
-      reason: persisted ? null : "state-unavailable",
-      enabled: Boolean(enabled),
-      all_reporting_disabled: next.all_reporting_disabled === true,
-      path: filePath
-    };
-  } finally {
-    _releasePreferenceLock(lock.lockPath, lock.token);
-  }
-}
-function readPreferenceState(projectRoot) {
-  return readPreferenceSourceAt(canonicalRoot(projectRoot), "preferred");
-}
-function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
-  var _a;
-  if (!VALID_CONTINUATION_CHOICES.has(choice))
-    return { action: "skip", reason: "invalid_choice" };
-  const root = canonicalRoot(projectRoot);
-  const dir = resolveProjectStateDir(root);
-  const filePath = (0, import_node_path6.join)(dir, PREF_FILE);
-  const graceMs = opts.graceMs ?? LOCK_GRACE_FOREGROUND_MS;
-  const lock = _acquirePreferenceLock(dir, { graceMs });
-  if (!lock.acquired)
-    return { action: "skip", reason: lock.reason ?? "busy" };
-  try {
-    const source = readPreferenceSourceAt(root, "preferred");
-    if (source.status === "corrupt")
-      return { action: "preference_corrupt" };
-    let current = {};
-    if (source.status === "valid") {
-      current = source.value;
-    } else {
-      const legacy = readPreferenceSourceAt(root, "legacy");
-      if (legacy.status === "corrupt") {
-        return { action: "preference_corrupt" };
-      }
-      if (legacy.status === "valid") {
-        if (legacy.value.all_reporting_disabled === true) {
-          current = { all_reporting_disabled: true };
-        }
-      } else {
-        const xdg = _readXdgLegacyCache(root, opts.env ?? process.env);
-        if (xdg.status === "corrupt") {
-          return { action: "preference_corrupt" };
-        }
-        if (xdg.status === "valid" && xdg.value.all_reporting_disabled === true) {
-          current = { all_reporting_disabled: true };
-        }
-      }
-    }
-    const now = Math.floor((((_a = opts.now) == null ? void 0 : _a.call(opts)) ?? Date.now()) / 1e3);
-    const revision = typeof current.preference_revision === "number" ? current.preference_revision : 0;
-    const next = {
-      ...current,
-      continuation_choice: choice,
-      continuation_choice_version: 1,
-      continuation_choice_updated_at: now,
-      preference_revision: revision + 1
-    };
-    if (choice === "denied") {
-      next.all_reporting_disabled = true;
-      next.all_reporting_updated_at = now;
-      next.prompt_reporting_enabled = false;
-      next.purge_pending = true;
-    }
-    const persisted = writeObjectAtomic(filePath, next);
-    return { action: persisted ? "updated" : "skip", reason: persisted ? null : "state-unavailable" };
-  } finally {
-    _releasePreferenceLock(lock.lockPath, lock.token);
-  }
-}
-async function consumeContinuationChoice(projectRoot, text, opts = {}) {
-  var _a, _b, _c;
-  const explicit = opts.controlChoice ?? opts.control_choice;
-  const choice = explicit === "allow" ? "allowed" : explicit === "deny" ? "denied" : explicit === "ambiguous" ? "ambiguous" : isCanonicalOption(text);
-  if (!choice)
-    return null;
-  if (!opts.stateRoot)
-    return { status: "control_retry", control: true, marker: CONTROL_RETRY };
-  const key = projectKey(projectRoot);
-  if (choice === "ambiguous") {
-    const skipped = (reason, extra = {}) => ({
-      status: "skipped",
-      control: true,
-      reason,
-      ...extra
-    });
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    if (notice.status !== "valid") {
-      return skipped(notice.status === "missing" ? "control_context_missing" : "notice_corrupt");
-    }
-    if (!["pending_output", "awaiting_choice"].includes(notice.value.status)) {
-      return skipped("notice_not_pending", { defaulted: notice.value.status === "defaulted" });
-    }
-    const now = typeof opts.now === "function" ? opts.now() : Number.isFinite(opts.now) ? opts.now : Date.now();
-    if (!Number.isFinite(notice.value.created_at) || now < notice.value.created_at || now - notice.value.created_at > NOTICE_ATTEMPT_MAX_AGE_MS) {
-      return skipped("notice_attempt_expired");
-    }
-    const currentSessionId2 = typeof opts.sessionid === "string" && opts.sessionid ? opts.sessionid : null;
-    if (notice.value.sessionid && currentSessionId2 && notice.value.sessionid !== currentSessionId2) {
-      return skipped("notice_session_mismatch");
-    }
-    if (Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > now) {
-      return skipped("notice_choice_retry_backoff", { retry_suppressed: true });
-    }
-    const writeNotice2 = typeof opts._updateNoticeStatus === "function" ? opts._updateNoticeStatus : updateNoticeStatus;
-    const persisted = writeNotice2(opts.stateRoot, key, notice.value.status, "defaulted");
-    if (persisted.status === "updated") {
-      return skipped("ambiguous_choice", { defaulted: true });
-    }
-    if (persisted.status === "retry" && ((_a = persisted.value) == null ? void 0 : _a.status) === "defaulted") {
-      const retry3 = recordNoticeRetry(
-        opts.stateRoot,
-        key,
-        "defaulted",
-        `ambiguous_defaulted:${persisted.reason || "notice_projection_write_failed"}`,
-        { ...opts, choiceRetryKind: "defaulted" }
-      );
-      return skipped("ambiguous_choice", {
-        defaulted: true,
-        defaulted_retry: retry3.status,
-        notice_error: persisted.reason || "notice_projection_write_failed"
-      });
-    }
-    if (persisted.status === "conflict") {
-      const current = readNoticeReceipt(opts.stateRoot, key);
-      if (current.status === "valid" && current.value.status === "defaulted") {
-        return skipped("ambiguous_choice", { defaulted: true });
-      }
-      return skipped("notice_state_changed");
-    }
-    const retry2 = recordNoticeRetry(
-      opts.stateRoot,
-      key,
-      notice.value.status,
-      `ambiguous_defaulted:${persisted.reason || "notice_defaulted_write_failed"}`,
-      { ...opts, choiceRetryKind: "defaulted" }
-    );
-    return skipped("ambiguous_choice", {
-      defaulted: false,
-      defaulted_retry: retry2.status,
-      notice_error: persisted.reason || "notice_defaulted_write_failed"
-    });
-  }
-  const currentSessionId = typeof opts.sessionid === "string" && opts.sessionid ? opts.sessionid : null;
-  if ((choice === "allowed" || choice === "denied") && explicit === (choice === "allowed" ? "allow" : "deny")) {
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    if (notice.status === "valid" && notice.value.sessionid && currentSessionId && notice.value.sessionid !== currentSessionId) {
-      return { status: "skipped", control: true, reason: "notice_session_mismatch" };
-    }
-  }
-  const ckey = controlKey(key, choice);
-  const writeTurn = typeof opts._writeControlTurn === "function" ? opts._writeControlTurn : writeControlTurn;
-  const writeNotice = typeof opts._updateNoticeStatus === "function" ? opts._updateNoticeStatus : updateNoticeStatus;
-  const retry = (marker = CONTROL_RETRY) => ({
-    status: "control_retry",
-    control: true,
-    marker
-  });
-  if (choice === "denied" && opts.source === "hook") {
-    const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks5.performance.now() + (opts.timeoutMs ?? 25);
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    const turn2 = readControlTurn(opts.stateRoot, key, ckey);
-    const tombstone2 = readDenyTombstone(opts.stateRoot, key);
-    if (import_node_perf_hooks5.performance.now() > deadlineMono)
-      return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-    if (tombstone2.status === "valid")
-      return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-    if (!noticeCapabilityFresh(notice) && !acceptedControlFact(opts.stateRoot, key, choice, turn2, tombstone2))
-      return null;
-    if (notice.status !== "valid" || !["pending_output", "awaiting_choice", "deny_pending"].includes((_b = notice.value) == null ? void 0 : _b.status))
-      return null;
-    const tomb2 = writeDenyWithAdmission(opts.stateRoot, key, ckey, {
-      ...opts,
-      source: "hook",
-      timeoutMs: Math.max(0, Math.min(25, deadlineMono - import_node_perf_hooks5.performance.now())),
-      deadlineMono
-    });
-    if (["pending", "already_present"].includes(tomb2.status)) {
-      return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-    }
-    return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-  }
-  if (choice === "allowed" && opts.source === "hook") {
-    const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks5.performance.now() + (opts.timeoutMs ?? 25);
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    const turn2 = readControlTurn(opts.stateRoot, key, ckey);
-    const tombstone2 = readDenyTombstone(opts.stateRoot, key);
-    if (import_node_perf_hooks5.performance.now() > deadlineMono)
-      return { status: "control_retry", control: true, marker: ALLOW_RETRY };
-    const accepted = acceptedControlFact(opts.stateRoot, key, choice, turn2, tombstone2);
-    if (notice.status === "corrupt" && !accepted)
-      return { status: "control_retry", control: true, marker: ALLOW_RETRY };
-    if (!noticeCapabilityFresh(notice) && !accepted)
-      return null;
-    if (tombstone2.status === "valid")
-      return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-    if (!["pending_output", "awaiting_choice", "allow_pending"].includes((_c = notice.value) == null ? void 0 : _c.status) && !accepted)
-      return null;
-    return { status: "control_in_progress", control: true, marker: ALLOW_RETRY };
-  }
-  const preNotice = readNoticeReceipt(opts.stateRoot, key);
-  const preTurn = readControlTurn(opts.stateRoot, key, ckey);
-  const preTombstone = readDenyTombstone(opts.stateRoot, key);
-  if (preNotice.status === "missing" && preTurn.status === "missing" && !(choice === "denied" && preTombstone.status === "valid"))
-    return null;
-  if (preNotice.status === "corrupt" || preTurn.status === "corrupt")
-    return retry();
-  if (preNotice.status === "valid" && !noticeCapabilityFresh(preNotice) && !acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone)) {
-    if (choice === "allowed" && preTombstone.status === "valid")
-      return retry(DISABLE_RETRY);
-    return null;
-  }
-  if (preTurn.status === "missing" && preNotice.status === "valid" && !["pending_output", "awaiting_choice", "allow_pending", "deny_pending"].includes(preNotice.value.status))
-    return null;
-  const finishAllowed = () => {
-    const persisted = setContinuationChoiceLocked(projectRoot, "allowed", opts);
-    if (persisted.action !== "updated")
-      return retry(ALLOW_RETRY);
-    const finalLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-    if (!finalLock) {
-      return {
-        status: "control_in_progress",
-        control: true,
-        marker: ALLOWED,
-        control_turn_persisted: false,
-        control_turn_error: "control_busy"
-      };
-    }
-    let committed = false;
-    try {
-      const final = writeTurn(opts.stateRoot, key, ckey, {
-        control_kind: "allowed",
-        control_status: "allowed"
-      });
-      committed = ["updated", "created", "already_present"].includes(final.status);
-    } finally {
-      releaseControlReservation(finalLock);
-    }
-    const result = {
-      status: "control_in_progress",
-      control: true,
-      marker: ALLOWED,
-      control_turn_persisted: committed,
-      ...committed ? {} : { control_turn_error: "control_write_failed" }
-    };
-    const currentNotice = readNoticeReceipt(opts.stateRoot, key);
-    const expected = currentNotice.status === "valid" ? currentNotice.value.status : null;
-    if (expected && !["pending_output", "awaiting_choice", "allow_pending", "allowed"].includes(expected)) {
-      return {
-        ...result,
-        notice_persisted: false,
-        notice_error: "notice_state_conflict"
-      };
-    }
-    if (expected && expected !== "allowed") {
-      const done = writeNotice(opts.stateRoot, key, expected, "allowed");
-      return {
-        ...result,
-        notice_persisted: ["updated", "conflict"].includes(done.status),
-        ...["updated", "conflict"].includes(done.status) ? {} : { notice_error: done.reason || "notice_write_failed" }
-      };
-    }
-    return { ...result, notice_persisted: true };
-  };
-  const completeDenied = () => {
-    var _a2;
-    const durableTombstone = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-    if (!["created", "already_present"].includes(durableTombstone.status)) {
-      return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-    }
-    const persisted = setContinuationChoiceLocked(projectRoot, "denied", opts);
-    if (persisted.action !== "updated")
-      return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-    const cleanupPending = (reason) => ({
-      status: "control_in_progress",
-      control: true,
-      marker: DISABLED,
-      cleanup_pending: true,
-      control_turn_error: reason
-    });
-    let purge = { busy: 0, errors: [] };
-    if (typeof opts.purge === "function") {
-      try {
-        purge = opts.purge();
-      } catch {
-        purge = { busy: 1, errors: ["purge_failed"] };
-      }
-    }
-    const finalLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-    if (!finalLock || (purge == null ? void 0 : purge.busy) > 0 || ((_a2 = purge == null ? void 0 : purge.errors) == null ? void 0 : _a2.length) > 0 || (purge == null ? void 0 : purge.active_leases) > 0 || (purge == null ? void 0 : purge.lease_busy) > 0) {
-      if (finalLock)
-        releaseControlReservation(finalLock);
-      return cleanupPending("purge_pending");
-    }
-    const final = writeTurn(opts.stateRoot, key, ckey, {
-      control_kind: "denied",
-      control_status: "denied"
-    });
-    releaseControlReservation(finalLock);
-    if (!["updated", "created", "already_present"].includes(final.status)) {
-      return cleanupPending("control_write_failed");
-    }
-    const done = writeNotice(opts.stateRoot, key, "deny_pending", "denied");
-    if (!["updated", "conflict"].includes(done.status))
-      return cleanupPending("notice_write_failed");
-    return { status: "control_in_progress", control: true, marker: DISABLED };
-  };
-  let lock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-  if (!lock) {
-    if (choice === "denied" && opts.source !== "hook" && preNotice.status === "valid" && noticeCapabilityFresh(preNotice) && ["pending_output", "awaiting_choice", "deny_pending"].includes(preNotice.value.status)) {
-      const persisted2 = setContinuationChoiceLocked(projectRoot, "denied", opts);
-      if (persisted2.action === "updated") {
-        return {
-          status: "control_in_progress",
-          control: true,
-          marker: DISABLED,
-          cleanup_pending: true,
-          control_turn_persisted: false,
-          control_turn_error: "control_unavailable"
-        };
-      }
-      return retry(DISABLE_RETRY);
-    }
-    const allowable = choice === "allowed" && opts.source !== "hook" && preNotice.status === "valid" && (noticeCapabilityFresh(preNotice) || acceptedControlFact(opts.stateRoot, key, choice, preTurn, preTombstone)) && preTombstone.status !== "valid" && preTombstone.status !== "corrupt";
-    if (!allowable)
-      return retry();
-    const persisted = setContinuationChoiceLocked(projectRoot, "allowed", opts);
-    if (persisted.action !== "updated")
-      return retry(ALLOW_RETRY);
-    const expected = preNotice.value.status;
-    const done = expected === "allowed" ? { status: "conflict" } : writeNotice(opts.stateRoot, key, expected, "allowed");
-    return {
-      status: "control_in_progress",
-      control: true,
-      marker: ALLOWED,
-      control_turn_persisted: false,
-      notice_persisted: ["updated", "conflict"].includes(done.status),
-      ...done.status === "updated" || done.status === "conflict" ? {} : { notice_error: done.reason || "notice_write_failed" },
-      control_turn_error: "control_busy"
-    };
-  }
-  let receipt;
-  let turn;
-  let tombstone;
-  try {
-    const notice = readNoticeReceipt(opts.stateRoot, key);
-    receipt = notice.status === "valid" ? notice.value : null;
-    tombstone = readDenyTombstone(opts.stateRoot, key);
-    turn = readControlTurn(opts.stateRoot, key, ckey);
-    if (notice.status === "valid" && !noticeCapabilityFresh(notice) && !acceptedControlFact(opts.stateRoot, key, choice, turn, tombstone)) {
-      if (choice === "allowed" && tombstone.status === "valid") {
-        return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-      }
-      return null;
-    }
-    if (tombstone.status === "valid" || tombstone.status === "corrupt") {
-      if (choice === "denied") {
-        if (tombstone.status === "corrupt") {
-          releaseControlReservation(lock);
-          lock = null;
-          const disabled = setContinuationChoiceLocked(projectRoot, "denied", opts);
-          if (disabled.action !== "updated")
-            return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-          const quarantined = quarantineDenyTombstone(opts.stateRoot, key);
-          if (!["quarantined", "missing"].includes(quarantined.status)) {
-            return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-          }
-          const recreated = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-          if (!["created", "already_present"].includes(recreated.status)) {
-            return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-          }
-          return completeDenied();
-        }
-        if (turn.status === "valid" && ["denied", "deny_pending", "retryable"].includes(turn.value.control_status)) {
-          if (turn.value.control_status === "denied")
-            return { status: "control_in_progress", control: true, marker: DISABLED };
-          releaseControlReservation(lock);
-          lock = null;
-          return completeDenied();
-        }
-        if (tombstone.status === "valid" && turn.status === "missing") {
-          releaseControlReservation(lock);
-          lock = null;
-          const controlLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-          if (!controlLock)
-            return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-          let created = false;
-          try {
-            const result = writeTurn(opts.stateRoot, key, ckey, {
-              control_kind: "denied",
-              control_status: "deny_pending"
-            }, { firstWriter: true });
-            created = ["created", "already_present"].includes(result.status);
-          } finally {
-            releaseControlReservation(controlLock);
-          }
-          if (!created)
-            return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-          const currentNotice = readNoticeReceipt(opts.stateRoot, key);
-          if (currentNotice.status === "valid" && currentNotice.value.status === "awaiting_choice") {
-            const advanced = writeNotice(opts.stateRoot, key, "awaiting_choice", "deny_pending");
-            if (!["updated", "conflict"].includes(advanced.status))
-              return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-          }
-          return completeDenied();
-        }
-        return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-      }
-      return { status: "control_in_progress", control: true, marker: tombstone.status === "valid" ? DISABLED : CONTROL_RETRY };
-    }
-    if (turn.status === "corrupt")
-      return retry();
-    if (turn.status === "valid") {
-      const state = turn.value.control_status;
-      if (choice === "allowed" && state === "allowed")
-        return { status: "control_in_progress", control: true, marker: ALLOWED };
-      if (choice === "denied" && state === "denied")
-        return { status: "control_in_progress", control: true, marker: DISABLED };
-      if (choice === "allowed" && state === "allowed_pending") {
-        releaseControlReservation(lock);
-        lock = null;
-        return finishAllowed();
-      }
-      if (state === "allowed_pending" || state === "deny_pending" || state === "retryable") {
-        return { status: "control_in_progress", control: true, marker: state === "deny_pending" ? DISABLE_RETRY : CONTROL_RETRY };
-      }
-      return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
-    }
-    if (!receipt) {
-      return null;
-    }
-    if (!["pending_output", "awaiting_choice", "allow_pending", "deny_pending"].includes(receipt.status)) {
-      return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === "allowed" && !["pending_output", "awaiting_choice"].includes(receipt.status)) {
-      return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === "denied" && !["pending_output", "awaiting_choice"].includes(receipt.status)) {
-      return { status: "control_in_progress", control: true, marker: CONTROL_RETRY };
-    }
-    if (choice === "allowed") {
-      const created = writeTurn(opts.stateRoot, key, ckey, {
-        control_kind: choice,
-        control_status: "allowed_pending"
-      }, { firstWriter: true });
-      if (!["created", "already_present"].includes(created.status)) {
-        releaseControlReservation(lock);
-        lock = null;
-        const persisted = setContinuationChoiceLocked(projectRoot, "allowed", opts);
-        if (persisted.action !== "updated")
-          return retry(ALLOW_RETRY);
-        const currentNotice = readNoticeReceipt(opts.stateRoot, key);
-        const expected = currentNotice.status === "valid" ? currentNotice.value.status : null;
-        if (expected && expected !== "allowed") {
-          const done = writeNotice(opts.stateRoot, key, expected, "allowed");
-          return {
-            status: "control_in_progress",
-            control: true,
-            marker: ALLOWED,
-            control_turn_persisted: false,
-            notice_persisted: ["updated", "conflict"].includes(done.status),
-            notice_error: ["updated", "conflict"].includes(done.status) ? void 0 : done.reason || "notice_write_failed",
-            control_turn_error: created.reason || "control_turn_unavailable"
-          };
-        }
-        return {
-          status: "control_in_progress",
-          control: true,
-          marker: ALLOWED,
-          control_turn_persisted: false,
-          control_turn_error: created.reason || "control_turn_unavailable"
-        };
-      }
-      releaseControlReservation(lock);
-      lock = null;
-    } else {
-      releaseControlReservation(lock);
-      lock = null;
-      const tomb2 = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-      if (!(opts.source === "hook" ? ["pending", "already_present"].includes(tomb2.status) : ["created", "already_present"].includes(tomb2.status))) {
-        return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-      }
-      if (opts.source === "hook")
-        return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-      const controlLock = acquireControlReservation(opts.stateRoot, key, { timeoutMs: opts.timeoutMs ?? 80 });
-      if (!controlLock)
-        return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-      try {
-        const created = writeTurn(opts.stateRoot, key, ckey, {
-          control_kind: choice,
-          control_status: "deny_pending"
-        }, { firstWriter: true });
-        if (!["created", "already_present"].includes(created.status)) {
-          return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-        }
-      } finally {
-        releaseControlReservation(controlLock);
-      }
-      const advanced = writeNotice(opts.stateRoot, key, receipt.status, "deny_pending");
-      if (!["updated", "conflict"].includes(advanced.status)) {
-        return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-      }
-    }
-  } finally {
-    releaseControlReservation(lock);
-  }
-  if (choice === "allowed") {
-    return finishAllowed();
-  }
-  if (opts.source === "hook")
-    return { status: "control_in_progress", control: true, marker: DISABLE_RETRY };
-  const tomb = writeDenyWithAdmission(opts.stateRoot, key, ckey, opts);
-  if (!["created", "already_present"].includes(tomb.status)) {
-    return { status: "control_retry", control: true, marker: DISABLE_RETRY };
-  }
-  return completeDenied();
-}
-function retryAmbiguousNoticeDefault(projectRoot, opts = {}) {
-  var _a, _b;
-  if (!opts.stateRoot)
-    return { status: "skipped", reason: "state_root_unavailable" };
-  const key = projectKey(projectRoot);
-  const notice = readNoticeReceipt(opts.stateRoot, key);
-  if (notice.status !== "valid")
-    return { status: notice.status };
-  const now = typeof opts.now === "function" ? opts.now() : Number.isFinite(opts.now) ? opts.now : Date.now();
-  if (notice.value.status === "defaulted") {
-    const obligation = readNoticeObligation(opts.stateRoot, key);
-    if (obligation.status === "valid" && obligation.value.first_event_id === notice.value.event_id && obligation.value.notice_status === "defaulted" && notice.value.choice_retry_kind !== "defaulted")
-      return { status: "defaulted" };
-    if (notice.value.choice_retry_kind === "defaulted" && Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > now)
-      return { status: "backoff" };
-    const repaired = updateNoticeStatus(opts.stateRoot, key, "defaulted", "defaulted");
-    if (repaired.status === "updated")
-      return { status: "defaulted" };
-    if (repaired.status === "retry" && ((_a = repaired.value) == null ? void 0 : _a.status) === "defaulted") {
-      const retry2 = recordNoticeRetry(
-        opts.stateRoot,
-        key,
-        "defaulted",
-        `ambiguous_defaulted:${repaired.reason || "notice_projection_write_failed"}`,
-        { ...opts, choiceRetryKind: "defaulted" }
-      );
-      return { status: "retry", reason: repaired.reason, retry: retry2.status };
-    }
-    return { status: "retry", reason: repaired.reason };
-  }
-  if (!["pending_output", "awaiting_choice"].includes(notice.value.status) || notice.value.choice_retry_kind !== "defaulted")
-    return { status: "skipped" };
-  if (Number.isFinite(notice.value.choice_next_retry_at) && notice.value.choice_next_retry_at > now)
-    return { status: "backoff" };
-  const persisted = updateNoticeStatus(
-    opts.stateRoot,
-    key,
-    notice.value.status,
-    "defaulted"
-  );
-  if (persisted.status === "updated" || persisted.status === "retry" && ((_b = persisted.value) == null ? void 0 : _b.status) === "defaulted") {
-    return { status: "defaulted" };
-  }
-  if (persisted.status === "conflict") {
-    const current = readNoticeReceipt(opts.stateRoot, key);
-    return current.status === "valid" && current.value.status === "defaulted" ? { status: "defaulted" } : { status: "skipped", reason: "notice_state_changed" };
-  }
-  const retry = recordNoticeRetry(
-    opts.stateRoot,
-    key,
-    notice.value.status,
-    `ambiguous_defaulted:${persisted.reason || "notice_defaulted_write_failed"}`,
-    { ...opts, choiceRetryKind: "defaulted" }
-  );
-  return { status: "retry", reason: persisted.reason || retry.reason };
-}
-function preferenceFromText(text) {
-  if (typeof text !== "string")
-    return null;
-  let normalized = text.trim().replace(/\s+/g, " ").replace(/[。.!！?？ ]+$/u, "").toLowerCase();
-  normalized = normalized.replace(/^(?:请帮我|麻烦帮我|麻烦|帮我|请|please\s+)?/iu, "").trim();
-  if (OFF_TEXTS.has(normalized))
-    return false;
-  if (ON_TEXTS.has(normalized))
-    return true;
-  return null;
-}
-function legacyCachePath(projectRoot, env = process.env) {
-  const key = (0, import_node_crypto5.createHash)("sha256").update(canonicalRoot(projectRoot)).digest("hex").slice(0, 16);
-  const base = env.XDG_CACHE_HOME || (0, import_node_path6.join)((0, import_node_os2.homedir)(), ".cache");
-  return (0, import_node_path6.join)(base, "trtc-traces", `reporting-state-${key}.json`);
-}
-
-// skills/trtc/runtime/telemetry.js
-init_redact();
+// skills/trtc/runtime/consent.js
+var import_node_fs7 = require("node:fs");
+var import_node_crypto6 = require("node:crypto");
+var import_node_path7 = require("node:path");
 
 // skills/trtc/runtime/session-context.js
-var import_node_crypto6 = require("node:crypto");
-var import_node_fs7 = require("node:fs");
-var import_node_path7 = require("node:path");
-var import_node_perf_hooks6 = require("node:perf_hooks");
+var import_node_crypto5 = require("node:crypto");
+var import_node_fs6 = require("node:fs");
+var import_node_path6 = require("node:path");
+var import_node_perf_hooks5 = require("node:perf_hooks");
 init_identity();
 var BINDING_TTL_MS = 30 * 60 * 1e3;
 var CONTEXT_TTL_MS = 30 * 60 * 1e3;
@@ -5448,7 +4193,7 @@ var STAGE_DIR = "stages";
 var TURN_RECEIPT_DIR = "turn-receipts";
 var TURN_RECEIPT_VERSION = 1;
 function digest(...parts) {
-  const hash = (0, import_node_crypto6.createHash)("sha256");
+  const hash = (0, import_node_crypto5.createHash)("sha256");
   for (const part of parts)
     hash.update(String(part)).update("\0");
   return hash.digest("hex");
@@ -5465,43 +4210,43 @@ function promptFingerprint(text) {
   return digest(text).slice(0, 32);
 }
 function coordinationRoot(projectRoot) {
-  return (0, import_node_path7.join)(resolveProjectStateDir(projectRoot), COORD_DIR);
+  return (0, import_node_path6.join)(resolveProjectStateDir(projectRoot), COORD_DIR);
 }
 function safeSessionId(value) {
   return typeof value === "string" && /^(?:sess_[a-f0-9_]{8,64}|sess_project_[a-f0-9]{24})$/.test(value);
 }
 function ensurePrivateDir(path2) {
-  (0, import_node_fs7.mkdirSync)(path2, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+  (0, import_node_fs6.mkdirSync)(path2, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
 }
 function readJson2(path2) {
   try {
-    const value = JSON.parse((0, import_node_fs7.readFileSync)(path2, "utf8"));
+    const value = JSON.parse((0, import_node_fs6.readFileSync)(path2, "utf8"));
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
   } catch {
     return null;
   }
 }
 function writeJsonAtomic(path2, value, opts = {}) {
-  const dir = (0, import_node_path7.dirname)(path2);
+  const dir = (0, import_node_path6.dirname)(path2);
   ensurePrivateDir(dir);
-  const tmp = (0, import_node_path7.join)(dir, `.${(0, import_node_crypto6.randomBytes)(8).toString("hex")}.tmp`);
+  const tmp = (0, import_node_path6.join)(dir, `.${(0, import_node_crypto5.randomBytes)(8).toString("hex")}.tmp`);
   let fd;
   try {
-    fd = (0, import_node_fs7.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
+    fd = (0, import_node_fs6.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
     writeAll3(fd, `${JSON.stringify(value)}
 `);
     if (opts.durable !== false)
-      (0, import_node_fs7.fsyncSync)(fd);
-    (0, import_node_fs7.closeSync)(fd);
+      (0, import_node_fs6.fsyncSync)(fd);
+    (0, import_node_fs6.closeSync)(fd);
     fd = void 0;
-    (0, import_node_fs7.renameSync)(tmp, path2);
+    (0, import_node_fs6.renameSync)(tmp, path2);
     if (opts.durable !== false)
       try {
-        const dirFd = (0, import_node_fs7.openSync)(dir, "r");
+        const dirFd = (0, import_node_fs6.openSync)(dir, "r");
         try {
-          (0, import_node_fs7.fsyncSync)(dirFd);
+          (0, import_node_fs6.fsyncSync)(dirFd);
         } finally {
-          (0, import_node_fs7.closeSync)(dirFd);
+          (0, import_node_fs6.closeSync)(dirFd);
         }
       } catch (err) {
         if (!["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT"].includes(err == null ? void 0 : err.code))
@@ -5510,37 +4255,37 @@ function writeJsonAtomic(path2, value, opts = {}) {
   } finally {
     if (fd !== void 0)
       try {
-        (0, import_node_fs7.closeSync)(fd);
+        (0, import_node_fs6.closeSync)(fd);
       } catch {
       }
     try {
-      (0, import_node_fs7.unlinkSync)(tmp);
+      (0, import_node_fs6.unlinkSync)(tmp);
     } catch {
     }
   }
 }
 function writeJsonNoClobberAtomic(path2, value, opts = {}) {
-  const dir = (0, import_node_path7.dirname)(path2);
+  const dir = (0, import_node_path6.dirname)(path2);
   ensurePrivateDir(dir);
-  const tmp = (0, import_node_path7.join)(dir, `.${(0, import_node_crypto6.randomBytes)(8).toString("hex")}.receipt.tmp`);
+  const tmp = (0, import_node_path6.join)(dir, `.${(0, import_node_crypto5.randomBytes)(8).toString("hex")}.receipt.tmp`);
   let fd;
   try {
-    fd = (0, import_node_fs7.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
+    fd = (0, import_node_fs6.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
     writeAll3(fd, `${JSON.stringify(value)}
 `);
     if (opts.durable !== false)
-      (0, import_node_fs7.fsyncSync)(fd);
-    (0, import_node_fs7.closeSync)(fd);
+      (0, import_node_fs6.fsyncSync)(fd);
+    (0, import_node_fs6.closeSync)(fd);
     fd = void 0;
     try {
-      (0, import_node_fs7.linkSync)(tmp, path2);
+      (0, import_node_fs6.linkSync)(tmp, path2);
       if (opts.durable !== false) {
         try {
-          const dirFd = (0, import_node_fs7.openSync)(dir, "r");
+          const dirFd = (0, import_node_fs6.openSync)(dir, "r");
           try {
-            (0, import_node_fs7.fsyncSync)(dirFd);
+            (0, import_node_fs6.fsyncSync)(dirFd);
           } finally {
-            (0, import_node_fs7.closeSync)(dirFd);
+            (0, import_node_fs6.closeSync)(dirFd);
           }
         } catch (err) {
           if (!["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT", "EISDIR", "EBADF", "ENOTDIR", "ENOTSUP", "EOPNOTSUPP"].includes(err == null ? void 0 : err.code))
@@ -5559,23 +4304,23 @@ function writeJsonNoClobberAtomic(path2, value, opts = {}) {
   } finally {
     if (fd !== void 0)
       try {
-        (0, import_node_fs7.closeSync)(fd);
+        (0, import_node_fs6.closeSync)(fd);
       } catch {
       }
     try {
-      (0, import_node_fs7.unlinkSync)(tmp);
+      (0, import_node_fs6.unlinkSync)(tmp);
     } catch {
     }
   }
 }
 function bindingPath(projectRoot, sessionid) {
-  return (0, import_node_path7.join)(coordinationRoot(projectRoot), BINDING_DIR, `${sessionid}.json`);
+  return (0, import_node_path6.join)(coordinationRoot(projectRoot), BINDING_DIR, `${sessionid}.json`);
 }
 function contextPath(projectRoot, sessionid) {
-  return (0, import_node_path7.join)(coordinationRoot(projectRoot), CONTEXT_DIR, `${sessionid}.json`);
+  return (0, import_node_path6.join)(coordinationRoot(projectRoot), CONTEXT_DIR, `${sessionid}.json`);
 }
 function stagePath(projectRoot, sessionid, stageKey) {
-  return (0, import_node_path7.join)(coordinationRoot(projectRoot), STAGE_DIR, `${digest(sessionid, stageKey)}.json`);
+  return (0, import_node_path6.join)(coordinationRoot(projectRoot), STAGE_DIR, `${digest(sessionid, stageKey)}.json`);
 }
 function turnReceiptKey(ide, turnId) {
   if (typeof ide !== "string" || ide.length === 0 || typeof turnId !== "string" || turnId.length === 0 || turnId.length > 1024)
@@ -5584,11 +4329,11 @@ function turnReceiptKey(ide, turnId) {
 }
 function turnReceiptPath(projectRoot, ide, turnId) {
   const key = turnReceiptKey(ide, turnId);
-  return key ? (0, import_node_path7.join)(coordinationRoot(projectRoot), TURN_RECEIPT_DIR, `${key}.json`) : null;
+  return key ? (0, import_node_path6.join)(coordinationRoot(projectRoot), TURN_RECEIPT_DIR, `${key}.json`) : null;
 }
 function listJson(dir) {
   try {
-    return (0, import_node_fs7.readdirSync)(dir).filter((name) => /^sess_[a-f0-9_]{8,64}\.json$/.test(name));
+    return (0, import_node_fs6.readdirSync)(dir).filter((name) => /^sess_[a-f0-9_]{8,64}\.json$/.test(name));
   } catch {
     return [];
   }
@@ -5610,7 +4355,7 @@ function refreshBinding(projectRoot, sessionid, ide = "unknown", opts = {}) {
     }, { durable: false });
     return { status: "bound", sessionid };
   }
-  const deadlineMono = opts.deadlineMono ?? import_node_perf_hooks6.performance.now() + (opts.timeoutMs ?? 1e3);
+  const deadlineMono = opts.deadlineMono ?? import_node_perf_hooks5.performance.now() + (opts.timeoutMs ?? 1e3);
   const lock = acquireCoordinationReservation(projectRoot, "binding", "project", { ...opts, deadlineMono });
   if (!lock)
     return { status: "busy" };
@@ -5630,14 +4375,14 @@ function refreshBinding(projectRoot, sessionid, ide = "unknown", opts = {}) {
 function cleanupExpiredBindings(projectRoot, opts = {}) {
   const now = opts.now ?? Date.now();
   const ttlMs = opts.ttlMs ?? BINDING_TTL_MS;
-  const dir = (0, import_node_path7.join)(coordinationRoot(projectRoot), BINDING_DIR);
+  const dir = (0, import_node_path6.join)(coordinationRoot(projectRoot), BINDING_DIR);
   let removed = 0;
   for (const name of listJson(dir)) {
-    const path2 = (0, import_node_path7.join)(dir, name);
+    const path2 = (0, import_node_path6.join)(dir, name);
     const value = readJson2(path2);
     if (!value || !safeSessionId(value.sessionid) || !Number.isFinite(value.updated_at) || now - value.updated_at > ttlMs) {
       try {
-        (0, import_node_fs7.unlinkSync)(path2);
+        (0, import_node_fs6.unlinkSync)(path2);
         removed++;
       } catch {
       }
@@ -5648,10 +4393,10 @@ function cleanupExpiredBindings(projectRoot, opts = {}) {
 function listFreshBindings(projectRoot, opts = {}) {
   const now = opts.now ?? Date.now();
   const ttlMs = opts.ttlMs ?? BINDING_TTL_MS;
-  const dir = (0, import_node_path7.join)(coordinationRoot(projectRoot), BINDING_DIR);
+  const dir = (0, import_node_path6.join)(coordinationRoot(projectRoot), BINDING_DIR);
   const values = [];
   for (const name of listJson(dir)) {
-    const value = readJson2((0, import_node_path7.join)(dir, name));
+    const value = readJson2((0, import_node_path6.join)(dir, name));
     if (!value || !safeSessionId(value.sessionid) || !Number.isFinite(value.updated_at))
       continue;
     if (now - value.updated_at <= ttlMs)
@@ -5701,9 +4446,9 @@ function readContext(projectRoot, sessionid, opts = {}) {
   const value = readJson2(path2);
   const now = opts.now ?? Date.now();
   if (!value || value.sessionid !== sessionid || !Number.isFinite(value.expires_at) || value.expires_at < now) {
-    if ((0, import_node_fs7.existsSync)(path2))
+    if ((0, import_node_fs6.existsSync)(path2))
       try {
-        (0, import_node_fs7.unlinkSync)(path2);
+        (0, import_node_fs6.unlinkSync)(path2);
       } catch {
       }
     return null;
@@ -5711,7 +4456,7 @@ function readContext(projectRoot, sessionid, opts = {}) {
   return value;
 }
 function hasContext(projectRoot, sessionid) {
-  return safeSessionId(sessionid) && (0, import_node_fs7.existsSync)(contextPath(projectRoot, sessionid));
+  return safeSessionId(sessionid) && (0, import_node_fs6.existsSync)(contextPath(projectRoot, sessionid));
 }
 function markContextConsumed(projectRoot, sessionid, eventId, expectedCreatedAt) {
   const path2 = contextPath(projectRoot, sessionid);
@@ -5728,7 +4473,7 @@ function readStageReceipt(projectRoot, sessionid, stageKey, opts = {}) {
   const value = readJson2(path2);
   if (value && value.sessionid === sessionid)
     return value;
-  return opts.reportInvalid && (0, import_node_fs7.existsSync)(path2) ? { status: "corrupt" } : null;
+  return opts.reportInvalid && (0, import_node_fs6.existsSync)(path2) ? { status: "corrupt" } : null;
 }
 function writeStageReceipt(projectRoot, sessionid, stageKey, value, opts = {}) {
   if (!safeSessionId(sessionid))
@@ -5750,7 +4495,7 @@ function readTurnReceipt(projectRoot, ide, turnId) {
     return null;
   const value = readJson2(path2);
   if (!value)
-    return (0, import_node_fs7.existsSync)(path2) ? { status: "corrupt" } : null;
+    return (0, import_node_fs6.existsSync)(path2) ? { status: "corrupt" } : null;
   if (!value || value.version !== TURN_RECEIPT_VERSION || value.turn_key !== turnReceiptKey(ide, turnId) || value.ide !== ide || !safeSessionId(value.sessionid) || typeof value.event_id !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(value.event_id) || !Number.isFinite(value.time))
     return { status: "corrupt" };
   return value;
@@ -5813,7 +4558,7 @@ function writeAll3(fd, body) {
   const buffer = Buffer.from(body);
   let offset = 0;
   while (offset < buffer.length)
-    offset += (0, import_node_fs7.writeSync)(fd, buffer, offset, buffer.length - offset);
+    offset += (0, import_node_fs6.writeSync)(fd, buffer, offset, buffer.length - offset);
 }
 function parseOwner(raw) {
   try {
@@ -5831,9 +4576,9 @@ function parseOwner(raw) {
 }
 function lockPath(projectRoot, namespace, key) {
   const root = coordinationRoot(projectRoot);
-  const dir = (0, import_node_path7.join)(root, LOCK_DIR2);
-  (0, import_node_fs7.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
-  return (0, import_node_path7.join)(dir, `${digest(namespace, key)}.lock`);
+  const dir = (0, import_node_path6.join)(root, LOCK_DIR2);
+  (0, import_node_fs6.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+  return (0, import_node_path6.join)(dir, `${digest(namespace, key)}.lock`);
 }
 function tryRecoverStale(path2, sampledRaw, opts) {
   const owner = parseOwner(sampledRaw);
@@ -5845,16 +4590,16 @@ function tryRecoverStale(path2, sampledRaw, opts) {
   } else {
     let mtimeMs;
     try {
-      mtimeMs = (0, import_node_fs7.statSync)(path2).mtimeMs;
+      mtimeMs = (0, import_node_fs6.statSync)(path2).mtimeMs;
     } catch {
       return false;
     }
     if (opts.now() - mtimeMs <= opts.staleGraceMs)
       return false;
   }
-  const scratch = `${path2}.steal-${process.pid}-${(0, import_node_crypto6.randomBytes)(8).toString("hex")}`;
+  const scratch = `${path2}.steal-${process.pid}-${(0, import_node_crypto5.randomBytes)(8).toString("hex")}`;
   try {
-    (0, import_node_fs7.renameSync)(path2, scratch);
+    (0, import_node_fs6.renameSync)(path2, scratch);
   } catch (err) {
     if ((err == null ? void 0 : err.code) === "ENOENT")
       return true;
@@ -5862,62 +4607,62 @@ function tryRecoverStale(path2, sampledRaw, opts) {
   }
   let moved = "";
   try {
-    moved = (0, import_node_fs7.readFileSync)(scratch, "utf8");
+    moved = (0, import_node_fs6.readFileSync)(scratch, "utf8");
   } catch {
   }
   if (moved !== sampledRaw) {
     try {
-      (0, import_node_fs7.linkSync)(scratch, path2);
+      (0, import_node_fs6.linkSync)(scratch, path2);
     } catch (err) {
       if ((err == null ? void 0 : err.code) !== "EEXIST")
         throw err;
     }
   }
   try {
-    (0, import_node_fs7.unlinkSync)(scratch);
+    (0, import_node_fs6.unlinkSync)(scratch);
   } catch {
   }
   return moved === sampledRaw;
 }
 function acquireCoordinationReservation(projectRoot, namespace, key, opts = {}) {
   const path2 = lockPath(projectRoot, namespace, key);
-  const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks6.performance.now() + (opts.timeoutMs ?? 1e3);
+  const deadlineMono = Number.isFinite(opts.deadlineMono) ? opts.deadlineMono : import_node_perf_hooks5.performance.now() + (opts.timeoutMs ?? 1e3);
   const now = opts.now || Date.now;
   const pidAlive = opts.isPidAlive || isPidAlive;
   const staleGraceMs = opts.staleGraceMs ?? RESERVATION_STALE_GRACE_MS;
   let backoff = 1;
-  while (import_node_perf_hooks6.performance.now() < deadlineMono) {
-    const token = (0, import_node_crypto6.randomBytes)(16).toString("hex");
+  while (import_node_perf_hooks5.performance.now() < deadlineMono) {
+    const token = (0, import_node_crypto5.randomBytes)(16).toString("hex");
     let fd;
     try {
-      fd = (0, import_node_fs7.openSync)(path2, "wx", process.platform === "win32" ? void 0 : 384);
+      fd = (0, import_node_fs6.openSync)(path2, "wx", process.platform === "win32" ? void 0 : 384);
       writeAll3(fd, JSON.stringify({ pid: process.pid, ts: now(), token }));
-      (0, import_node_fs7.closeSync)(fd);
+      (0, import_node_fs6.closeSync)(fd);
       fd = void 0;
       return { path: path2, token };
     } catch (err) {
       if (fd !== void 0)
         try {
-          (0, import_node_fs7.closeSync)(fd);
+          (0, import_node_fs6.closeSync)(fd);
         } catch {
         }
       if ((err == null ? void 0 : err.code) !== "EEXIST") {
         try {
-          (0, import_node_fs7.unlinkSync)(path2);
+          (0, import_node_fs6.unlinkSync)(path2);
         } catch {
         }
         throw err;
       }
       let raw = "";
       try {
-        raw = (0, import_node_fs7.readFileSync)(path2, "utf8");
+        raw = (0, import_node_fs6.readFileSync)(path2, "utf8");
       } catch (readErr) {
         if ((readErr == null ? void 0 : readErr.code) === "ENOENT")
           continue;
         throw readErr;
       }
       tryRecoverStale(path2, raw, { now, pidAlive, staleGraceMs });
-      const remaining2 = deadlineMono - import_node_perf_hooks6.performance.now();
+      const remaining2 = deadlineMono - import_node_perf_hooks5.performance.now();
       if (remaining2 <= 0)
         break;
       sleepSync3(Math.min(backoff, remaining2));
@@ -5933,7 +4678,7 @@ function releaseCoordinationReservation(lock) {
   }
   let raw;
   try {
-    raw = (0, import_node_fs7.readFileSync)(lock.path, "utf8");
+    raw = (0, import_node_fs6.readFileSync)(lock.path, "utf8");
   } catch (err) {
     if ((err == null ? void 0 : err.code) === "ENOENT")
       return false;
@@ -5942,7 +4687,7 @@ function releaseCoordinationReservation(lock) {
   if (((_a = parseOwner(raw)) == null ? void 0 : _a.token) !== lock.token)
     return false;
   try {
-    (0, import_node_fs7.unlinkSync)(lock.path);
+    (0, import_node_fs6.unlinkSync)(lock.path);
     return true;
   } catch (err) {
     if ((err == null ? void 0 : err.code) === "ENOENT")
@@ -5951,14 +4696,999 @@ function releaseCoordinationReservation(lock) {
   }
 }
 
+// skills/trtc/runtime/consent.js
+var CONSENT_VERSION = 2;
+var CONSENT_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
+var NOTICE_LIMIT = 2;
+var ANONYMOUS_REPLAY_MS = 6e4;
+var filePath = (root) => (0, import_node_path7.join)(resolveProjectStateDir(root), "experience-consent-v2.json");
+function readConsentState(root, key) {
+  const path2 = filePath(root);
+  try {
+    const stat = (0, import_node_fs7.lstatSync)(path2);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 128 * 1024)
+      return { status: "corrupt" };
+    const value = JSON.parse((0, import_node_fs7.readFileSync)(path2, "utf8"));
+    if ((value == null ? void 0 : value.version) !== CONSENT_VERSION || value.project_key !== key || !Number.isFinite(value.created_at) || !Number.isInteger(value.notice_count) || value.notice_count < 0 || value.notice_count > NOTICE_LIMIT || !["held", "released", "expired", "discarded"].includes(value.first_status) || value.notice_count > 0 && (!/^[a-f0-9]{32}$/.test(value.notice_attempt_id || "") || !Number.isFinite(value.presented_at) || !["zh-CN", "en-US"].includes(value.notice_locale) || value.notice_sessionid != null && typeof value.notice_sessionid !== "string") || value.pending_choice != null && !["allowed", "denied"].includes(value.pending_choice) || value.first_event && (value.first_event.__project_key !== key || value.first_event.method !== "prompt" || typeof value.first_event.text !== "string")) {
+      return { status: "corrupt" };
+    }
+    return { status: "valid", value };
+  } catch (err) {
+    return { status: (err == null ? void 0 : err.code) === "ENOENT" ? "missing" : "corrupt" };
+  }
+}
+function atomicWrite2(path2, value, durable) {
+  const tmp = `${path2}.${(0, import_node_crypto6.randomBytes)(8).toString("hex")}.tmp`;
+  let fd;
+  try {
+    fd = (0, import_node_fs7.openSync)(tmp, "wx", 384);
+    (0, import_node_fs7.writeFileSync)(fd, `${JSON.stringify(value)}
+`, "utf8");
+    if (durable)
+      (0, import_node_fs7.fsyncSync)(fd);
+    (0, import_node_fs7.closeSync)(fd);
+    fd = void 0;
+    (0, import_node_fs7.renameSync)(tmp, path2);
+    if (durable) {
+      const dir = (0, import_node_fs7.openSync)((0, import_node_path7.dirname)(path2), "r");
+      try {
+        (0, import_node_fs7.fsyncSync)(dir);
+      } catch (err) {
+        if (!["EINVAL", "ENOSYS", "EPERM", "EACCES"].includes(err == null ? void 0 : err.code))
+          throw err;
+      } finally {
+        (0, import_node_fs7.closeSync)(dir);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== void 0)
+      try {
+        (0, import_node_fs7.closeSync)(fd);
+      } catch {
+      }
+    try {
+      (0, import_node_fs7.unlinkSync)(tmp);
+    } catch {
+    }
+  }
+}
+function updateConsentState(root, key, update, opts = {}) {
+  const dir = resolveProjectStateDir(root);
+  try {
+    (0, import_node_fs7.mkdirSync)(dir, { recursive: true, mode: 448 });
+  } catch {
+    return { status: "retryable", reason: "consent_directory_unavailable" };
+  }
+  const lock = acquireCoordinationReservation(root, "consent", "v2", {
+    timeoutMs: opts.hook ? 1 : opts.timeoutMs ?? 80
+  });
+  if (!lock)
+    return { status: "retryable", reason: "consent_busy" };
+  try {
+    const current = readConsentState(root, key);
+    if (current.status === "corrupt")
+      return { status: "retryable", reason: "consent_corrupt" };
+    const now = typeof opts.now === "function" ? opts.now() : opts.now ?? Date.now();
+    let value = current.status === "valid" ? JSON.parse(JSON.stringify(current.value)) : null;
+    if ((value == null ? void 0 : value.first_event) && (now < value.created_at || now - value.created_at > CONSENT_TTL_MS)) {
+      delete value.first_event;
+      value.first_status = "expired";
+    }
+    const result = update(value, now);
+    if (!(result == null ? void 0 : result.value))
+      return result || { status: "skipped" };
+    const next = result.value;
+    if (!atomicWrite2(filePath(root), next, !opts.hook)) {
+      if (opts.noticeRetry && current.status === "valid") {
+        const retry = { ...current.value };
+        retry.notice_retry_count = Math.min((retry.notice_retry_count || 0) + 1, 7);
+        retry.notice_retry_at = now + Math.min(6e4, 1e3 * 2 ** (retry.notice_retry_count - 1));
+        atomicWrite2(filePath(root), retry, true);
+      }
+      return { status: "retryable", reason: "consent_write_failed" };
+    }
+    return { ...result, status: result.status || "updated" };
+  } finally {
+    releaseCoordinationReservation(lock);
+  }
+}
+function consentTurn(input, ide, text, now) {
+  const session = (input == null ? void 0 : input.raw_session_id) || (input == null ? void 0 : input.session_id) || (input == null ? void 0 : input.conversation_id) || (input == null ? void 0 : input.thread_id) || (input == null ? void 0 : input.host_thread_hint) || "";
+  const turn = (input == null ? void 0 : input.turn_id) || "";
+  return {
+    base: (0, import_node_crypto6.createHash)("sha256").update(JSON.stringify([ide, session, turn || text])).digest("hex"),
+    reliable: Boolean(turn),
+    now
+  };
+}
+function selectTurn(value, turn, now) {
+  if (value.turn_base !== turn.base || !turn.reliable && now - value.turn_seen_at > ANONYMOUS_REPLAY_MS) {
+    value.turn_base = turn.base;
+    value.turn_id = (0, import_node_crypto6.randomBytes)(16).toString("hex");
+    value.turn_seen_at = now;
+  }
+}
+function holdFirstPrompt(root, key, event, turn, opts = {}) {
+  return updateConsentState(root, key, (current, now) => {
+    var _a;
+    const value = current || {
+      version: CONSENT_VERSION,
+      project_key: key,
+      created_at: now,
+      first_status: "held",
+      first_event: event,
+      notice_count: 0
+    };
+    selectTurn(value, turn, now);
+    if (value.first_event && (value.first_event.__consent_turn_base === turn.base || value.first_event.text === event.text && now - value.created_at <= ANONYMOUS_REPLAY_MS)) {
+      for (const field of ["__route_hint", "__route_product", "__route_framework"]) {
+        if (event[field])
+          value.first_event[field] = event[field];
+      }
+    }
+    return {
+      status: "awaiting_consent",
+      value,
+      durable: !opts.hook,
+      event_id: (_a = value.first_event) == null ? void 0 : _a.event_id
+    };
+  }, opts);
+}
+function claimConsentNotice(root, key, { turn, sessionid = null, ide, locale, now = Date.now } = {}) {
+  return updateConsentState(root, key, (value, time) => {
+    if (!value)
+      return { status: "not_found" };
+    if (time < value.created_at || time - value.created_at > CONSENT_TTL_MS) {
+      return { status: "expired", value };
+    }
+    if (turn)
+      selectTurn(value, turn, time);
+    if (value.notice_retry_at > time)
+      return { status: "backoff", value };
+    if (value.notice_count >= NOTICE_LIMIT || value.notice_turn === value.turn_id) {
+      return { status: "not_required", value };
+    }
+    value.notice_count++;
+    delete value.notice_retry_at;
+    delete value.notice_retry_count;
+    value.notice_turn = value.turn_id;
+    value.notice_attempt_id = (0, import_node_crypto6.randomBytes)(16).toString("hex");
+    value.notice_sessionid = sessionid;
+    value.notice_ide = ide;
+    value.notice_locale = locale || value.notice_locale || "zh-CN";
+    value.presented_at = time;
+    return {
+      status: "required",
+      value,
+      notice_attempt_id: value.notice_attempt_id,
+      notice_locale: value.notice_locale
+    };
+  }, { now, noticeRetry: true });
+}
+
+// skills/trtc/runtime/preference.js
+init_event_scope();
+var FALSE_VALUES = /* @__PURE__ */ new Set(["0", "false", "no", "off", "disabled"]);
+var TRUE_VALUES = /* @__PURE__ */ new Set(["1", "true", "yes", "on", "enabled"]);
+var PREF_FILE = "preference.json";
+var LEGACY_STATE_FILE = "state.json";
+var LOCK_FILE = ".pref-owner.json";
+var LOCK_GRACE_FOREGROUND_MS = 5e3;
+var VALID_CONTINUATION_CHOICES = /* @__PURE__ */ new Set(["unanswered", "allowed", "denied"]);
+var OFF_TEXTS = /* @__PURE__ */ new Set([
+  "关闭体验上报",
+  "停止体验上报",
+  "关闭提示词上报",
+  "停止提示词上报",
+  "关闭prompt上报",
+  "停止prompt上报",
+  "turn off experience reporting",
+  "disable experience reporting",
+  "stop experience reporting",
+  "turn off prompt reporting",
+  "disable prompt reporting",
+  "stop prompt reporting"
+]);
+var ON_TEXTS = /* @__PURE__ */ new Set([
+  "开启体验上报",
+  "恢复体验上报",
+  "开启提示词上报",
+  "恢复提示词上报",
+  "开启prompt上报",
+  "恢复prompt上报",
+  "turn on experience reporting",
+  "enable experience reporting",
+  "resume experience reporting",
+  "turn on prompt reporting",
+  "enable prompt reporting",
+  "resume prompt reporting"
+]);
+function writeObjectAtomic(path2, value) {
+  const dir = (0, import_node_path8.dirname)(path2);
+  (0, import_node_fs8.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+  const tmp = (0, import_node_path8.join)(dir, `.${(0, import_node_crypto7.randomBytes)(8).toString("hex")}.${PREF_FILE}.tmp`);
+  let fd;
+  try {
+    fd = (0, import_node_fs8.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
+    const body = `${JSON.stringify(value, null, 2)}
+`;
+    (0, import_node_fs8.writeSync)(fd, body, null, "utf8");
+    (0, import_node_fs8.fsyncSync)(fd);
+    (0, import_node_fs8.closeSync)(fd);
+    fd = void 0;
+    (0, import_node_fs8.renameSync)(tmp, path2);
+    try {
+      const dirFd = (0, import_node_fs8.openSync)(dir, "r");
+      try {
+        (0, import_node_fs8.fsyncSync)(dirFd);
+      } finally {
+        (0, import_node_fs8.closeSync)(dirFd);
+      }
+    } catch (err) {
+      if (!err || !["EINVAL", "ENOSYS", "EPERM", "EACCES", "ENOENT"].includes(err.code))
+        throw err;
+    }
+    return true;
+  } catch {
+    if (fd !== void 0)
+      try {
+        (0, import_node_fs8.closeSync)(fd);
+      } catch {
+      }
+    try {
+      (0, import_node_fs8.unlinkSync)(tmp);
+    } catch {
+    }
+    return false;
+  }
+}
+function ancestors(projectRoot) {
+  const result = [];
+  let current = canonicalRoot(projectRoot);
+  while (true) {
+    result.push(current);
+    const parent = (0, import_node_path8.dirname)(current);
+    if (parent === current)
+      break;
+    current = parent;
+  }
+  return result;
+}
+function canonicalRoot(projectRoot) {
+  const absolute = (0, import_node_path8.resolve)(projectRoot);
+  try {
+    return (0, import_node_fs8.realpathSync)(absolute);
+  } catch {
+    return absolute;
+  }
+}
+function _lockMode() {
+  return process.platform === "win32" ? void 0 : 384;
+}
+function _staleCheckAndClaim(lockPath2, newToken, newOwnerData, graceMs) {
+  let stat;
+  try {
+    stat = (0, import_node_fs8.lstatSync)(lockPath2);
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      try {
+        (0, import_node_fs8.writeFileSync)(lockPath2, newOwnerData, { flag: "wx", mode: _lockMode() });
+        return { acquired: true, token: newToken, lockPath: lockPath2 };
+      } catch {
+        return { acquired: false, reason: "busy" };
+      }
+    }
+    return { acquired: false, reason: "busy" };
+  }
+  const age = Date.now() - stat.mtimeMs;
+  if (age < graceMs)
+    return { acquired: false, reason: "busy" };
+  let pid = null;
+  try {
+    const existing = JSON.parse((0, import_node_fs8.readFileSync)(lockPath2, "utf8"));
+    if (typeof (existing == null ? void 0 : existing.pid) === "number")
+      pid = existing.pid;
+  } catch {
+  }
+  if (pid !== null) {
+    try {
+      process.kill(pid, 0);
+      return { acquired: false, reason: "busy" };
+    } catch (err) {
+      if (err.code !== "ESRCH")
+        return { acquired: false, reason: "busy" };
+    }
+  }
+  const staleFile = lockPath2 + ".stale." + newToken;
+  try {
+    (0, import_node_fs8.renameSync)(lockPath2, staleFile);
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      try {
+        (0, import_node_fs8.writeFileSync)(lockPath2, newOwnerData, { flag: "wx", mode: _lockMode() });
+        return { acquired: true, token: newToken, lockPath: lockPath2 };
+      } catch {
+        return { acquired: false, reason: "busy" };
+      }
+    }
+    return { acquired: false, reason: "busy" };
+  }
+  try {
+    (0, import_node_fs8.writeFileSync)(lockPath2, newOwnerData, { flag: "wx", mode: _lockMode() });
+  } catch {
+    return { acquired: false, reason: "busy" };
+  }
+  try {
+    (0, import_node_fs8.unlinkSync)(staleFile);
+  } catch {
+  }
+  try {
+    const prefDir = (0, import_node_path8.dirname)(lockPath2);
+    for (const e of (0, import_node_fs8.readdirSync)(prefDir)) {
+      if (e.startsWith(LOCK_FILE + ".stale.")) {
+        try {
+          (0, import_node_fs8.unlinkSync)((0, import_node_path8.join)(prefDir, e));
+        } catch {
+        }
+      }
+    }
+  } catch {
+  }
+  return { acquired: true, token: newToken, lockPath: lockPath2 };
+}
+function _acquirePreferenceLock(prefDir, { graceMs = LOCK_GRACE_FOREGROUND_MS } = {}) {
+  (0, import_node_fs8.mkdirSync)(prefDir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+  const lockPath2 = (0, import_node_path8.join)(prefDir, LOCK_FILE);
+  const token = (0, import_node_crypto7.randomBytes)(16).toString("hex");
+  const ownerData = JSON.stringify({ pid: process.pid, token, ts: Date.now() });
+  try {
+    (0, import_node_fs8.writeFileSync)(lockPath2, ownerData, { flag: "wx", mode: _lockMode() });
+    return { acquired: true, token, lockPath: lockPath2 };
+  } catch (err) {
+    if (err.code !== "EEXIST")
+      return { acquired: false, reason: "lock_io_error" };
+    return _staleCheckAndClaim(lockPath2, token, ownerData, graceMs);
+  }
+}
+function _releasePreferenceLock(lockPath2, token, _testHookAfterRename) {
+  if (!lockPath2 || !token)
+    return;
+  const releasingFile = lockPath2 + ".releasing." + token;
+  try {
+    (0, import_node_fs8.renameSync)(lockPath2, releasingFile);
+  } catch {
+    return;
+  }
+  _testHookAfterRename == null ? void 0 : _testHookAfterRename();
+  try {
+    const existing = JSON.parse((0, import_node_fs8.readFileSync)(releasingFile, "utf8"));
+    if ((existing == null ? void 0 : existing.token) === token) {
+      (0, import_node_fs8.unlinkSync)(releasingFile);
+    } else {
+      try {
+        (0, import_node_fs8.linkSync)(releasingFile, lockPath2);
+        (0, import_node_fs8.unlinkSync)(releasingFile);
+      } catch {
+        try {
+          (0, import_node_fs8.unlinkSync)(releasingFile);
+        } catch {
+        }
+      }
+    }
+  } catch {
+    try {
+      (0, import_node_fs8.unlinkSync)(releasingFile);
+    } catch {
+    }
+  }
+}
+function readPreferenceSourceAt(root, source) {
+  const fileName = source === "preferred" ? PREF_FILE : LEGACY_STATE_FILE;
+  let filePath2 = null;
+  for (const dir of projectStateDirs(root)) {
+    const candidate = (0, import_node_path8.join)(dir, fileName);
+    if ((0, import_node_fs8.existsSync)(candidate)) {
+      filePath2 = candidate;
+      break;
+    }
+  }
+  if (filePath2 === null)
+    return { status: "missing" };
+  let raw;
+  try {
+    raw = (0, import_node_fs8.readFileSync)(filePath2, "utf8");
+  } catch {
+    return { status: "corrupt" };
+  }
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return { status: "corrupt" };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return { status: "corrupt" };
+  if (source === "preferred") {
+    const boolFields = ["prompt_reporting_enabled", "all_reporting_disabled", "purge_pending"];
+    for (const f of boolFields) {
+      if (value[f] !== void 0 && typeof value[f] !== "boolean")
+        return { status: "corrupt" };
+    }
+    const tsFields = ["prompt_reporting_updated_at", "all_reporting_updated_at", "continuation_choice_updated_at"];
+    for (const f of tsFields) {
+      if (value[f] !== void 0 && (!Number.isInteger(value[f]) || value[f] < 0))
+        return { status: "corrupt" };
+    }
+    if (value.continuation_choice !== void 0 && !VALID_CONTINUATION_CHOICES.has(value.continuation_choice)) {
+      return { status: "corrupt" };
+    }
+    if (value.continuation_choice_version !== void 0 && (!Number.isInteger(value.continuation_choice_version) || value.continuation_choice_version <= 0)) {
+      return { status: "corrupt" };
+    }
+    if (value.preference_revision !== void 0 && (!Number.isSafeInteger(value.preference_revision) || value.preference_revision < 0)) {
+      return { status: "corrupt" };
+    }
+    if (value.experience_consent_id !== void 0 && (typeof value.experience_consent_id !== "string" || !/^[a-f0-9]{32}$/.test(value.experience_consent_id))) {
+      return { status: "corrupt" };
+    }
+    if (value.continuation_choice === "allowed" && value.continuation_choice_version === CONSENT_VERSION && !value.experience_consent_id)
+      return { status: "corrupt" };
+  } else {
+    for (const f of ["prompt_reporting_enabled", "all_reporting_disabled"]) {
+      if (value[f] !== void 0 && typeof value[f] !== "boolean")
+        return { status: "corrupt" };
+    }
+  }
+  return { status: "valid", value };
+}
+function _readXdgLegacyCache(projectRoot, env) {
+  const cachePath2 = legacyCachePath(projectRoot, env);
+  if (!(0, import_node_fs8.existsSync)(cachePath2))
+    return { status: "missing" };
+  let raw;
+  try {
+    raw = (0, import_node_fs8.readFileSync)(cachePath2, "utf8");
+  } catch {
+    return { status: "corrupt" };
+  }
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return { status: "corrupt" };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return { status: "corrupt" };
+  for (const f of ["prompt_reporting_enabled", "all_reporting_disabled"]) {
+    if (value[f] !== void 0 && typeof value[f] !== "boolean")
+      return { status: "corrupt" };
+  }
+  return { status: "valid", value };
+}
+function resolveEffectivePreference(projectRoot, env = process.env, scope = "experience") {
+  if (envBoolean(env.TRTC_REPORTING) === false)
+    return false;
+  if (scope !== "runtime" && envBoolean(env.TRTC_PROMPT_REPORTING) === false)
+    return false;
+  let promptPreference = null;
+  let explicitConsent = null;
+  const allRoots = ancestors(projectRoot);
+  for (let i = 0; i < allRoots.length; i++) {
+    const root = allRoots[i];
+    const preferred = readPreferenceSourceAt(root, "preferred");
+    let prefValue;
+    if (preferred.status === "valid") {
+      prefValue = preferred.value;
+    } else if (preferred.status === "corrupt") {
+      return false;
+    } else {
+      const legacy = readPreferenceSourceAt(root, "legacy");
+      if (legacy.status === "valid") {
+        prefValue = legacy.value;
+      } else if (legacy.status === "corrupt") {
+        return false;
+      } else {
+        if (i === 0) {
+          const xdg = _readXdgLegacyCache(root, env);
+          if (xdg.status === "valid") {
+            prefValue = xdg.value;
+          } else if (xdg.status === "corrupt") {
+            return false;
+          } else {
+            continue;
+          }
+        } else {
+          continue;
+        }
+      }
+    }
+    if (prefValue.continuation_choice === "denied" && (scope !== "runtime" || prefValue.continuation_choice_version !== CONSENT_VERSION))
+      return false;
+    if (prefValue.all_reporting_disabled === true)
+      return false;
+    if (scope !== "runtime" && promptPreference === null && typeof prefValue.prompt_reporting_enabled === "boolean") {
+      promptPreference = prefValue.prompt_reporting_enabled;
+    }
+    if (explicitConsent === null && prefValue.continuation_choice === "allowed") {
+      explicitConsent = prefValue;
+    }
+  }
+  if (scope === "runtime")
+    return true;
+  if (scope !== "eligibility" && !explicitConsent)
+    return false;
+  if (envBoolean(env.TRTC_PROMPT_REPORTING) === true)
+    return true;
+  return promptPreference ?? true;
+}
+function envBoolean(value) {
+  if (value == null)
+    return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (FALSE_VALUES.has(normalized))
+    return false;
+  if (TRUE_VALUES.has(normalized))
+    return true;
+  return null;
+}
+function projectKey(projectRoot) {
+  return (0, import_node_crypto7.createHash)("sha256").update(canonicalRoot(projectRoot)).digest("hex").slice(0, 32);
+}
+function preferencePath(projectRoot) {
+  return (0, import_node_path8.join)(resolveProjectStateDir(canonicalRoot(projectRoot)), PREF_FILE);
+}
+function isReportingEnabled(projectRoot, env = process.env) {
+  return resolveEffectivePreference(projectRoot, env, "experience");
+}
+function isReportingEnabledForScope(projectRoot, scope = "experience", env = process.env) {
+  return resolveEffectivePreference(projectRoot, env, scope === "runtime" ? "runtime" : "experience");
+}
+function canRequestExperienceConsent(projectRoot, env = process.env) {
+  return resolveEffectivePreference(projectRoot, env, "eligibility");
+}
+function consentFields(projectRoot) {
+  for (const root of ancestors(projectRoot)) {
+    const pref = readPreferenceSourceAt(root, "preferred");
+    if (pref.status === "valid" && pref.value.continuation_choice === "allowed") {
+      return pref.value.experience_consent_id ? { __consent_id: pref.value.experience_consent_id } : {};
+    }
+  }
+  return {};
+}
+function isEventReportingEnabled(projectRoot, event, env = process.env) {
+  if (isRuntimeEvent(event))
+    return isReportingEnabledForScope(projectRoot, "runtime", env);
+  if (!isReportingEnabled(projectRoot, env))
+    return false;
+  const fields = consentFields(projectRoot);
+  return !fields.__consent_id || (event == null ? void 0 : event.__consent_id) === fields.__consent_id;
+}
+function setReportingPreference(projectRoot, enabled, opts = {}) {
+  const filePath2 = preferencePath(projectRoot);
+  const dir = (0, import_node_path8.dirname)(filePath2);
+  const graceMs = opts.graceMs ?? LOCK_GRACE_FOREGROUND_MS;
+  const lock = _acquirePreferenceLock(dir, { graceMs });
+  if (!lock.acquired) {
+    return { action: "skip", reason: lock.reason ?? "busy", enabled: Boolean(enabled), all_reporting_disabled: false, path: filePath2 };
+  }
+  try {
+    const source = readPreferenceSourceAt(canonicalRoot(projectRoot), "preferred");
+    if (source.status === "corrupt") {
+      return { action: "skip", reason: "preference_corrupt", enabled: Boolean(enabled), all_reporting_disabled: false, path: filePath2 };
+    }
+    let current = source.status === "valid" ? source.value : {};
+    if (source.status === "missing") {
+      const legacy = readPreferenceSourceAt(canonicalRoot(projectRoot), "legacy");
+      const fallback = legacy.status === "missing" ? _readXdgLegacyCache(projectRoot, opts.env ?? process.env) : legacy;
+      if (fallback.status === "corrupt")
+        return { action: "skip", reason: "preference_corrupt", path: filePath2 };
+      if (fallback.status === "valid") {
+        for (const field of ["all_reporting_disabled", "continuation_choice", "continuation_choice_version"]) {
+          if (fallback.value[field] !== void 0)
+            current[field] = fallback.value[field];
+        }
+      }
+    }
+    const next = {
+      ...current,
+      prompt_reporting_enabled: Boolean(enabled),
+      preference_revision: (current.preference_revision || 0) + 1,
+      prompt_reporting_updated_at: Math.floor((typeof opts.now === "function" ? opts.now() : opts.now ?? Date.now()) / 1e3)
+    };
+    if (opts.purgePending !== void 0)
+      next.purge_pending = Boolean(opts.purgePending);
+    if (opts.allReportingDisabled !== void 0) {
+      next.all_reporting_disabled = Boolean(opts.allReportingDisabled);
+      next.all_reporting_updated_at = next.prompt_reporting_updated_at;
+    }
+    const persisted = writeObjectAtomic(filePath2, next);
+    return {
+      action: persisted ? "updated" : "skip",
+      reason: persisted ? null : "state-unavailable",
+      enabled: Boolean(enabled),
+      all_reporting_disabled: next.all_reporting_disabled === true,
+      path: filePath2
+    };
+  } finally {
+    _releasePreferenceLock(lock.lockPath, lock.token);
+  }
+}
+function readPreferenceState(projectRoot) {
+  return readPreferenceSourceAt(canonicalRoot(projectRoot), "preferred");
+}
+function setContinuationChoiceLocked(projectRoot, choice, opts = {}) {
+  if (!VALID_CONTINUATION_CHOICES.has(choice))
+    return { action: "skip", reason: "invalid_choice" };
+  const root = canonicalRoot(projectRoot);
+  const dir = resolveProjectStateDir(root);
+  const filePath2 = (0, import_node_path8.join)(dir, PREF_FILE);
+  const graceMs = opts.graceMs ?? LOCK_GRACE_FOREGROUND_MS;
+  const lock = _acquirePreferenceLock(dir, { graceMs });
+  if (!lock.acquired)
+    return { action: "skip", reason: lock.reason ?? "busy" };
+  try {
+    const source = readPreferenceSourceAt(root, "preferred");
+    if (source.status === "corrupt")
+      return { action: "preference_corrupt" };
+    let current = {};
+    if (source.status === "valid") {
+      current = source.value;
+    } else {
+      const legacy = readPreferenceSourceAt(root, "legacy");
+      if (legacy.status === "corrupt") {
+        return { action: "preference_corrupt" };
+      }
+      if (legacy.status === "valid") {
+        if (legacy.value.all_reporting_disabled === true) {
+          current = { all_reporting_disabled: true };
+        }
+      } else {
+        const xdg = _readXdgLegacyCache(root, opts.env ?? process.env);
+        if (xdg.status === "corrupt") {
+          return { action: "preference_corrupt" };
+        }
+        if (xdg.status === "valid" && xdg.value.all_reporting_disabled === true) {
+          current = { all_reporting_disabled: true };
+        }
+      }
+    }
+    const now = Math.floor((typeof opts.now === "function" ? opts.now() : opts.now ?? Date.now()) / 1e3);
+    if (opts.expectedRevision !== void 0 && (current.preference_revision || 0) !== opts.expectedRevision) {
+      return { action: "skip", reason: "preference_changed" };
+    }
+    if (choice === "allowed" && current.continuation_choice === "denied") {
+      return { action: "skip", reason: "denied_precedence" };
+    }
+    const revision = typeof current.preference_revision === "number" ? current.preference_revision : 0;
+    const next = {
+      ...current,
+      continuation_choice: choice,
+      continuation_choice_version: CONSENT_VERSION,
+      continuation_choice_updated_at: now,
+      preference_revision: revision + 1
+    };
+    if (choice === "denied") {
+      next.prompt_reporting_enabled = false;
+      next.purge_pending = true;
+    }
+    if (choice === "allowed") {
+      next.prompt_reporting_enabled = true;
+      next.experience_consent_id = current.experience_consent_id || (0, import_node_crypto7.randomBytes)(16).toString("hex");
+    }
+    const persisted = writeObjectAtomic(filePath2, next);
+    return { action: persisted ? "updated" : "skip", reason: persisted ? null : "state-unavailable" };
+  } finally {
+    _releasePreferenceLock(lock.lockPath, lock.token);
+  }
+}
+async function consumeContinuationChoice(projectRoot, text, opts = {}) {
+  const explicit = opts.controlChoice ?? opts.control_choice;
+  const choice = explicit === "allow" ? "allowed" : explicit === "deny" ? "denied" : explicit === "ambiguous" ? "ambiguous" : isCanonicalOption(text);
+  if (!choice)
+    return null;
+  const key = projectKey(projectRoot);
+  const receipt = readConsentState(projectRoot, key);
+  const skip = (reason) => ({ status: "skipped", control: true, reason });
+  const invalid = (reason) => explicit ? skip(reason) : null;
+  if (receipt.status !== "valid" || receipt.value.notice_count === 0)
+    return invalid("control_context_missing");
+  const now = typeof opts.now === "function" ? opts.now() : opts.now ?? Date.now();
+  if (now < receipt.value.created_at || now - receipt.value.created_at > CONSENT_TTL_MS) {
+    updateConsentState(projectRoot, key, (value) => ({ value }), { now });
+    return invalid("notice_attempt_expired");
+  }
+  if (receipt.value.notice_sessionid && opts.sessionid && receipt.value.notice_sessionid !== opts.sessionid)
+    return invalid("notice_session_mismatch");
+  if (receipt.value.notice_ide && opts.ide && receipt.value.notice_ide !== opts.ide) {
+    return invalid("notice_ide_mismatch");
+  }
+  const pref = readPreferenceState(projectRoot);
+  const previous = pref.status === "valid" ? pref.value.continuation_choice : null;
+  if (["allowed", "denied"].includes(previous)) {
+    return { status: "control_in_progress", control: true, marker: previous === "allowed" ? ALLOWED : DISABLED };
+  }
+  if (opts.source === "hook") {
+    return { status: "skipped", control: true, reason: "foreground_choice_required" };
+  }
+  if (choice === "ambiguous") {
+    const claim = claimConsentNotice(projectRoot, key, {
+      turn: opts.turn,
+      sessionid: opts.sessionid || null,
+      ide: opts.ide,
+      locale: receipt.value.notice_locale,
+      now: opts.now || Date.now
+    });
+    return { ...skip("ambiguous_choice"), ...claim.status === "required" ? { marker: NOTICE_REQUIRED, notice: claim } : { notice: { status: claim.status } } };
+  }
+  const accepted = updateConsentState(projectRoot, key, (value) => {
+    if (!value)
+      return { status: "not_found" };
+    const accepted2 = value.pending_choice === "denied" ? "denied" : choice;
+    if (!value.pending_choice || value.pending_choice !== accepted2) {
+      value.choice_preference_revision = pref.status === "valid" ? pref.value.preference_revision || 0 : 0;
+    }
+    value.pending_choice = accepted2;
+    return { value };
+  }, { now });
+  if (accepted.status !== "updated")
+    return {
+      status: "control_retry",
+      control: true,
+      marker: choice === "allowed" ? ALLOW_RETRY : DISABLE_RETRY
+    };
+  return retryPendingConsentChoice(projectRoot, opts);
+}
+function retryPendingConsentChoice(projectRoot, opts = {}) {
+  const key = projectKey(projectRoot);
+  const receipt = readConsentState(projectRoot, key);
+  const now = typeof opts.now === "function" ? opts.now() : opts.now ?? Date.now();
+  if (receipt.status !== "valid" || !receipt.value.pending_choice)
+    return null;
+  const choice = receipt.value.pending_choice;
+  const retry = () => ({
+    status: "control_retry",
+    control: true,
+    marker: choice === "allowed" ? ALLOW_RETRY : DISABLE_RETRY
+  });
+  if (receipt.value.choice_retry_at > now)
+    return { ...retry(), retry_suppressed: true };
+  const current = readPreferenceState(projectRoot);
+  const revision = current.status === "valid" ? current.value.preference_revision || 0 : 0;
+  if (revision !== receipt.value.choice_preference_revision) {
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value)
+        return { status: "not_found" };
+      delete value.pending_choice;
+      delete value.choice_preference_revision;
+      delete value.choice_retry_at;
+      delete value.choice_retry_count;
+      return { value };
+    }, { now });
+    return { status: "skipped", control: true, reason: "preference_changed" };
+  }
+  const persisted = setContinuationChoiceLocked(projectRoot, choice, {
+    ...opts,
+    expectedRevision: receipt.value.choice_preference_revision
+  });
+  if (persisted.action !== "updated") {
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value)
+        return { status: "not_found" };
+      value.choice_retry_count = Math.min((value.choice_retry_count || 0) + 1, 7);
+      value.choice_retry_at = now + Math.min(6e4, 1e3 * 2 ** (value.choice_retry_count - 1));
+      return { value };
+    }, { now });
+    return retry();
+  }
+  updateConsentState(projectRoot, key, (value) => {
+    if (!value)
+      return { status: "not_found" };
+    delete value.pending_choice;
+    delete value.choice_preference_revision;
+    delete value.choice_retry_at;
+    delete value.choice_retry_count;
+    if (choice === "denied") {
+      delete value.first_event;
+      value.first_status = "discarded";
+    }
+    return { value };
+  }, { now });
+  if (choice === "denied" && typeof opts.purge === "function")
+    try {
+      opts.purge();
+    } catch {
+    }
+  return { status: "control_in_progress", control: true, marker: choice === "allowed" ? ALLOWED : DISABLED };
+}
+function retryAmbiguousNoticeDefault() {
+  return { status: "skipped", reason: "explicit_consent_required" };
+}
+function preferenceFromText(text) {
+  if (typeof text !== "string")
+    return null;
+  let normalized = text.trim().replace(/\s+/g, " ").replace(/[。.!！?？ ]+$/u, "").toLowerCase();
+  normalized = normalized.replace(/^(?:请帮我|麻烦帮我|麻烦|帮我|请|please\s+)?/iu, "").trim();
+  if (OFF_TEXTS.has(normalized))
+    return false;
+  if (ON_TEXTS.has(normalized))
+    return true;
+  return null;
+}
+function legacyCachePath(projectRoot, env = process.env) {
+  const key = (0, import_node_crypto7.createHash)("sha256").update(canonicalRoot(projectRoot)).digest("hex").slice(0, 16);
+  const base = env.XDG_CACHE_HOME || (0, import_node_path8.join)((0, import_node_os2.homedir)(), ".cache");
+  return (0, import_node_path8.join)(base, "trtc-traces", `reporting-state-${key}.json`);
+}
+
+// skills/trtc/runtime/platform-memory.js
+var import_node_fs9 = require("node:fs");
+var import_node_path9 = require("node:path");
+var MEMORY_FILE = "platform-memory.json";
+var MEMORY_VERSION = 1;
+var MEMORY_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
+var MAX_MEMORY_BYTES = 256 * 1024;
+var MAX_MEMORY_ENTRIES = 200;
+var SESSION_FILENAME = ".trtc-session.yaml";
+var SESSION_PLATFORMS = /* @__PURE__ */ new Set(["web", "android", "ios", "flutter", "electron", "unity"]);
+var NON_PLATFORM_VALUES = /* @__PURE__ */ new Set(["unknown", "n-a"]);
+function memoryPath(stateRoot) {
+  return (0, import_node_path9.join)(stateRoot, "telemetry", MEMORY_FILE);
+}
+function isStorableFramework(value) {
+  if (typeof value !== "string")
+    return false;
+  const framework = value.trim();
+  return !!framework && !NON_PLATFORM_VALUES.has(framework);
+}
+function memoryKey(projectKeyValue, product) {
+  return `${projectKeyValue}:${product}`;
+}
+function readMemory(stateRoot) {
+  const path2 = memoryPath(stateRoot);
+  if (!(0, import_node_fs9.existsSync)(path2))
+    return { version: MEMORY_VERSION, entries: {} };
+  try {
+    const raw = (0, import_node_fs9.readFileSync)(path2, "utf8");
+    if (raw.length > MAX_MEMORY_BYTES)
+      return { version: MEMORY_VERSION, entries: {} };
+    const data = JSON.parse(raw);
+    if ((data == null ? void 0 : data.version) !== MEMORY_VERSION)
+      return { version: MEMORY_VERSION, entries: {} };
+    if (!data.entries || typeof data.entries !== "object")
+      return { version: MEMORY_VERSION, entries: {} };
+    return data;
+  } catch {
+    return { version: MEMORY_VERSION, entries: {} };
+  }
+}
+function writeMemory(stateRoot, memory) {
+  const path2 = memoryPath(stateRoot);
+  const content = JSON.stringify(memory);
+  if (content.length > MAX_MEMORY_BYTES)
+    return false;
+  const tmp = `${path2}.tmp.${process.pid}.${Date.now()}`;
+  try {
+    (0, import_node_fs9.mkdirSync)((0, import_node_path9.dirname)(path2), { recursive: true });
+    (0, import_node_fs9.writeFileSync)(tmp, content, { mode: 384 });
+    (0, import_node_fs9.renameSync)(tmp, path2);
+    return true;
+  } catch {
+    try {
+      (0, import_node_fs9.unlinkSync)(tmp);
+    } catch {
+    }
+    return false;
+  }
+}
+function recallFramework(stateRoot, projectKeyValue, product, now = Date.now()) {
+  var _a;
+  if (!projectKeyValue || !product || NON_PLATFORM_VALUES.has(product))
+    return null;
+  const entry = (_a = readMemory(stateRoot).entries) == null ? void 0 : _a[memoryKey(projectKeyValue, product)];
+  if (!entry || typeof entry.framework !== "string")
+    return null;
+  if (!isStorableFramework(entry.framework))
+    return null;
+  if (typeof entry.updated_at !== "number")
+    return null;
+  if (now > entry.updated_at + MEMORY_TTL_MS)
+    return null;
+  return entry.framework;
+}
+function rememberFramework(stateRoot, projectKeyValue, product, framework, opts = {}) {
+  var _a, _b;
+  if (!projectKeyValue || !product || NON_PLATFORM_VALUES.has(product))
+    return false;
+  if (!isStorableFramework(framework))
+    return false;
+  const now = typeof opts.now === "number" ? opts.now : Date.now();
+  const source = typeof opts.source === "string" ? opts.source : "dispatcher";
+  const memory = readMemory(stateRoot);
+  if (!memory.entries)
+    memory.entries = {};
+  const key = memoryKey(projectKeyValue, product);
+  const existing = memory.entries[key];
+  if (existing && existing.framework === framework && now <= (existing.updated_at ?? 0) + MEMORY_TTL_MS) {
+    return false;
+  }
+  const keys = Object.keys(memory.entries);
+  if (keys.length >= MAX_MEMORY_ENTRIES && !memory.entries[key]) {
+    let oldestKey = keys[0];
+    let oldestTs = ((_a = memory.entries[keys[0]]) == null ? void 0 : _a.updated_at) ?? Infinity;
+    for (const candidate of keys) {
+      const ts = ((_b = memory.entries[candidate]) == null ? void 0 : _b.updated_at) ?? 0;
+      if (ts < oldestTs) {
+        oldestTs = ts;
+        oldestKey = candidate;
+      }
+    }
+    delete memory.entries[oldestKey];
+  }
+  memory.entries[key] = { framework, source, updated_at: now };
+  return writeMemory(stateRoot, memory);
+}
+function readTopLevelScalars(text, wanted) {
+  const out = {};
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!line || /^\s/.test(line) || line.startsWith("#") || line.startsWith("---"))
+      continue;
+    const separator = line.indexOf(":");
+    if (separator <= 0)
+      continue;
+    const key = line.slice(0, separator).trim();
+    if (!wanted.includes(key))
+      continue;
+    let value = line.slice(separator + 1).trim();
+    value = value.replace(/\s+#.*$/, "");
+    if (value.length >= 2) {
+      const first = value[0];
+      if ((first === '"' || first === "'") && value.endsWith(first))
+        value = value.slice(1, -1);
+    }
+    if (value)
+      out[key] = value.trim();
+  }
+  return out;
+}
+function readSessionPlatform(projectRoot) {
+  if (!projectRoot)
+    return null;
+  let text;
+  try {
+    text = (0, import_node_fs9.readFileSync)((0, import_node_path9.join)(projectRoot, SESSION_FILENAME), "utf8");
+  } catch {
+    return null;
+  }
+  const scalars = readTopLevelScalars(text, ["platform", "product"]);
+  const platform = scalars.platform;
+  if (!platform || !SESSION_PLATFORMS.has(platform))
+    return null;
+  return { platform, product: scalars.product || null };
+}
+function resolveFrameworkContinuity({ projectRoot, stateRoot, projectKeyValue, product, now = Date.now() }) {
+  if (!product || NON_PLATFORM_VALUES.has(product))
+    return null;
+  const session = readSessionPlatform(projectRoot);
+  if (session && (!session.product || session.product === product)) {
+    return { framework: session.platform, source: "session" };
+  }
+  const remembered = recallFramework(stateRoot, projectKeyValue, product, now);
+  return remembered ? { framework: remembered, source: "memory" } : null;
+}
+
 // skills/trtc/runtime/telemetry.js
+init_redact();
+init_event_scope();
 init_schema();
 
 // skills/trtc/runtime/sdkappid-resolver.js
-var import_node_fs8 = require("node:fs");
-var import_node_path8 = require("node:path");
-var import_node_crypto8 = require("node:crypto");
-var import_node_perf_hooks7 = require("node:perf_hooks");
+var import_node_fs10 = require("node:fs");
+var import_node_path10 = require("node:path");
+var import_node_crypto9 = require("node:crypto");
+var import_node_perf_hooks6 = require("node:perf_hooks");
 var RESOLVER_VERSION = "18.4";
 var TIER1_FILES = /* @__PURE__ */ new Set([
   "config.dart",
@@ -6085,36 +5815,36 @@ function resolveActiveScope(cwd, projectRoot) {
   let current;
   let root;
   try {
-    root = (0, import_node_fs8.realpathSync)((0, import_node_path8.resolve)(projectRoot));
-    current = (0, import_node_fs8.realpathSync)((0, import_node_path8.resolve)(cwd));
+    root = (0, import_node_fs10.realpathSync)((0, import_node_path10.resolve)(projectRoot));
+    current = (0, import_node_fs10.realpathSync)((0, import_node_path10.resolve)(cwd));
   } catch {
     return { scopeRoot: projectRoot, scopeManifest: null };
   }
-  const rel = (0, import_node_path8.relative)(root, current);
-  if (rel.startsWith("..") || (0, import_node_path8.isAbsolute)(rel))
+  const rel = (0, import_node_path10.relative)(root, current);
+  if (rel.startsWith("..") || (0, import_node_path10.isAbsolute)(rel))
     return { scopeRoot: root, scopeManifest: null };
   while (true) {
     for (const manifest of SCOPE_MANIFESTS) {
       try {
-        if ((0, import_node_fs8.existsSync)((0, import_node_path8.join)(current, manifest))) {
+        if ((0, import_node_fs10.existsSync)((0, import_node_path10.join)(current, manifest))) {
           return { scopeRoot: current, scopeManifest: manifest };
         }
       } catch {
       }
     }
     try {
-      const entries = (0, import_node_fs8.readdirSync)(current);
+      const entries = (0, import_node_fs10.readdirSync)(current);
       if (entries.some((e) => e.endsWith(".xcodeproj") || e.endsWith(".xcworkspace"))) {
         const match = entries.find((e) => e.endsWith(".xcodeproj") || e.endsWith(".xcworkspace"));
         return { scopeRoot: current, scopeManifest: match };
       }
     } catch {
     }
-    const parent = (0, import_node_path8.resolve)(current, "..");
+    const parent = (0, import_node_path10.resolve)(current, "..");
     if (parent === current)
       break;
-    const parentRel = (0, import_node_path8.relative)(root, parent);
-    if (parentRel.startsWith("..") || (0, import_node_path8.isAbsolute)(parentRel))
+    const parentRel = (0, import_node_path10.relative)(root, parent);
+    if (parentRel.startsWith("..") || (0, import_node_path10.isAbsolute)(parentRel))
       break;
     current = parent;
   }
@@ -6208,7 +5938,7 @@ function lexSource(input, deadlineMono, fileName = "") {
   let blockEnd = null;
   let escaped = false;
   for (let i = 0; i < input.length; i++) {
-    if ((i & 4095) === 0 && import_node_perf_hooks7.performance.now() > deadlineMono)
+    if ((i & 4095) === 0 && import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     const ch = input[i];
     const next = input[i + 1];
@@ -6302,7 +6032,7 @@ function lexSource(input, deadlineMono, fileName = "") {
     source += ch;
     code += ch;
   }
-  return import_node_perf_hooks7.performance.now() > deadlineMono ? null : { source, code };
+  return import_node_perf_hooks6.performance.now() > deadlineMono ? null : { source, code };
 }
 function maskedText(input) {
   return input.replace(/[^\r\n]/g, " ");
@@ -6310,7 +6040,7 @@ function maskedText(input) {
 function htmlTagEnd(input, start, deadlineMono) {
   let quote = null;
   for (let i = start; i < input.length; i++) {
-    if ((i & 255) === 0 && import_node_perf_hooks7.performance.now() > deadlineMono)
+    if ((i & 255) === 0 && import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     const ch = input[i];
     if (quote) {
@@ -6347,7 +6077,7 @@ function lexVueSource(input, deadlineMono) {
     "wbr"
   ]);
   for (let i = 0; i < input.length; ) {
-    if ((i & 4095) === 0 && import_node_perf_hooks7.performance.now() > deadlineMono)
+    if ((i & 4095) === 0 && import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     if (input.startsWith("<!--", i)) {
       const close = input.indexOf("-->", i + 4);
@@ -6419,7 +6149,7 @@ function lexVueSource(input, deadlineMono) {
     }
     i++;
   }
-  if (import_node_perf_hooks7.performance.now() > deadlineMono)
+  if (import_node_perf_hooks6.performance.now() > deadlineMono)
     return null;
   regions.sort((a, b) => a.start - b.start);
   const scriptEnds = new Set(scriptRanges.map(([, end]) => end));
@@ -6444,7 +6174,7 @@ ${tail.slice(1)}`;
   source.push(tail);
   code.push(tail);
   const result = { source: source.join(""), code: code.join(""), scriptRanges };
-  return import_node_perf_hooks7.performance.now() > deadlineMono ? null : result;
+  return import_node_perf_hooks6.performance.now() > deadlineMono ? null : result;
 }
 function lexFileSource(input, deadlineMono, fileName) {
   return String(fileName).toLowerCase().endsWith(".vue") ? lexVueSource(input, deadlineMono) : lexSource(input, deadlineMono, fileName);
@@ -6479,7 +6209,7 @@ function topLevelCallArguments(file, openParen, deadlineMono, maxChars = 2e3) {
   const delimiters = [];
   const end = Math.min(file.code.length, openParen + 1 + maxChars);
   for (let i = openParen + 1; i < end; i++) {
-    if ((i & 255) === 0 && import_node_perf_hooks7.performance.now() > deadlineMono)
+    if ((i & 255) === 0 && import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     const ch = file.code[i];
     if (ch === "<" && (delimiters.at(-1) === ">" || isGenericInvocationStart(file.code, i, end)))
@@ -6504,16 +6234,16 @@ function topLevelCallArguments(file, openParen, deadlineMono, maxChars = 2e3) {
       start = i + 1;
     }
   }
-  return import_node_perf_hooks7.performance.now() > deadlineMono ? null : { status: "malformed", args: [] };
+  return import_node_perf_hooks6.performance.now() > deadlineMono ? null : { status: "malformed", args: [] };
 }
 function relativeHint(root, path2) {
-  return (0, import_node_path8.relative)(root, path2).split(import_node_path8.sep).join("/");
+  return (0, import_node_path10.relative)(root, path2).split(import_node_path10.sep).join("/");
 }
 function sessionSdkAppId(input, deadlineMono) {
   const lines = String(input).split(/\r?\n/);
   let credentialsIndent = null;
   for (const raw of lines) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     if (!raw.trim() || /^\s*#/.test(raw))
       continue;
@@ -6539,7 +6269,7 @@ function directBindings(file, deadlineMono, { immutableOnly = false, allowedAt =
   const permits = typeof allowedAt === "function" ? allowedAt : () => true;
   const assignment = immutableOnly ? /\b(?:const|final)\s+(?:(?:int|number|Int|UInt32|long|String|var|dynamic)\s+)?([A-Za-z_$][\w$]*)\b\s*(?::\s*(?:int|number|Int|UInt32|long))?\s*=\s*([^,;}\]\n]+)/g : /\b([A-Za-z_$][\w$]*)\b\s*(?::\s*(?:int|number|Int|UInt32|long))?\s*(?::=|=)\s*([^,;}\]\n]+)/g;
   for (const match of file.source.matchAll(assignment)) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     if (!matchStartsInCode(file, match))
       continue;
@@ -6552,7 +6282,7 @@ function directBindings(file, deadlineMono, { immutableOnly = false, allowedAt =
     const allAssignments = new RegExp(String.raw`\b${id.replace(/[$]/g, "\\$&")}\b\s*(?:(?::[^=;\n]+)?=|:=)`, "g");
     let assignments = 0;
     for (const occurrence of file.source.matchAll(allAssignments)) {
-      if (import_node_perf_hooks7.performance.now() > deadlineMono)
+      if (import_node_perf_hooks6.performance.now() > deadlineMono)
         return null;
       if (matchStartsInCode(file, occurrence) && permits(occurrence.index))
         assignments++;
@@ -6565,7 +6295,7 @@ function directBindings(file, deadlineMono, { immutableOnly = false, allowedAt =
 function dartTopLevelBindings(file, deadlineMono) {
   let depth = 0;
   for (let i = 0; i < file.code.length; i++) {
-    if ((i & 4095) === 0 && import_node_perf_hooks7.performance.now() > deadlineMono)
+    if ((i & 4095) === 0 && import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     const ch = file.code[i];
     if (ch === "{")
@@ -6593,7 +6323,7 @@ function dartTopLevelBindings(file, deadlineMono) {
   }
   const constRe = /\bconst\s+(?:int\s+|var\s+)?([A-Za-z_$][\w$]*)\s*=/g;
   for (const match of file.code.matchAll(constRe)) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     advanceTo(match.index);
     if (scanDepth !== 0)
@@ -6612,7 +6342,7 @@ function dartTopLevelBindings(file, deadlineMono) {
     let count = 0;
     let countDepth = 0;
     for (const dup of file.code.matchAll(dupRe)) {
-      if (import_node_perf_hooks7.performance.now() > deadlineMono)
+      if (import_node_perf_hooks6.performance.now() > deadlineMono)
         return null;
       let d2 = 0;
       for (let i2 = 0; i2 < dup.index; i2++) {
@@ -6639,7 +6369,7 @@ function restrictedTier2Candidates(file, deadlineMono) {
   const out = [];
   const loginRe = /\bTUICallKit\.instance\.login\s*\(/g;
   for (const match of file.code.matchAll(loginRe)) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     const openParen = match.index + match[0].lastIndexOf("(");
     const parsed = topLevelCallArguments(file, openParen, deadlineMono);
@@ -6664,7 +6394,7 @@ function tier1Candidates(file, deadlineMono) {
   const regex = new RegExp(String.raw`\b(${FIELD_PATTERN})\b\s*(?::\s*(?:int|number|Int|UInt32|long))?\s*[:=]\s*([^,;}\]\n]+)`, "g");
   const out = [];
   for (const match of file.source.matchAll(regex)) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     if (!matchStartsInCode(file, match))
       continue;
@@ -6684,7 +6414,7 @@ function tier3Candidates(file, deadlineMono) {
     return null;
   const call = /(?:new\s+TLSSigAPIv2(?:\.Api)?|\bNewTLSSigAPIv2|\bTLSSigAPIv2(?:\.Api)?|\b[Gg]enSig)\s*\(\s*(\$?[A-Za-z_$][\w$]*|[0-9]+)/g;
   for (const match of file.source.matchAll(call)) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     if (!matchStartsInCode(file, match))
       continue;
@@ -6696,15 +6426,15 @@ function tier3Candidates(file, deadlineMono) {
   return out;
 }
 function insideRoot(root, candidate) {
-  const rel = (0, import_node_path8.relative)(root, candidate);
-  return rel === "" || !rel.startsWith(`..${import_node_path8.sep}`) && rel !== ".." && !(0, import_node_path8.isAbsolute)(rel);
+  const rel = (0, import_node_path10.relative)(root, candidate);
+  return rel === "" || !rel.startsWith(`..${import_node_path10.sep}`) && rel !== ".." && !(0, import_node_path10.isAbsolute)(rel);
 }
 function isSkippedDir(name) {
   return SKIP_DIRS_LOWER.has(String(name).toLowerCase());
 }
 function entersSkippedDir(root, candidate) {
-  const rel = (0, import_node_path8.relative)(root, candidate);
-  return rel.split(import_node_path8.sep).some(isSkippedDir);
+  const rel = (0, import_node_path10.relative)(root, candidate);
+  return rel.split(import_node_path10.sep).some(isSkippedDir);
 }
 function sameInode(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
@@ -6712,32 +6442,32 @@ function sameInode(left, right) {
 function readBoundedRegularFile(path2, root, maxBytes, deadlineMono) {
   let fd;
   try {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return { status: "invalid" };
-    const noFollow = typeof import_node_fs8.constants.O_NOFOLLOW === "number" ? import_node_fs8.constants.O_NOFOLLOW : 0;
-    fd = (0, import_node_fs8.openSync)(path2, import_node_fs8.constants.O_RDONLY | noFollow);
-    const opened = (0, import_node_fs8.fstatSync)(fd);
+    const noFollow = typeof import_node_fs10.constants.O_NOFOLLOW === "number" ? import_node_fs10.constants.O_NOFOLLOW : 0;
+    fd = (0, import_node_fs10.openSync)(path2, import_node_fs10.constants.O_RDONLY | noFollow);
+    const opened = (0, import_node_fs10.fstatSync)(fd);
     if (!opened.isFile())
       return { status: "skip" };
     if (opened.size > maxBytes)
       return { status: "invalid" };
-    const before = (0, import_node_fs8.lstatSync)(path2);
+    const before = (0, import_node_fs10.lstatSync)(path2);
     if (before.isSymbolicLink() || !sameInode(opened, before))
       return { status: "invalid" };
-    const canonical = (0, import_node_fs8.realpathSync)(path2);
+    const canonical = (0, import_node_fs10.realpathSync)(path2);
     if (!insideRoot(root, canonical))
       return { status: "invalid" };
-    const after = (0, import_node_fs8.lstatSync)(path2);
+    const after = (0, import_node_fs10.lstatSync)(path2);
     if (after.isSymbolicLink() || !sameInode(opened, after))
       return { status: "invalid" };
     const chunks = [];
     let total = 0;
     while (total <= maxBytes) {
-      if (import_node_perf_hooks7.performance.now() > deadlineMono)
+      if (import_node_perf_hooks6.performance.now() > deadlineMono)
         return { status: "invalid" };
       const size = Math.min(64 * 1024, maxBytes + 1 - total);
       const buffer = Buffer.allocUnsafe(size);
-      const read = (0, import_node_fs8.readSync)(fd, buffer, 0, size, total);
+      const read = (0, import_node_fs10.readSync)(fd, buffer, 0, size, total);
       if (read === 0)
         break;
       chunks.push(buffer.subarray(0, read));
@@ -6745,10 +6475,10 @@ function readBoundedRegularFile(path2, root, maxBytes, deadlineMono) {
     }
     if (total > maxBytes)
       return { status: "invalid" };
-    const finalStat = (0, import_node_fs8.fstatSync)(fd);
+    const finalStat = (0, import_node_fs10.fstatSync)(fd);
     if (!sameInode(opened, finalStat) || finalStat.size > maxBytes)
       return { status: "invalid" };
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return { status: "invalid" };
     return {
       status: "ok",
@@ -6763,7 +6493,7 @@ function readBoundedRegularFile(path2, root, maxBytes, deadlineMono) {
   } finally {
     if (fd !== void 0) {
       try {
-        (0, import_node_fs8.closeSync)(fd);
+        (0, import_node_fs10.closeSync)(fd);
       } catch {
       }
     }
@@ -6780,7 +6510,7 @@ function collectFiles(root, allowedFiles, opts, deadlineMono, budget) {
     const cached = budget.fileCache.get(path2);
     if (cached) {
       if (cached._rawOnly) {
-        if (import_node_perf_hooks7.performance.now() > deadlineMono) {
+        if (import_node_perf_hooks6.performance.now() > deadlineMono) {
           invalid = true;
           return;
         }
@@ -6812,7 +6542,7 @@ function collectFiles(root, allowedFiles, opts, deadlineMono, budget) {
       found.set(cached.path, cached);
       return;
     }
-    if (import_node_perf_hooks7.performance.now() > deadlineMono) {
+    if (import_node_perf_hooks6.performance.now() > deadlineMono) {
       invalid = true;
       return;
     }
@@ -6830,7 +6560,7 @@ function collectFiles(root, allowedFiles, opts, deadlineMono, budget) {
     const canonicalCached = budget.fileCache.get(read.canonical);
     if (canonicalCached) {
       if (canonicalCached._rawOnly) {
-        if (import_node_perf_hooks7.performance.now() > deadlineMono) {
+        if (import_node_perf_hooks6.performance.now() > deadlineMono) {
           invalid = true;
           return;
         }
@@ -6866,13 +6596,13 @@ function collectFiles(root, allowedFiles, opts, deadlineMono, budget) {
     budget.files--;
     if (typeof allowedFiles === "function" && !hasSemanticToken(read.content))
       return;
-    const views = lexFileSource(read.content, deadlineMono, (0, import_node_path8.basename)(read.canonical));
+    const views = lexFileSource(read.content, deadlineMono, (0, import_node_path10.basename)(read.canonical));
     if (!views) {
       invalid = true;
       return;
     }
     const file = {
-      name: (0, import_node_path8.basename)(read.canonical),
+      name: (0, import_node_path10.basename)(read.canonical),
       path: read.canonical,
       hint: relativeHint(root, read.canonical),
       source: views.source,
@@ -6888,13 +6618,13 @@ function collectFiles(root, allowedFiles, opts, deadlineMono, budget) {
     found.set(read.canonical, file);
   }
   for (const preferred of Array.isArray(opts.preferred_paths) ? opts.preferred_paths : []) {
-    const candidate = (0, import_node_path8.resolve)(root, String(preferred));
-    if (insideRoot(root, candidate) && !entersSkippedDir(root, candidate) && allows((0, import_node_path8.basename)(candidate)))
+    const candidate = (0, import_node_path10.resolve)(root, String(preferred));
+    if (insideRoot(root, candidate) && !entersSkippedDir(root, candidate) && allows((0, import_node_path10.basename)(candidate)))
       add(candidate);
   }
   const stack = [root];
   while (stack.length > 0 && !invalid) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono) {
+    if (import_node_perf_hooks6.performance.now() > deadlineMono) {
       invalid = true;
       break;
     }
@@ -6910,7 +6640,7 @@ function collectFiles(root, allowedFiles, opts, deadlineMono, budget) {
     let entries = budget.directoryCache.get(dir);
     if (!entries) {
       try {
-        entries = (0, import_node_fs8.readdirSync)(dir, { withFileTypes: true });
+        entries = (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true });
       } catch {
         continue;
       }
@@ -6919,7 +6649,7 @@ function collectFiles(root, allowedFiles, opts, deadlineMono, budget) {
     for (const entry of entries) {
       if (invalid)
         break;
-      const path2 = (0, import_node_path8.join)(dir, entry.name);
+      const path2 = (0, import_node_path10.join)(dir, entry.name);
       if (entry.isSymbolicLink())
         continue;
       if (entry.isDirectory()) {
@@ -6958,7 +6688,7 @@ function collectTier2RawFiles(root, opts, deadlineMono, budget) {
       found.set(rawCache.get(path2).path, rawCache.get(path2));
       return;
     }
-    if (import_node_perf_hooks7.performance.now() > deadlineMono) {
+    if (import_node_perf_hooks6.performance.now() > deadlineMono) {
       invalid = true;
       return;
     }
@@ -6981,8 +6711,8 @@ function collectTier2RawFiles(root, opts, deadlineMono, budget) {
     budget.files--;
     if (!hasSemanticToken(read.content))
       return;
-    const rawName = (0, import_node_path8.basename)(read.canonical);
-    const rawExt = (0, import_node_path8.extname)(rawName).toLowerCase();
+    const rawName = (0, import_node_path10.basename)(read.canonical);
+    const rawExt = (0, import_node_path10.extname)(rawName).toLowerCase();
     const snapshot = read.snapshot || null;
     const isWebFile = WEB_TIER2_EXTENSIONS.has(rawExt);
     const rawFile = {
@@ -7030,14 +6760,14 @@ function collectTier2RawFiles(root, opts, deadlineMono, budget) {
     found.set(read.canonical, rawFile);
   }
   for (const preferred of Array.isArray(opts.preferred_paths) ? opts.preferred_paths : []) {
-    const candidate = (0, import_node_path8.resolve)(root, String(preferred));
-    if (insideRoot(root, candidate) && !entersSkippedDir(root, candidate) && isTier2SourceFile((0, import_node_path8.basename)(candidate))) {
+    const candidate = (0, import_node_path10.resolve)(root, String(preferred));
+    if (insideRoot(root, candidate) && !entersSkippedDir(root, candidate) && isTier2SourceFile((0, import_node_path10.basename)(candidate))) {
       add(candidate);
     }
   }
   const stack = [root];
   while (stack.length > 0 && !invalid) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono) {
+    if (import_node_perf_hooks6.performance.now() > deadlineMono) {
       invalid = true;
       break;
     }
@@ -7053,7 +6783,7 @@ function collectTier2RawFiles(root, opts, deadlineMono, budget) {
     let entries = budget.directoryCache.get(dir);
     if (!entries) {
       try {
-        entries = (0, import_node_fs8.readdirSync)(dir, { withFileTypes: true });
+        entries = (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true });
       } catch {
         continue;
       }
@@ -7062,7 +6792,7 @@ function collectTier2RawFiles(root, opts, deadlineMono, budget) {
     for (const entry of entries) {
       if (invalid)
         break;
-      const path2 = (0, import_node_path8.join)(dir, entry.name);
+      const path2 = (0, import_node_path10.join)(dir, entry.name);
       if (entry.isSymbolicLink())
         continue;
       if (entry.isDirectory()) {
@@ -7075,8 +6805,8 @@ function collectTier2RawFiles(root, opts, deadlineMono, budget) {
   if (invalid)
     return null;
   const allFiles = [...found.values()];
-  const webFiles = allFiles.filter((f) => WEB_TIER2_EXTENSIONS.has((0, import_node_path8.extname)(f.name).toLowerCase()));
-  const dartFiles = allFiles.filter((f) => (0, import_node_path8.extname)(f.name).toLowerCase() === ".dart");
+  const webFiles = allFiles.filter((f) => WEB_TIER2_EXTENSIONS.has((0, import_node_path10.extname)(f.name).toLowerCase()));
+  const dartFiles = allFiles.filter((f) => (0, import_node_path10.extname)(f.name).toLowerCase() === ".dart");
   return { webFiles, dartFiles };
 }
 function runWebTier2(webFiles, webAdapter, deadlineMono) {
@@ -7087,14 +6817,14 @@ function runWebTier2(webFiles, webAdapter, deadlineMono) {
     if (Buffer.byteLength(rawFile.rawContent, "utf8") > WEB_MAX_FILE_BYTES) {
       return { candidates: [], invalid: true, failure: null };
     }
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return { candidates: [], invalid: true, failure: null };
     let result;
     try {
       result = webAdapter.extract({
         source: rawFile.rawContent,
         relativePath: rawFile.hint || rawFile.name,
-        ext: (0, import_node_path8.extname)(rawFile.name),
+        ext: (0, import_node_path10.extname)(rawFile.name),
         byteLength: Buffer.byteLength(rawFile.rawContent, "utf8")
       });
     } catch {
@@ -7103,12 +6833,12 @@ function runWebTier2(webFiles, webAdapter, deadlineMono) {
     if (!result || typeof result.status !== "string" || !Array.isArray(result.candidates)) {
       return { candidates: [], invalid: true, failure: "contract_error" };
     }
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return { candidates: [], invalid: true, failure: null };
     const snapshot = rawFile._snapshot;
     if (snapshot) {
       try {
-        const afterStat = (0, import_node_fs8.lstatSync)(rawFile.path);
+        const afterStat = (0, import_node_fs10.lstatSync)(rawFile.path);
         if (afterStat.ino !== snapshot.ino || afterStat.size !== snapshot.size || afterStat.mtimeMs !== snapshot.mtimeMs) {
           return { candidates: [], invalid: true, failure: null };
         }
@@ -7144,7 +6874,7 @@ function runRestrictedLegacyTier2(dartFiles, deadlineMono) {
       };
     } else if (rawFile.rawContent) {
       const views = lexFileSource(rawFile.rawContent, deadlineMono, rawFile.name);
-      if (!views || import_node_perf_hooks7.performance.now() > deadlineMono)
+      if (!views || import_node_perf_hooks6.performance.now() > deadlineMono)
         return { candidates: [], invalid: true };
       file = {
         name: rawFile.name,
@@ -7158,7 +6888,7 @@ function runRestrictedLegacyTier2(dartFiles, deadlineMono) {
       continue;
     }
     const extracted = restrictedTier2Candidates(file, deadlineMono);
-    if (!extracted || import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (!extracted || import_node_perf_hooks6.performance.now() > deadlineMono)
       return { candidates: [], invalid: true };
     candidates.push(...extracted);
   }
@@ -7169,13 +6899,13 @@ function tier0(root, opts, deadlineMono) {
   const explicit = validSdkAppId(opts.sdkappid);
   if (explicit)
     candidates.push({ sdkappid: explicit, source_type: "literal_config", source_path_hint: null, matched_field: "sdkappid" });
-  const sessionPath = (0, import_node_path8.join)(root, ".trtc-session.yaml");
+  const sessionPath = (0, import_node_path10.join)(root, ".trtc-session.yaml");
   const read = readBoundedRegularFile(sessionPath, root, DEFAULT_MAX_FILE_BYTES, deadlineMono);
   if (read.status === "invalid")
     return { status: "invalid", candidates };
   if (read.status === "ok") {
     const session = sessionSdkAppId(read.content, deadlineMono);
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return { status: "invalid", candidates };
     if (session)
       candidates.push({ sdkappid: session, source_type: "literal_config", source_path_hint: ".trtc-session.yaml", matched_field: "sdkappid" });
@@ -7187,16 +6917,16 @@ function resolveSdkAppId(projectRoot, opts = {}) {
   if (typeof projectRoot !== "string" || projectRoot.length === 0)
     return empty("invalid");
   const deadlineMs = Number.isFinite(opts.deadline_ms) && opts.deadline_ms >= 0 ? opts.deadline_ms : DEFAULT_DEADLINE_MS;
-  const deadlineMono = import_node_perf_hooks7.performance.now() + deadlineMs;
+  const deadlineMono = import_node_perf_hooks6.performance.now() + deadlineMs;
   let root;
   try {
-    root = (0, import_node_fs8.realpathSync)((0, import_node_path8.resolve)(projectRoot));
-    if (!(0, import_node_fs8.lstatSync)(root).isDirectory())
+    root = (0, import_node_fs10.realpathSync)((0, import_node_path10.resolve)(projectRoot));
+    if (!(0, import_node_fs10.lstatSync)(root).isDirectory())
       return empty("invalid");
   } catch {
     return empty("invalid");
   }
-  if (import_node_perf_hooks7.performance.now() > deadlineMono)
+  if (import_node_perf_hooks6.performance.now() > deadlineMono)
     return empty("invalid");
   const trustedInput = tier0(root, opts, deadlineMono);
   if (trustedInput.status === "invalid")
@@ -7245,7 +6975,7 @@ function resolveSdkAppId(projectRoot, opts = {}) {
   const literalCandidates = [];
   for (const file of configFiles) {
     const extracted = tier1Candidates(file, deadlineMono);
-    if (!extracted || import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (!extracted || import_node_perf_hooks6.performance.now() > deadlineMono)
       return empty("invalid");
     literalCandidates.push(...extracted);
   }
@@ -7288,7 +7018,7 @@ function resolveSdkAppId(projectRoot, opts = {}) {
   const serverCandidates = [];
   for (const file of serverFiles) {
     const extracted = tier3Candidates(file, deadlineMono);
-    if (!extracted || import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (!extracted || import_node_perf_hooks6.performance.now() > deadlineMono)
       return empty("invalid");
     serverCandidates.push(...extracted);
   }
@@ -7316,15 +7046,15 @@ function writeCacheIfAvailable(opts, cache, key, scanRoot, scopeManifest, result
   let manifestMtime = null;
   if (scopeManifest) {
     try {
-      manifestMtime = (0, import_node_fs8.lstatSync)((0, import_node_path8.join)(scanRoot, scopeManifest)).mtimeMs;
+      manifestMtime = (0, import_node_fs10.lstatSync)((0, import_node_path10.join)(scanRoot, scopeManifest)).mtimeMs;
     } catch {
     }
   }
   let sourceFingerprint = null;
   if (result.status === "resolved" && result.source_path_hint) {
     try {
-      const sourcePath = (0, import_node_path8.join)(scanRoot, result.source_path_hint);
-      const stat = (0, import_node_fs8.lstatSync)(sourcePath);
+      const sourcePath = (0, import_node_path10.join)(scanRoot, result.source_path_hint);
+      const stat = (0, import_node_fs10.lstatSync)(sourcePath);
       if (stat.isFile())
         sourceFingerprint = `${stat.size}:${stat.mtimeMs}:${stat.ino}`;
     } catch {
@@ -7356,7 +7086,7 @@ function computeCandidateFingerprint(scanRoot, deadlineMono, opts, maxTier) {
   const dirsSeen = /* @__PURE__ */ new Set();
   let dirs = Number.isInteger(opts.max_dirs) && opts.max_dirs > 0 ? opts.max_dirs : DEFAULT_MAX_DIRS;
   while (stack.length > 0) {
-    if (import_node_perf_hooks7.performance.now() > deadlineMono)
+    if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
     const dir = stack.pop();
     if (dirsSeen.has(dir))
@@ -7367,7 +7097,7 @@ function computeCandidateFingerprint(scanRoot, deadlineMono, opts, maxTier) {
     dirsSeen.add(dir);
     let entries;
     try {
-      entries = (0, import_node_fs8.readdirSync)(dir, { withFileTypes: true });
+      entries = (0, import_node_fs10.readdirSync)(dir, { withFileTypes: true });
     } catch {
       return null;
     }
@@ -7376,7 +7106,7 @@ function computeCandidateFingerprint(scanRoot, deadlineMono, opts, maxTier) {
         continue;
       if (entry.isDirectory()) {
         if (!isSkippedDir(entry.name))
-          stack.push((0, import_node_path8.join)(dir, entry.name));
+          stack.push((0, import_node_path10.join)(dir, entry.name));
       } else if (entry.isFile()) {
         const name = entry.name;
         const isTier1 = TIER1_FILES.has(name);
@@ -7388,11 +7118,11 @@ function computeCandidateFingerprint(scanRoot, deadlineMono, opts, maxTier) {
         if (maxFiles <= 0)
           return null;
         maxFiles--;
-        const absPath = (0, import_node_path8.join)(dir, name);
-        const rel = (0, import_node_path8.relative)(scanRoot, absPath);
+        const absPath = (0, import_node_path10.join)(dir, name);
+        const rel = (0, import_node_path10.relative)(scanRoot, absPath);
         let stat;
         try {
-          stat = (0, import_node_fs8.lstatSync)(absPath);
+          stat = (0, import_node_fs10.lstatSync)(absPath);
         } catch {
           return null;
         }
@@ -7407,7 +7137,7 @@ function computeCandidateFingerprint(scanRoot, deadlineMono, opts, maxTier) {
     }
   }
   candidates.sort();
-  return (0, import_node_crypto8.createHash)("sha256").update(candidates.join("\n")).digest("hex").slice(0, 32);
+  return (0, import_node_crypto9.createHash)("sha256").update(candidates.join("\n")).digest("hex").slice(0, 32);
 }
 function isCacheValid(cached, scanRoot, scopeManifest) {
   if (!cached || typeof cached.status !== "string")
@@ -7438,7 +7168,7 @@ function isCacheValid(cached, scanRoot, scopeManifest) {
     const manifest = cached.scopeManifest || scopeManifest;
     if (manifest) {
       try {
-        const currentMtime = (0, import_node_fs8.lstatSync)((0, import_node_path8.join)(scanRoot, manifest)).mtimeMs;
+        const currentMtime = (0, import_node_fs10.lstatSync)((0, import_node_path10.join)(scanRoot, manifest)).mtimeMs;
         if (Math.abs(currentMtime - cached.manifestMtime) >= 1)
           return false;
       } catch {
@@ -7448,8 +7178,8 @@ function isCacheValid(cached, scanRoot, scopeManifest) {
   }
   if (cached.status === "resolved" && cached.fingerprint && cached.sourcePath) {
     try {
-      const sourcePath = (0, import_node_path8.join)(scanRoot, cached.sourcePath);
-      const stat = (0, import_node_fs8.lstatSync)(sourcePath);
+      const sourcePath = (0, import_node_path10.join)(scanRoot, cached.sourcePath);
+      const stat = (0, import_node_fs10.lstatSync)(sourcePath);
       if (!stat.isFile())
         return false;
       const currentFP = `${stat.size}:${stat.mtimeMs}:${stat.ino}`;
@@ -7484,9 +7214,9 @@ __export(sdkappid_cache_exports, {
   updateEntry: () => updateEntry,
   writeCache: () => writeCache
 });
-var import_node_crypto9 = require("node:crypto");
-var import_node_fs9 = require("node:fs");
-var import_node_path9 = require("node:path");
+var import_node_crypto10 = require("node:crypto");
+var import_node_fs11 = require("node:fs");
+var import_node_path11 = require("node:path");
 var CACHE_FILE = "sdkappid-cache.json";
 var CACHE_VERSION = 2;
 var TTL_NOT_FOUND_MS = 15 * 60 * 1e3;
@@ -7494,17 +7224,17 @@ var TTL_CONFLICT_MS = 5 * 60 * 1e3;
 var MAX_CACHE_BYTES = 256 * 1024;
 var MAX_CACHE_ENTRIES = 100;
 function scopeKey(scopeRoot) {
-  return (0, import_node_crypto9.createHash)("sha256").update(scopeRoot).digest("hex").slice(0, 16);
+  return (0, import_node_crypto10.createHash)("sha256").update(scopeRoot).digest("hex").slice(0, 16);
 }
 function cachePath(stateRoot) {
-  return (0, import_node_path9.join)(stateRoot, "telemetry", CACHE_FILE);
+  return (0, import_node_path11.join)(stateRoot, "telemetry", CACHE_FILE);
 }
 function readCache(stateRoot) {
   const path2 = cachePath(stateRoot);
-  if (!(0, import_node_fs9.existsSync)(path2))
+  if (!(0, import_node_fs11.existsSync)(path2))
     return { version: CACHE_VERSION, entries: {} };
   try {
-    const raw = (0, import_node_fs9.readFileSync)(path2, "utf8");
+    const raw = (0, import_node_fs11.readFileSync)(path2, "utf8");
     if (raw.length > MAX_CACHE_BYTES)
       return { version: CACHE_VERSION, entries: {} };
     const data = JSON.parse(raw);
@@ -7565,18 +7295,18 @@ function updateEntry(cache, key, result, { fingerprint, candidateFingerprint, fi
 }
 function writeCache(stateRoot, cache) {
   const path2 = cachePath(stateRoot);
-  const dir = (0, import_node_path9.dirname)(path2);
-  (0, import_node_fs9.mkdirSync)(dir, { recursive: true });
+  const dir = (0, import_node_path11.dirname)(path2);
+  (0, import_node_fs11.mkdirSync)(dir, { recursive: true });
   const content = JSON.stringify(cache);
   if (content.length > MAX_CACHE_BYTES)
     return;
   const tmp = `${path2}.tmp.${process.pid}.${Date.now()}`;
   try {
-    (0, import_node_fs9.writeFileSync)(tmp, content, { mode: 384 });
-    (0, import_node_fs9.renameSync)(tmp, path2);
+    (0, import_node_fs11.writeFileSync)(tmp, content, { mode: 384 });
+    (0, import_node_fs11.renameSync)(tmp, path2);
   } catch {
     try {
-      (0, import_node_fs9.unlinkSync)(tmp);
+      (0, import_node_fs11.unlinkSync)(tmp);
     } catch {
     }
   }
@@ -7599,7 +7329,7 @@ var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
 var FOREGROUND_TOTAL_BUDGET_MS = 2200;
 var FOREGROUND_FLUSH_BUDGET_MS = 1800;
-var RUNTIME_VERSION = "1.1.2";
+var RUNTIME_VERSION = "1.1.3";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
   // Docs is an answer-layer owner rather than a product.  Keep it in the
@@ -7624,6 +7354,14 @@ var PRODUCT_BY_SKILL = Object.freeze({
   // dashboard already aliases it into the AI product line.
   "trtc-voice-ai-starter": "conversational-ai",
   "trtc-sdk-log-analysis": "unknown"
+});
+var FRAMEWORK_BY_SKILL = Object.freeze({
+  "trtc-chat-android": "android",
+  "trtc-call": "flutter",
+  "trtc-voice-ai-starter": "web",
+  "trtc-ai-customer-service-skill": "web",
+  "ai-oral-coach-skill": "web",
+  "trtc-ai-realtime-interpreter": "web"
 });
 var ROUTE_HINT_ALIASES = Object.freeze({
   "trtc-ai-service": "trtc-ai-customer-service-skill",
@@ -7690,31 +7428,15 @@ function codebuddyNoticeFeedback(locale) {
 
 ${noticeTextForLocale(locale)}`;
 }
-function inferHostFramework(text) {
-  const value = typeof text === "string" ? text.toLowerCase() : "";
-  if (/\bflutter\b/.test(value))
-    return "flutter";
-  if (/\bandroid\b/.test(value))
-    return "android";
-  if (/\bios\b|swift|objective-c/.test(value))
-    return "ios";
-  if (/\bvue(?:\s*3)?\b/.test(value))
-    return "vue";
-  if (/\breact\b/.test(value))
-    return "react";
-  if (/\bweb\b|网页|浏览器/.test(value))
-    return "web";
-  return "unknown";
-}
-var _runtimeDir = typeof __dirname === "string" ? __dirname : (0, import_node_path12.dirname)((0, import_node_url2.fileURLToPath)(import_meta.url));
-var _runtimeRequire = (0, import_node_module.createRequire)((0, import_node_path12.join)(_runtimeDir, "telemetry.cjs"));
+var _runtimeDir = typeof __dirname === "string" ? __dirname : (0, import_node_path14.dirname)((0, import_node_url2.fileURLToPath)(import_meta.url));
+var _runtimeRequire = (0, import_node_module.createRequire)((0, import_node_path14.join)(_runtimeDir, "telemetry.cjs"));
 var _webAdapterResult;
 function getWebAdapter() {
   if (_webAdapterResult !== void 0)
     return _webAdapterResult;
-  const bundlePath = (0, import_node_path12.join)(_runtimeDir, "sdkappid-resolver-web.cjs");
+  const bundlePath = (0, import_node_path14.join)(_runtimeDir, "sdkappid-resolver-web.cjs");
   try {
-    if (!(0, import_node_fs11.existsSync)(bundlePath)) {
+    if (!(0, import_node_fs13.existsSync)(bundlePath)) {
       _webAdapterResult = { adapter: null, failure: "missing" };
     } else {
       _webAdapterResult = { adapter: _runtimeRequire("./sdkappid-resolver-web.cjs"), failure: null };
@@ -7728,18 +7450,18 @@ function writeAdapterDiagnostic(stateRoot, reason) {
   if (!stateRoot)
     return;
   try {
-    const telDir = (0, import_node_path12.join)(stateRoot, "telemetry");
-    (0, import_node_fs11.mkdirSync)(telDir, { recursive: true, mode: 448 });
-    const finalPath = (0, import_node_path12.join)(telDir, "sdkappid-adapter-diag.json");
+    const telDir = (0, import_node_path14.join)(stateRoot, "telemetry");
+    (0, import_node_fs13.mkdirSync)(telDir, { recursive: true, mode: 448 });
+    const finalPath = (0, import_node_path14.join)(telDir, "sdkappid-adapter-diag.json");
     const rand = Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0");
-    const tmpPath = (0, import_node_path12.join)(telDir, `.sdkappid-adapter-diag.${process.pid}.${rand}.tmp`);
+    const tmpPath = (0, import_node_path14.join)(telDir, `.sdkappid-adapter-diag.${process.pid}.${rand}.tmp`);
     const content = JSON.stringify({
       status: reason,
       updated_at: Math.floor(Date.now() / 1e3),
       resolver_version: "18.4"
     });
-    (0, import_node_fs11.writeFileSync)(tmpPath, content, { mode: 384 });
-    (0, import_node_fs11.renameSync)(tmpPath, finalPath);
+    (0, import_node_fs13.writeFileSync)(tmpPath, content, { mode: 384 });
+    (0, import_node_fs13.renameSync)(tmpPath, finalPath);
   } catch {
   }
 }
@@ -7766,29 +7488,29 @@ var HOST_STATE_ROOT_MARKERS = Object.freeze([
   [".trtc-reporting", "host-state-root.json"]
 ]);
 function validateCodexStateRoot(value, { create = false } = {}) {
-  if (typeof value !== "string" || !value || !(0, import_node_path12.isAbsolute)(value)) {
+  if (typeof value !== "string" || !value || !(0, import_node_path14.isAbsolute)(value)) {
     return { status: "invalid", error: "relative_path" };
   }
-  const candidate = (0, import_node_path12.resolve)(value);
+  const candidate = (0, import_node_path14.resolve)(value);
   try {
     let stat;
     try {
-      stat = (0, import_node_fs11.lstatSync)(candidate);
+      stat = (0, import_node_fs13.lstatSync)(candidate);
     } catch (err) {
       if (!create || (err == null ? void 0 : err.code) !== "ENOENT")
         throw err;
-      const parent = (0, import_node_path12.dirname)(candidate);
-      const parentStat = (0, import_node_fs11.lstatSync)(parent);
+      const parent = (0, import_node_path14.dirname)(candidate);
+      const parentStat = (0, import_node_fs13.lstatSync)(parent);
       if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
         return { status: "unavailable", error: "state_root_unavailable" };
       }
-      (0, import_node_fs11.mkdirSync)(candidate, { recursive: true, mode: 448 });
-      stat = (0, import_node_fs11.lstatSync)(candidate);
+      (0, import_node_fs13.mkdirSync)(candidate, { recursive: true, mode: 448 });
+      stat = (0, import_node_fs13.lstatSync)(candidate);
     }
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
       return { status: "unavailable", error: "state_root_unavailable" };
     }
-    return { status: "valid", stateRoot: (0, import_node_fs11.realpathSync)(candidate) };
+    return { status: "valid", stateRoot: (0, import_node_fs13.realpathSync)(candidate) };
   } catch {
     return { status: "unavailable", error: "state_root_unavailable" };
   }
@@ -7799,14 +7521,14 @@ function validStateRootGeneration(value) {
 function readCodexStateRootBinding(projectRoot) {
   var _a, _b, _c;
   for (const [dir, file] of HOST_STATE_ROOT_MARKERS) {
-    const markerPath = (0, import_node_path12.join)(projectRoot, dir, file);
-    if (!(0, import_node_fs11.existsSync)(markerPath))
+    const markerPath = (0, import_node_path14.join)(projectRoot, dir, file);
+    if (!(0, import_node_fs13.existsSync)(markerPath))
       continue;
     try {
-      if ((0, import_node_fs11.lstatSync)(markerPath).isSymbolicLink() || (0, import_node_fs11.lstatSync)((0, import_node_path12.join)(projectRoot, dir)).isSymbolicLink()) {
+      if ((0, import_node_fs13.lstatSync)(markerPath).isSymbolicLink() || (0, import_node_fs13.lstatSync)((0, import_node_path14.join)(projectRoot, dir)).isSymbolicLink()) {
         return { status: "invalid", error: "symlink_path" };
       }
-      const value = JSON.parse((0, import_node_fs11.readFileSync)(markerPath, "utf8"));
+      const value = JSON.parse((0, import_node_fs13.readFileSync)(markerPath, "utf8"));
       let entry;
       if ((value == null ? void 0 : value.schema_version) === 1)
         entry = value;
@@ -7817,7 +7539,7 @@ function readCodexStateRootBinding(projectRoot) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry) || (entry.status || "ready") !== "ready" || typeof entry.state_root !== "string" || !entry.state_root || entry.generation !== void 0 && !validStateRootGeneration(entry.generation)) {
         return { status: "invalid", error: "malformed_binding" };
       }
-      const candidate = (0, import_node_path12.resolve)(entry.state_root);
+      const candidate = (0, import_node_path14.resolve)(entry.state_root);
       if (!candidate.startsWith("/") && process.platform !== "win32")
         return { status: "invalid", error: "relative_path" };
       const checked = validateCodexStateRoot(entry.state_root);
@@ -7830,11 +7552,11 @@ function readCodexStateRootBinding(projectRoot) {
         [".trtc-reporting", "install-mode.json", "install_generation"],
         [".trtc-reporting", "runtime-binding.json", "codex"]
       ]) {
-        const sibling = (0, import_node_path12.join)(projectRoot, stateDir, filename);
-        if (!(0, import_node_fs11.existsSync)(sibling))
+        const sibling = (0, import_node_path14.join)(projectRoot, stateDir, filename);
+        if (!(0, import_node_fs13.existsSync)(sibling))
           continue;
         try {
-          const parsed = JSON.parse((0, import_node_fs11.readFileSync)(sibling, "utf8"));
+          const parsed = JSON.parse((0, import_node_fs13.readFileSync)(sibling, "utf8"));
           const expected = key === "codex" ? (_c = (_b = parsed == null ? void 0 : parsed.bindings) == null ? void 0 : _b.codex) == null ? void 0 : _c.generation : parsed == null ? void 0 : parsed[key];
           if (generation && typeof expected === "string" && expected !== generation) {
             return { status: "invalid", error: "generation_mismatch" };
@@ -7843,7 +7565,18 @@ function readCodexStateRootBinding(projectRoot) {
           return { status: "invalid", error: "generation_mismatch" };
         }
       }
-      return { status: "valid", stateRoot: checked.stateRoot, generation, markerPath };
+      if (entry.storage_version === 2) {
+        const rel = (0, import_node_path14.relative)((0, import_node_fs13.realpathSync)(projectRoot), checked.stateRoot);
+        if (!rel || rel.startsWith("..") || (0, import_node_path14.isAbsolute)(rel))
+          return { status: "invalid", error: "spool_outside_project" };
+      }
+      return {
+        status: "valid",
+        stateRoot: checked.stateRoot,
+        generation,
+        markerPath,
+        storageVersion: entry.storage_version
+      };
     } catch (err) {
       return { status: "invalid", error: (err == null ? void 0 : err.code) === "ENOENT" ? "state_root_unavailable" : "malformed_binding" };
     }
@@ -7853,10 +7586,10 @@ function readCodexStateRootBinding(projectRoot) {
 function stateRootContainsProjectData(stateRoot, projectRoot) {
   const key = projectKey(projectRoot);
   for (const bucket of ["pending", "outbox", "ack", "acknowledgements"]) {
-    const directory = (0, import_node_path12.join)(stateRoot, "telemetry", bucket);
+    const directory = (0, import_node_path14.join)(stateRoot, "telemetry", bucket);
     let entries;
     try {
-      entries = (0, import_node_fs11.readdirSync)(directory, { withFileTypes: true });
+      entries = (0, import_node_fs13.readdirSync)(directory, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -7864,7 +7597,7 @@ function stateRootContainsProjectData(stateRoot, projectRoot) {
       if (!entry.isFile() || !entry.name.endsWith(".json"))
         continue;
       try {
-        const value = JSON.parse((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(directory, entry.name), "utf8"));
+        const value = JSON.parse((0, import_node_fs13.readFileSync)((0, import_node_path14.join)(directory, entry.name), "utf8"));
         if (value && value.__project_key === key)
           return true;
       } catch {
@@ -7891,9 +7624,16 @@ function isCodexInvocation(flags = {}) {
 }
 function resolveRuntimeStateRoot({ flags, opts, cwd, env }) {
   const codexInvocation = isCodexInvocation(flags);
+  if (codexInvocation) {
+    const binding2 = readCodexStateRootBinding(findProjectRoot(flags.cwd || cwd));
+    if (binding2.storageVersion === 2)
+      return { ...binding2, bound: true, source: "project_spool" };
+    if (binding2.status === "invalid" || binding2.status === "unavailable")
+      return binding2;
+  }
   const explicit = opts.stateRoot || flags["state-root"];
   if (explicit) {
-    if (typeof explicit !== "string" || !(0, import_node_path12.isAbsolute)(explicit)) {
+    if (typeof explicit !== "string" || !(0, import_node_path14.isAbsolute)(explicit)) {
       return { status: "invalid", error: "relative_path" };
     }
     if (codexInvocation) {
@@ -7914,9 +7654,9 @@ function resolveRuntimeStateRoot({ flags, opts, cwd, env }) {
   return { status: "valid", ...resolveLegacyCodexStateRoot(env, projectRoot), bound: false };
 }
 function canonicalize(path2) {
-  const absolute = (0, import_node_path12.resolve)(path2 || process.cwd());
+  const absolute = (0, import_node_path14.resolve)(path2 || process.cwd());
   try {
-    return (0, import_node_fs11.realpathSync)(absolute);
+    return (0, import_node_fs13.realpathSync)(absolute);
   } catch {
     return absolute;
   }
@@ -7925,26 +7665,26 @@ function findProjectRoot(start) {
   const startRoot = canonicalize(start);
   let current = startRoot;
   while (true) {
-    if ((0, import_node_fs11.existsSync)((0, import_node_path12.join)(current, "pnpm-workspace.yaml")) || (0, import_node_fs11.existsSync)((0, import_node_path12.join)(current, "lerna.json")) || (0, import_node_fs11.existsSync)((0, import_node_path12.join)(current, "turbo.json")) || (0, import_node_fs11.existsSync)((0, import_node_path12.join)(current, ".trtc-session.yaml"))) {
+    if ((0, import_node_fs13.existsSync)((0, import_node_path14.join)(current, "pnpm-workspace.yaml")) || (0, import_node_fs13.existsSync)((0, import_node_path14.join)(current, "lerna.json")) || (0, import_node_fs13.existsSync)((0, import_node_path14.join)(current, "turbo.json")) || (0, import_node_fs13.existsSync)((0, import_node_path14.join)(current, ".trtc-session.yaml"))) {
       return current;
     }
-    const packagePath = (0, import_node_path12.join)(current, "package.json");
-    if ((0, import_node_fs11.existsSync)(packagePath)) {
+    const packagePath = (0, import_node_path14.join)(current, "package.json");
+    if ((0, import_node_fs13.existsSync)(packagePath)) {
       try {
-        const packageJson = JSON.parse((0, import_node_fs11.readFileSync)(packagePath, "utf8"));
+        const packageJson = JSON.parse((0, import_node_fs13.readFileSync)(packagePath, "utf8"));
         if (packageJson && packageJson.workspaces)
           return current;
       } catch {
       }
     }
-    if ((0, import_node_fs11.existsSync)((0, import_node_path12.join)(current, ".git")))
+    if ((0, import_node_fs13.existsSync)((0, import_node_path14.join)(current, ".git")))
       return current;
-    const parent = (0, import_node_path12.dirname)(current);
+    const parent = (0, import_node_path14.dirname)(current);
     if (parent === current)
       break;
     current = parent;
   }
-  if ((0, import_node_fs11.existsSync)((0, import_node_path12.join)(startRoot, "package.json")))
+  if ((0, import_node_fs13.existsSync)((0, import_node_path14.join)(startRoot, "package.json")))
     return startRoot;
   return startRoot;
 }
@@ -7978,7 +7718,7 @@ var C19_LEGACY_IDES = Object.freeze(["claude", "cursor", "codebuddy", "codex"]);
 var C19_LEGACY_MCP_NAME = "tencent-rtc-skill-tool";
 function c19SafeReadJson(file) {
   try {
-    return { exists: true, value: JSON.parse((0, import_node_fs11.readFileSync)(file, "utf8")) };
+    return { exists: true, value: JSON.parse((0, import_node_fs13.readFileSync)(file, "utf8")) };
   } catch (err) {
     return (err == null ? void 0 : err.code) === "ENOENT" ? { exists: false, value: null } : { exists: true, value: null };
   }
@@ -7989,17 +7729,17 @@ function c19ValidMarker(value) {
 function c19LegacySkillFootprint(projectRoot, ide) {
   const roots = ide && C19_IDE_ROOTS[ide] ? [C19_IDE_ROOTS[ide]] : Object.values(C19_IDE_ROOTS);
   for (const ideRoot of roots) {
-    const skill = (0, import_node_path12.join)(projectRoot, ideRoot, "skills", "trtc");
-    if ((0, import_node_fs11.existsSync)((0, import_node_path12.join)(skill, "SKILL.md")) && (0, import_node_fs11.existsSync)((0, import_node_path12.join)(skill, "tools", "reporting.py")) && !(0, import_node_fs11.existsSync)((0, import_node_path12.join)(skill, "runtime", "telemetry.cjs")))
+    const skill = (0, import_node_path14.join)(projectRoot, ideRoot, "skills", "trtc");
+    if ((0, import_node_fs13.existsSync)((0, import_node_path14.join)(skill, "SKILL.md")) && (0, import_node_fs13.existsSync)((0, import_node_path14.join)(skill, "tools", "reporting.py")) && !(0, import_node_fs13.existsSync)((0, import_node_path14.join)(skill, "runtime", "telemetry.cjs")))
       return true;
   }
   return false;
 }
 function c19LegacyInstructionFootprint(projectRoot, ide) {
   const files = ide && C19_LEGACY_INSTRUCTIONS_BY_IDE[ide] ? C19_LEGACY_INSTRUCTIONS_BY_IDE[ide] : C19_LEGACY_INSTRUCTION_FILES;
-  for (const relative2 of files) {
+  for (const relative3 of files) {
     try {
-      const text = (0, import_node_fs11.readFileSync)((0, import_node_path12.join)(projectRoot, relative2), "utf8");
+      const text = (0, import_node_fs13.readFileSync)((0, import_node_path14.join)(projectRoot, relative3), "utf8");
       if (/reporting\.py\s+(?:bind-session)|tencent-rtc-skill-tool|skill_analysis/.test(text))
         return true;
     } catch {
@@ -8009,9 +7749,9 @@ function c19LegacyInstructionFootprint(projectRoot, ide) {
 }
 function c19LegacyHookFootprint(projectRoot, ide) {
   const files = ide && C19_LEGACY_HOOKS_BY_IDE[ide] ? C19_LEGACY_HOOKS_BY_IDE[ide] : Object.values(C19_LEGACY_HOOKS_BY_IDE).flat();
-  for (const relative2 of files) {
+  for (const relative3 of files) {
     try {
-      if (/reporting\.py|tencent-rtc-skill-tool|skill_analysis/.test((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(projectRoot, relative2), "utf8")))
+      if (/reporting\.py|tencent-rtc-skill-tool|skill_analysis/.test((0, import_node_fs13.readFileSync)((0, import_node_path14.join)(projectRoot, relative3), "utf8")))
         return true;
     } catch {
     }
@@ -8023,7 +7763,7 @@ function c19LegacyProjectMcpFootprint(projectRoot, ide) {
   if (ide && ide !== "claude")
     return false;
   try {
-    const value = JSON.parse((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(projectRoot, ".mcp.json"), "utf8"));
+    const value = JSON.parse((0, import_node_fs13.readFileSync)((0, import_node_path14.join)(projectRoot, ".mcp.json"), "utf8"));
     const entry = (_a = value == null ? void 0 : value.mcpServers) == null ? void 0 : _a[C19_LEGACY_MCP_NAME];
     if (!entry || typeof entry !== "object" || Array.isArray(entry))
       return false;
@@ -8047,7 +7787,7 @@ function c19LegacyProjectMcpFootprint(projectRoot, ide) {
 }
 function c19InstallStageState(projectRoot) {
   for (const dir of projectStateDirs(projectRoot)) {
-    const result = c19SafeReadJson((0, import_node_path12.join)(dir, "install-stage.json"));
+    const result = c19SafeReadJson((0, import_node_path14.join)(dir, "install-stage.json"));
     if (result.exists)
       return "unknown";
   }
@@ -8057,13 +7797,13 @@ function c19InstallerOwnsActiveStage(projectRoot, ownerToken2) {
   if (typeof ownerToken2 !== "string" || !/^[0-9a-f]{32}$/.test(ownerToken2))
     return false;
   for (const dir of projectStateDirs(projectRoot)) {
-    const stage = (0, import_node_path12.join)(dir, "install-stage.json");
+    const stage = (0, import_node_path14.join)(dir, "install-stage.json");
     try {
-      if (!(0, import_node_fs11.existsSync)(stage))
+      if (!(0, import_node_fs13.existsSync)(stage))
         continue;
-      if ((0, import_node_fs11.lstatSync)(dir).isSymbolicLink() || (0, import_node_fs11.lstatSync)(stage).isSymbolicLink())
+      if ((0, import_node_fs13.lstatSync)(dir).isSymbolicLink() || (0, import_node_fs13.lstatSync)(stage).isSymbolicLink())
         return false;
-      const parsed = JSON.parse((0, import_node_fs11.readFileSync)(stage, "utf8"));
+      const parsed = JSON.parse((0, import_node_fs13.readFileSync)(stage, "utf8"));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
         return false;
       if (!C19_MODE_SCHEMA_VERSIONS.has(parsed.schema_version) || parsed.target_mode !== "node_v2" || !["started", "hooks", "instructions", "mcp", "complete"].includes(parsed.stage) || parsed.owner_token !== ownerToken2 || !Number.isInteger(parsed.pid) || parsed.pid <= 0)
@@ -8081,12 +7821,12 @@ function c19InstallerOwnsActiveStage(projectRoot, ownerToken2) {
   return false;
 }
 function c19RecoverableInstallStage(projectRoot, ide) {
-  const root = (0, import_node_path12.resolve)(projectRoot);
+  const root = (0, import_node_path14.resolve)(projectRoot);
   for (const dir of projectStateDirs(root)) {
-    const stagePath2 = (0, import_node_path12.join)(dir, "install-stage.json");
-    const markerPath = (0, import_node_path12.join)(dir, "install-mode.json");
+    const stagePath2 = (0, import_node_path14.join)(dir, "install-stage.json");
+    const markerPath = (0, import_node_path14.join)(dir, "install-mode.json");
     try {
-      if ((0, import_node_fs11.lstatSync)(dir).isSymbolicLink() || (0, import_node_fs11.lstatSync)(stagePath2).isSymbolicLink() || (0, import_node_fs11.lstatSync)(markerPath).isSymbolicLink())
+      if ((0, import_node_fs13.lstatSync)(dir).isSymbolicLink() || (0, import_node_fs13.lstatSync)(stagePath2).isSymbolicLink() || (0, import_node_fs13.lstatSync)(markerPath).isSymbolicLink())
         continue;
     } catch (err) {
       if ((err == null ? void 0 : err.code) !== "ENOENT")
@@ -8128,9 +7868,9 @@ function c19WriteInstallRecoveryAck(record, acknowledged) {
     return false;
   let current;
   try {
-    if ((0, import_node_fs11.lstatSync)(record.stagePath).isSymbolicLink())
+    if ((0, import_node_fs13.lstatSync)(record.stagePath).isSymbolicLink())
       return false;
-    current = JSON.parse((0, import_node_fs11.readFileSync)(record.stagePath, "utf8"));
+    current = JSON.parse((0, import_node_fs13.readFileSync)(record.stagePath, "utf8"));
   } catch {
     return false;
   }
@@ -8144,7 +7884,7 @@ function c19WriteInstallRecoveryAck(record, acknowledged) {
   }
   if (!current.migration) {
     try {
-      (0, import_node_fs11.unlinkSync)(record.stagePath);
+      (0, import_node_fs13.unlinkSync)(record.stagePath);
       return true;
     } catch (err) {
       return (err == null ? void 0 : err.code) === "ENOENT";
@@ -8152,25 +7892,25 @@ function c19WriteInstallRecoveryAck(record, acknowledged) {
   }
   const tmp = `${record.stagePath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
   try {
-    (0, import_node_fs11.writeFileSync)(tmp, `${JSON.stringify({ ...current, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2)}
+    (0, import_node_fs13.writeFileSync)(tmp, `${JSON.stringify({ ...current, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2)}
 `, { encoding: "utf8", mode: 384 });
-    (0, import_node_fs11.renameSync)(tmp, record.stagePath);
+    (0, import_node_fs13.renameSync)(tmp, record.stagePath);
     return true;
   } catch {
     try {
-      (0, import_node_fs11.unlinkSync)(tmp);
+      (0, import_node_fs13.unlinkSync)(tmp);
     } catch {
     }
     return false;
   }
 }
 function readNodeReportingMode(projectRoot, env = process.env, ide) {
-  const root = (0, import_node_path12.resolve)(projectRoot);
+  const root = (0, import_node_path14.resolve)(projectRoot);
   const targetIdes = ide && C19_LEGACY_IDES.includes(ide) ? [ide] : C19_LEGACY_IDES;
   for (const dir of projectStateDirs(root)) {
-    const marker = (0, import_node_path12.join)(dir, "install-mode.json");
+    const marker = (0, import_node_path14.join)(dir, "install-mode.json");
     try {
-      if ((0, import_node_fs11.lstatSync)(dir).isSymbolicLink() || (0, import_node_fs11.lstatSync)(marker).isSymbolicLink())
+      if ((0, import_node_fs13.lstatSync)(dir).isSymbolicLink() || (0, import_node_fs13.lstatSync)(marker).isSymbolicLink())
         return "unknown";
     } catch (err) {
       if ((err == null ? void 0 : err.code) !== "ENOENT")
@@ -8236,7 +7976,7 @@ function validRouteHint(value) {
   return Object.prototype.hasOwnProperty.call(PRODUCT_BY_SKILL, canonical) ? canonical : "";
 }
 function remaining(deadlineMono) {
-  return Math.max(0, deadlineMono - import_node_perf_hooks9.performance.now());
+  return Math.max(0, deadlineMono - import_node_perf_hooks8.performance.now());
 }
 function identityFields(opts = {}) {
   try {
@@ -8248,7 +7988,7 @@ function identityFields(opts = {}) {
 }
 function startProducerLease(ctx, key, opts = {}) {
   return beginProducerLease(ctx.stateRoot, key, {
-    timeoutMs: opts.hook ? Math.min(25, Math.max(0, remaining(opts.deadlineMono || import_node_perf_hooks9.performance.now() + 25))) : opts.timeoutMs ?? 120,
+    timeoutMs: opts.hook ? Math.min(25, Math.max(0, remaining(opts.deadlineMono || import_node_perf_hooks8.performance.now() + 25))) : opts.timeoutMs ?? 120,
     _hookMode: opts.hook === true
   });
 }
@@ -8287,7 +8027,7 @@ function writeOutboxWithProducerLease(ctx, key, event, opts = {}) {
 function pendingEventForProject(stateRoot, eventId, key) {
   const paths2 = [...listPending(stateRoot), ...listOutbox(stateRoot)];
   for (const path2 of paths2) {
-    if ((0, import_node_path12.basename)(path2) !== `${eventId}.json`)
+    if ((0, import_node_path14.basename)(path2) !== `${eventId}.json`)
       continue;
     const event = readEvent(path2);
     if (!event || event.__project_key !== key || event.method !== METHOD.PROMPT)
@@ -8304,7 +8044,7 @@ function codexStageLocator(event) {
   return { sessionid, stageKey, lockKey: `${sessionid}:${stageKey}` };
 }
 function codexSnapshotFrozen(ctx, key, event) {
-  return event.__sender_acknowledged === true || readEventAcknowledgement(ctx.stateRoot, key, event.event_id).status === "valid" || listOutbox(ctx.stateRoot).some((path2) => (0, import_node_path12.basename)(path2) === `${event.event_id}.json`);
+  return event.__sender_acknowledged === true || readEventAcknowledgement(ctx.stateRoot, key, event.event_id).status === "valid" || listOutbox(ctx.stateRoot).some((path2) => (0, import_node_path14.basename)(path2) === `${event.event_id}.json`);
 }
 function codexReceiptAttribution(projectRoot, event, input = {}) {
   const locator = codexStageLocator(event);
@@ -8445,18 +8185,18 @@ function routeAttributionFailure(result, eventId, sessionid) {
 }
 function turnRecoveryIndexPath(stateRoot, key, ide) {
   const safeIde = safeName(ide, "unknown");
-  return (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "turn-index", `${key}-${safeIde}.json`);
+  return (0, import_node_path14.join)(resolveTelemetryRoot(stateRoot), "turn-index", `${key}-${safeIde}.json`);
 }
 function turnRecoveryHash(turnId) {
-  return (0, import_node_crypto11.createHash)("sha256").update(String(turnId)).digest("hex");
+  return (0, import_node_crypto12.createHash)("sha256").update(String(turnId)).digest("hex");
 }
 function turnRecoveryQueueSignature(paths2) {
-  return (0, import_node_crypto11.createHash)("sha256").update(paths2.join("\n")).digest("hex");
+  return (0, import_node_crypto12.createHash)("sha256").update(paths2.join("\n")).digest("hex");
 }
 function readTurnRecoveryIndex(stateRoot, key, ide) {
   const path2 = turnRecoveryIndexPath(stateRoot, key, ide);
   try {
-    const value = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+    const value = JSON.parse((0, import_node_fs13.readFileSync)(path2, "utf8"));
     if (!value || value.version !== 1 || value.project_key !== key || value.ide !== ide || value.cursor !== null && typeof value.cursor !== "string" || !Array.isArray(value.matches) || value.first_candidates !== void 0 && !Array.isArray(value.first_candidates) || value.queue_signature !== void 0 && value.queue_signature !== null && typeof value.queue_signature !== "string" || value.queue_paths !== void 0 && (!Array.isArray(value.queue_paths) || value.queue_paths.some((entry) => typeof entry !== "string")))
       return { status: "invalid" };
     return { status: "valid", value };
@@ -8466,11 +8206,11 @@ function readTurnRecoveryIndex(stateRoot, key, ide) {
 }
 function writeTurnRecoveryIndex(stateRoot, key, ide, value) {
   const path2 = turnRecoveryIndexPath(stateRoot, key, ide);
-  const dir = (0, import_node_path12.dirname)(path2);
-  const tmp = (0, import_node_path12.join)(dir, `.${key}-${safeName(ide, "unknown")}.${process.pid}-${(0, import_node_crypto11.randomUUID)()}.tmp`);
+  const dir = (0, import_node_path14.dirname)(path2);
+  const tmp = (0, import_node_path14.join)(dir, `.${key}-${safeName(ide, "unknown")}.${process.pid}-${(0, import_node_crypto12.randomUUID)()}.tmp`);
   try {
-    (0, import_node_fs11.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
-    (0, import_node_fs11.writeFileSync)(tmp, `${JSON.stringify({
+    (0, import_node_fs13.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+    (0, import_node_fs13.writeFileSync)(tmp, `${JSON.stringify({
       version: 1,
       project_key: key,
       ide,
@@ -8490,11 +8230,11 @@ function writeTurnRecoveryIndex(stateRoot, key, ide, value) {
       updated_at: Date.now()
     })}
 `, { mode: process.platform === "win32" ? void 0 : 384 });
-    (0, import_node_fs11.renameSync)(tmp, path2);
+    (0, import_node_fs13.renameSync)(tmp, path2);
     return true;
   } catch {
     try {
-      (0, import_node_fs11.unlinkSync)(tmp);
+      (0, import_node_fs13.unlinkSync)(tmp);
     } catch {
     }
     return false;
@@ -8531,7 +8271,7 @@ function advanceTurnRecoveryIndex(stateRoot, key, ide, opts = {}) {
   const scannedPaths = new Set(knownPaths);
   let last = typeof current.cursor === "string" ? current.cursor : null;
   for (; scanned < scanPaths.length && scanned < maxFiles; scanned += 1) {
-    if (import_node_perf_hooks9.performance.now() >= deadlineMono)
+    if (import_node_perf_hooks8.performance.now() >= deadlineMono)
       break;
     const path2 = scanPaths[scanned];
     last = path2;
@@ -8596,12 +8336,12 @@ function indexedFirstPromptCandidate(stateRoot, key, ide) {
   return index.value.complete ? { status: "none" } : { status: "pending" };
 }
 function deferredTurnPath(stateRoot, key, ide, turnId) {
-  return (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "deferred-turns", `${key}-${safeName(ide, "unknown")}-${turnRecoveryHash(turnId)}.json`);
+  return (0, import_node_path14.join)(resolveTelemetryRoot(stateRoot), "deferred-turns", `${key}-${safeName(ide, "unknown")}-${turnRecoveryHash(turnId)}.json`);
 }
 function readDeferredTurn(stateRoot, key, ide, turnId) {
   const path2 = deferredTurnPath(stateRoot, key, ide, turnId);
   try {
-    const value = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+    const value = JSON.parse((0, import_node_fs13.readFileSync)(path2, "utf8"));
     if (!value || value.version !== 1 || value.project_key !== key || value.ide !== ide || value.turn_hash !== turnRecoveryHash(turnId) || typeof value.event_id !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(value.event_id) || typeof value.prompt !== "string" || value.prompt.length === 0)
       return null;
     return { ...value, path: path2 };
@@ -8613,11 +8353,11 @@ function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
   if (!turnId || typeof (value == null ? void 0 : value.prompt) !== "string" || value.prompt.length === 0)
     return null;
   const path2 = deferredTurnPath(stateRoot, key, ide, turnId);
-  const dir = (0, import_node_path12.dirname)(path2);
-  const tmp = (0, import_node_path12.join)(dir, `.${key}-${safeName(ide, "unknown")}-${turnRecoveryHash(turnId)}.${process.pid}-${(0, import_node_crypto11.randomUUID)()}.tmp`);
+  const dir = (0, import_node_path14.dirname)(path2);
+  const tmp = (0, import_node_path14.join)(dir, `.${key}-${safeName(ide, "unknown")}-${turnRecoveryHash(turnId)}.${process.pid}-${(0, import_node_crypto12.randomUUID)()}.tmp`);
   let existing = null;
   try {
-    const candidate = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+    const candidate = JSON.parse((0, import_node_fs13.readFileSync)(path2, "utf8"));
     if (candidate && candidate.version === 1 && candidate.project_key === key && candidate.ide === ide && candidate.turn_hash === turnRecoveryHash(turnId) && typeof candidate.event_id === "string" && /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(candidate.event_id)) {
       existing = candidate;
     }
@@ -8632,7 +8372,7 @@ function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
     // Once an intent exists its event identity is immutable.  A retry may
     // update diagnostics, but it must never replace the ID after a process
     // restart or a lost response.
-    event_id: (existing == null ? void 0 : existing.event_id) || value.event_id || (0, import_node_crypto11.randomUUID)(),
+    event_id: (existing == null ? void 0 : existing.event_id) || value.event_id || (0, import_node_crypto12.randomUUID)(),
     prompt: (existing == null ? void 0 : existing.prompt) || value.prompt,
     source: safeName(value.source || (existing == null ? void 0 : existing.source), "python"),
     sessionid: safeName(value.sessionid || (existing == null ? void 0 : existing.sessionid), ""),
@@ -8660,44 +8400,44 @@ function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
   if (!next.last_error)
     delete next.last_error;
   try {
-    (0, import_node_fs11.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
+    (0, import_node_fs13.mkdirSync)(dir, { recursive: true, mode: process.platform === "win32" ? void 0 : 448 });
     if (existing) {
-      (0, import_node_fs11.writeFileSync)(tmp, `${JSON.stringify(next)}
+      (0, import_node_fs13.writeFileSync)(tmp, `${JSON.stringify(next)}
 `, { mode: process.platform === "win32" ? void 0 : 384 });
       try {
-        const syncFd = (0, import_node_fs11.openSync)(tmp, "r+");
+        const syncFd = (0, import_node_fs13.openSync)(tmp, "r+");
         try {
-          (0, import_node_fs11.fsyncSync)(syncFd);
+          (0, import_node_fs13.fsyncSync)(syncFd);
         } finally {
-          (0, import_node_fs11.closeSync)(syncFd);
+          (0, import_node_fs13.closeSync)(syncFd);
         }
       } catch {
       }
-      (0, import_node_fs11.renameSync)(tmp, path2);
+      (0, import_node_fs13.renameSync)(tmp, path2);
     } else {
       let fd;
       try {
-        fd = (0, import_node_fs11.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
+        fd = (0, import_node_fs13.openSync)(tmp, "wx", process.platform === "win32" ? void 0 : 384);
         const body = Buffer.from(`${JSON.stringify(next)}
 `);
         let offset = 0;
         while (offset < body.length)
-          offset += (0, import_node_fs11.writeSync)(fd, body, offset, body.length - offset);
+          offset += (0, import_node_fs13.writeSync)(fd, body, offset, body.length - offset);
         try {
-          (0, import_node_fs11.fsyncSync)(fd);
+          (0, import_node_fs13.fsyncSync)(fd);
         } catch {
         }
-        (0, import_node_fs11.closeSync)(fd);
+        (0, import_node_fs13.closeSync)(fd);
         fd = void 0;
         try {
-          (0, import_node_fs11.linkSync)(tmp, path2);
+          (0, import_node_fs13.linkSync)(tmp, path2);
         } catch (err) {
           if ((err == null ? void 0 : err.code) === "EEXIST") {
             try {
-              (0, import_node_fs11.unlinkSync)(tmp);
+              (0, import_node_fs13.unlinkSync)(tmp);
             } catch {
             }
-            const winner = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+            const winner = JSON.parse((0, import_node_fs13.readFileSync)(path2, "utf8"));
             if (winner == null ? void 0 : winner.event_id)
               return { ...winner, path: path2 };
             return null;
@@ -8706,24 +8446,24 @@ function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
             throw err;
           let directFd;
           try {
-            directFd = (0, import_node_fs11.openSync)(path2, "wx", process.platform === "win32" ? void 0 : 384);
+            directFd = (0, import_node_fs13.openSync)(path2, "wx", process.platform === "win32" ? void 0 : 384);
             let directOffset = 0;
             while (directOffset < body.length)
-              directOffset += (0, import_node_fs11.writeSync)(directFd, body, directOffset, body.length - directOffset);
+              directOffset += (0, import_node_fs13.writeSync)(directFd, body, directOffset, body.length - directOffset);
             try {
-              (0, import_node_fs11.fsyncSync)(directFd);
+              (0, import_node_fs13.fsyncSync)(directFd);
             } catch {
             }
-            (0, import_node_fs11.closeSync)(directFd);
+            (0, import_node_fs13.closeSync)(directFd);
             directFd = void 0;
           } catch (directErr) {
             if (directFd !== void 0)
               try {
-                (0, import_node_fs11.closeSync)(directFd);
+                (0, import_node_fs13.closeSync)(directFd);
               } catch {
               }
             if ((directErr == null ? void 0 : directErr.code) === "EEXIST") {
-              const winner = JSON.parse((0, import_node_fs11.readFileSync)(path2, "utf8"));
+              const winner = JSON.parse((0, import_node_fs13.readFileSync)(path2, "utf8"));
               if (winner == null ? void 0 : winner.event_id)
                 return { ...winner, path: path2 };
               return null;
@@ -8732,7 +8472,7 @@ function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
           }
         }
         try {
-          (0, import_node_fs11.unlinkSync)(tmp);
+          (0, import_node_fs13.unlinkSync)(tmp);
         } catch (cleanupErr) {
           if ((cleanupErr == null ? void 0 : cleanupErr.code) !== "ENOENT") {
           }
@@ -8740,7 +8480,7 @@ function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
       } finally {
         if (fd !== void 0)
           try {
-            (0, import_node_fs11.closeSync)(fd);
+            (0, import_node_fs13.closeSync)(fd);
           } catch {
           }
       }
@@ -8748,7 +8488,7 @@ function writeDeferredTurn(stateRoot, key, ide, turnId, value) {
     return { ...next, path: path2 };
   } catch {
     try {
-      (0, import_node_fs11.unlinkSync)(tmp);
+      (0, import_node_fs13.unlinkSync)(tmp);
     } catch {
     }
     return null;
@@ -8758,7 +8498,7 @@ function clearDeferredTurn(record) {
   if (!(record == null ? void 0 : record.path))
     return;
   try {
-    (0, import_node_fs11.unlinkSync)(record.path);
+    (0, import_node_fs13.unlinkSync)(record.path);
   } catch (err) {
     if ((err == null ? void 0 : err.code) !== "ENOENT")
       return;
@@ -8816,14 +8556,14 @@ function updatePromptIntent(ctx, intent, value) {
   return updated;
 }
 function listDeferredTurns(stateRoot, key, ide) {
-  const dir = (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "deferred-turns");
+  const dir = (0, import_node_path14.join)(resolveTelemetryRoot(stateRoot), "deferred-turns");
   try {
-    return (0, import_node_fs11.readdirSync)(dir).filter((name) => name.endsWith(".json") && name.startsWith(`${key}-${safeName(ide, "unknown")}-`)).sort().map((name) => {
+    return (0, import_node_fs13.readdirSync)(dir).filter((name) => name.endsWith(".json") && name.startsWith(`${key}-${safeName(ide, "unknown")}-`)).sort().map((name) => {
       try {
-        const value = JSON.parse((0, import_node_fs11.readFileSync)((0, import_node_path12.join)(dir, name), "utf8"));
+        const value = JSON.parse((0, import_node_fs13.readFileSync)((0, import_node_path14.join)(dir, name), "utf8"));
         if (!value || value.version !== 1 || value.project_key !== key || value.ide !== ide || typeof value.turn_id !== "string" || typeof value.event_id !== "string" || typeof value.prompt !== "string")
           return null;
-        return { ...value, path: (0, import_node_path12.join)(dir, name) };
+        return { ...value, path: (0, import_node_path14.join)(dir, name) };
       } catch {
         return null;
       }
@@ -8833,12 +8573,12 @@ function listDeferredTurns(stateRoot, key, ide) {
   }
 }
 function purgeDeferredTurns(stateRoot, key) {
-  const dir = (0, import_node_path12.join)(resolveTelemetryRoot(stateRoot), "deferred-turns");
+  const dir = (0, import_node_path14.join)(resolveTelemetryRoot(stateRoot), "deferred-turns");
   const prefix = `${key}-`;
   const result = { removed: 0, busy: 0, errors: [] };
   let names;
   try {
-    names = (0, import_node_fs11.readdirSync)(dir);
+    names = (0, import_node_fs13.readdirSync)(dir);
   } catch (err) {
     if ((err == null ? void 0 : err.code) !== "ENOENT")
       result.errors.push({ code: (err == null ? void 0 : err.code) || "deferred_scan_failed" });
@@ -8848,7 +8588,7 @@ function purgeDeferredTurns(stateRoot, key) {
     if (!name.startsWith(prefix) || !name.endsWith(".json"))
       continue;
     try {
-      (0, import_node_fs11.unlinkSync)((0, import_node_path12.join)(dir, name));
+      (0, import_node_fs13.unlinkSync)((0, import_node_path14.join)(dir, name));
       result.removed += 1;
     } catch (err) {
       if ((err == null ? void 0 : err.code) !== "ENOENT") {
@@ -8873,7 +8613,7 @@ function purgeWithDeferred(stateRoot, key, purgeFn) {
 }
 function pendingOnlyEventForProject(stateRoot, eventId, key) {
   for (const path2 of listPending(stateRoot)) {
-    if ((0, import_node_path12.basename)(path2) !== `${eventId}.json`)
+    if ((0, import_node_path14.basename)(path2) !== `${eventId}.json`)
       continue;
     const event = readEvent(path2);
     if ((event == null ? void 0 : event.__project_key) === key && event.method === METHOD.PROMPT)
@@ -9034,22 +8774,6 @@ function identityEnrichmentForEvent(event, stateRoot, maxWaitMs, allowEphemeral 
   }
   return identityFields({ stateRoot, maxWaitMs, ...allowEphemeral === void 0 ? {} : { allowEphemeral } });
 }
-function latestPendingPrompt(stateRoot, key, now = Date.now(), ide = null) {
-  let latest = null;
-  for (const path2 of listPending(stateRoot)) {
-    const event = readEvent(path2);
-    if (!event || event.method !== METHOD.PROMPT || event.__project_key !== key)
-      continue;
-    if (ide && event.ide !== ide)
-      continue;
-    if (typeof event.time !== "number" || now - event.time > INVOKE_FRESHNESS_MS)
-      continue;
-    if (!latest || event.time > latest.time || event.time === latest.time && event.event_id.localeCompare(latest.event_id) > 0) {
-      latest = event;
-    }
-  }
-  return latest;
-}
 function pendingForStage(stateRoot, key, sessionid, turnId, fingerprint, now = Date.now(), source = null) {
   const candidates = [];
   for (const path2 of listPending(stateRoot)) {
@@ -9093,7 +8817,7 @@ function discardHookPromptForControl(ctx, key, prompt, ide, sessionid, turnId) {
   let removed = 0;
   for (const candidate of candidates) {
     const eventId = candidate.event.event_id;
-    if (typeof eventId !== "string" || (0, import_node_path12.basename)(candidate.path) !== `${eventId}.json`)
+    if (typeof eventId !== "string" || (0, import_node_path14.basename)(candidate.path) !== `${eventId}.json`)
       continue;
     const lock = acquireReservation(ctx.stateRoot, eventId, { reservationTimeoutMs: 100 });
     if (!lock)
@@ -9147,7 +8871,13 @@ function applyControlPrompt(projectRoot, text) {
   const requested = preferenceFromText(text);
   if (requested === null)
     return null;
-  setReportingPreference(projectRoot, requested, { purgePending: !requested });
+  const result = setReportingPreference(projectRoot, requested, { purgePending: !requested });
+  if (result.action !== "updated")
+    return {
+      status: "control_retry",
+      control: true,
+      marker: requested ? continuation_notice_default.markers.allow_retry : continuation_notice_default.markers.disable_retry
+    };
   return { status: requested ? "enabled" : "disabled", control: true };
 }
 async function stagePromptCore(input, flags, ctx, opts = {}) {
@@ -9166,7 +8896,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   const ide = safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown");
   if (!nodeReportingAllowed(projectRoot, ctx.env, ide))
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
-  const deadlineMono = opts.deadlineMono ?? import_node_perf_hooks9.performance.now() + (opts.timeoutMs ?? 2e3);
+  const deadlineMono = opts.deadlineMono ?? import_node_perf_hooks8.performance.now() + (opts.timeoutMs ?? 2e3);
   const rawSession = rawSessionFromInput(input);
   const controlRawSession = reliableRawSessionFromInput(input);
   const controlSessionId = controlRawSession ? deriveSessionId(projectRoot, ide, controlRawSession) : null;
@@ -9189,13 +8919,15 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     source: opts.source,
     controlChoice: input == null ? void 0 : input.control_choice,
     sessionid: controlSessionId,
+    ide,
+    turn: consentTurn(input, ide, sanitizeReportText(prompt), ctx.now()),
     // The explicit allow/deny transaction expects a clock callback so that
     // it can timestamp each durable write independently. Ambiguous handling
     // accepts either a callback or a captured timestamp.
     now: ctx.now,
     _writeControlTurn: ctx.writeControlTurn,
     _updateNoticeStatus: ctx.updateNoticeStatus,
-    purge: () => purgeWithDeferred(ctx.stateRoot, projectKey(projectRoot), purgeProjectEvents),
+    purge: () => purgeWithDeferred(ctx.stateRoot, projectKey(projectRoot), purgeProjectExperienceEvents),
     timeoutMs: opts.hook ? Math.max(0, remaining(deadlineMono)) : 120,
     deadlineMono
   });
@@ -9211,11 +8943,56 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   if ((input == null ? void 0 : input.control_choice) === "allow" || (input == null ? void 0 : input.control_choice) === "deny") {
     return { status: "control_retry", control: true, marker: CONTROL_RETRY };
   }
+  if (opts.hook === true && preferenceFromText(prompt) !== null) {
+    return { status: "skipped", control: true, reason: "foreground_preference_required" };
+  }
   const control = applyControlPrompt(projectRoot, prompt);
-  if (control)
+  if (control) {
+    if (control.status === "disabled") {
+      purgeWithDeferred(ctx.stateRoot, key, purgeProjectExperienceEvents);
+      updateConsentState(projectRoot, key, (value) => {
+        if (!value)
+          return { status: "not_found" };
+        delete value.first_event;
+        delete value.pending_choice;
+        value.first_status = "discarded";
+        return { value };
+      }, { now: ctx.now });
+    }
     return control;
-  if (!isReportingEnabled(projectRoot, ctx.env))
-    return { status: "disabled" };
+  }
+  if (opts.hook === true && ide === "cursor" && isReportingEnabledForScope(projectRoot, "runtime", ctx.env)) {
+    recordCursorForegroundTurn(projectRoot, input, ctx, deadlineMono);
+  }
+  if (opts.hook !== true)
+    retryPendingConsentChoice(projectRoot, { now: ctx.now });
+  if (!isReportingEnabled(projectRoot, ctx.env)) {
+    if (!canRequestExperienceConsent(projectRoot, ctx.env))
+      return { status: "disabled" };
+    const text = sanitizeReportText(prompt);
+    const turn = consentTurn(input, ide, text, ctx.now());
+    const held = makeEnvelope({
+      event_id: (0, import_node_crypto12.randomUUID)(),
+      method: METHOD.PROMPT,
+      text,
+      time: ctx.now(),
+      identity_pending: true,
+      sessionid: controlSessionId,
+      turn_id: typeof input.turn_id === "string" ? input.turn_id : null,
+      ide,
+      skillname: "unknown",
+      product: "unknown",
+      framework: "unknown",
+      version: safeName(flags.version),
+      __project_key: key,
+      __scope: "experience",
+      __consent_turn_base: turn.base,
+      ...validRouteHint(input.route_hint) ? { __route_hint: validRouteHint(input.route_hint) } : {},
+      ...safeName(input.product, "") ? { __route_product: safeName(input.product, "") } : {},
+      ...safeName(input.framework, "") ? { __route_framework: safeName(input.framework, "") } : {}
+    });
+    return holdFirstPrompt(projectRoot, key, held, turn, { hook: opts.hook, now: ctx.now });
+  }
   if (opts.hook !== true) {
     const paired = preserveCodexForegroundRoute(input, flags, ctx, deadlineMono);
     if (paired)
@@ -9259,7 +9036,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
       deferredTurn = null;
       return { status: "disabled", error: denied };
     }
-    const desiredEventId = eventId || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
+    const desiredEventId = eventId || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto12.randomUUID)());
     if (promptIntent) {
       const updated = updatePromptIntent(ctx, promptIntent, {
         phase,
@@ -9477,7 +9254,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     turnScopedResolution = !hasRawSession || rawSessionId !== turnReceiptSessionid;
   }
   if (opts.hook !== true && !promptIntent) {
-    const intentEventId = turnReceiptEventId || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
+    const intentEventId = turnReceiptEventId || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto12.randomUUID)());
     const intent = persistPromptIntent(ctx, projectRoot, key, ide, deferredTurnId, {
       event_id: intentEventId,
       prompt: sanitizedPrompt,
@@ -9521,7 +9298,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
     const stageKey = `turn:${input.turn_id}`;
     const stageHint = readStageReceipt(projectRoot, sessionid, stageKey);
     const hintedEvent = existingTurnEvent.status === "found" ? existingTurnEvent.event : stageHint && typeof stageHint.event_id === "string" && /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/.test(stageHint.event_id) ? { event_id: stageHint.event_id, sessionid, time: stageHint.time } : null;
-    const proposedEventId = (hintedEvent == null ? void 0 : hintedEvent.event_id) || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
+    const proposedEventId = (hintedEvent == null ? void 0 : hintedEvent.event_id) || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto12.randomUUID)());
     const proposedSessionid = (hintedEvent == null ? void 0 : hintedEvent.sessionid) || sessionid;
     const claim = writeTurnReceipt(projectRoot, ide, input.turn_id, {
       sessionid: proposedSessionid,
@@ -9649,7 +9426,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
         clearDeferredTurn(promptIntent || deferredTurn);
         return { status: "deduped", event_id: existing.event_id, sessionid };
       }
-      const eventId = turnEventId || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto11.randomUUID)());
+      const eventId = turnEventId || (promptIntent == null ? void 0 : promptIntent.event_id) || deferredEventId || (typeof (input == null ? void 0 : input.event_id) === "string" ? input.event_id : (0, import_node_crypto12.randomUUID)());
       const question = context && !context.consumed_by_event_id ? context.question : null;
       const text = question ? `引导问题：${question}
 用户选择：${sanitizedPrompt}` : sanitizedPrompt;
@@ -9662,6 +9439,7 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
       const event = makeEnvelope({
         event_id: eventId,
         method: METHOD.PROMPT,
+        ...consentFields(projectRoot),
         text,
         ...identity,
         // Keep the local correlation key private. schema.js strips the
@@ -9789,16 +9567,44 @@ async function stagePromptCore(input, flags, ctx, opts = {}) {
   }
 }
 function senderGate(projectRoot, key, env) {
-  return (event) => (event == null ? void 0 : event.__project_key) === key && isReportingEnabledForScope(projectRoot, (event == null ? void 0 : event.__scope) || "experience", env);
+  return (event) => (event == null ? void 0 : event.__project_key) === key && isEventReportingEnabled(projectRoot, event, env);
 }
 function normalizeScope(value) {
   if (value === void 0 || value === null || value === "")
     return "experience";
   return value === "experience" || value === "runtime" ? value : null;
 }
+function recordCursorForegroundTurn(projectRoot, input, ctx, deadlineMono) {
+  if (input.ide !== "cursor" || remaining(deadlineMono) < 3 || ![input.turn_id, input.session_id].every((v) => typeof v === "string" && v.length > 0 && v.length <= 512))
+    return;
+  let temporary;
+  try {
+    const directory = resolveProjectStateDir(projectRoot);
+    if ((0, import_node_fs13.lstatSync)(directory).isSymbolicLink())
+      return;
+    temporary = (0, import_node_path14.join)(directory, `cursor-foreground-turn.${(0, import_node_crypto12.randomUUID)()}.tmp`);
+    const value = {
+      version: 1,
+      ide: "cursor",
+      project_root: (0, import_node_fs13.realpathSync)(projectRoot),
+      created_at: ctx.now(),
+      turn_id: input.turn_id,
+      session_id: input.session_id,
+      prompt_sha256: (0, import_node_crypto12.createHash)("sha256").update(input.prompt.replace(/\r\n/g, "\n")).digest("hex")
+    };
+    (0, import_node_fs13.writeFileSync)(temporary, JSON.stringify(value), { flag: "wx", mode: 384 });
+    (0, import_node_fs13.renameSync)(temporary, (0, import_node_path14.join)(directory, "cursor-foreground-turn.json"));
+  } catch {
+  } finally {
+    if (temporary)
+      try {
+        (0, import_node_fs13.unlinkSync)(temporary);
+      } catch {
+      }
+  }
+}
 async function handleHook(flags, ctx) {
-  var _a;
-  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + HOOK_TOTAL_BUDGET_MS;
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + HOOK_TOTAL_BUDGET_MS;
   const input = ctx.hookInput !== void 0 ? ctx.hookInput : await readStdinJson({ stream: ctx.stdin, deadlineMono });
   const normalized = parseAdapter(String(flags.ide || ""), input);
   if (!normalized)
@@ -9810,7 +9616,7 @@ async function handleHook(flags, ctx) {
     staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: "hook", deadlineMono });
   } catch {
   }
-  const activationEligible = (staged == null ? void 0 : staged.status) === "staged" || (staged == null ? void 0 : staged.status) === "deduped";
+  const activationEligible = ["staged", "deduped", "awaiting_consent", "disabled"].includes(staged == null ? void 0 : staged.status) && (staged == null ? void 0 : staged.control) !== true;
   if (activationEligible) {
     try {
       const projectRoot = resolveProjectRoot({
@@ -9825,9 +9631,9 @@ async function handleHook(flags, ctx) {
           const ide = safeName(normalized.ide, "unknown");
           const version = safeName(ctx.runtimeVersion, RUNTIME_VERSION);
           const eventId = deriveActivationEventId(seed, key, ide, version);
-          const activationQueued = (0, import_node_fs11.existsSync)((0, import_node_path12.join)(resolveTelemetryRoot(ctx.stateRoot), "outbox", `${eventId}.json`));
+          const activationQueued = (0, import_node_fs13.existsSync)((0, import_node_path14.join)(resolveTelemetryRoot(ctx.stateRoot), "outbox", `${eventId}.json`));
           if (!isHookActivationAcked(ctx.stateRoot, eventId) && !activationQueued) {
-            const useragent = peekIdentity((0, import_node_path12.join)(ctx.stateRoot, "identity.json"));
+            const useragent = peekIdentity((0, import_node_path14.join)(ctx.stateRoot, "identity.json"));
             const event = makeEnvelope({
               event_id: eventId,
               method: METHOD.EVENT,
@@ -9856,24 +9662,6 @@ async function handleHook(flags, ctx) {
         }
       }
     } catch {
-    }
-  }
-  if (safeName(normalized.ide, "unknown") === "codex") {
-    const promptText = normalized.prompt || normalized.text || "";
-    const isChoiceOrReplay = isNoticeReplayText(promptText) || isCanonicalOption(promptText) !== null || preferenceFromText(promptText) !== null;
-    if (!isChoiceOrReplay) {
-      try {
-        const projectRoot = resolveProjectRoot({
-          explicitCwd: typeof flags.cwd === "string" ? flags.cwd : normalized == null ? void 0 : normalized.cwd,
-          normalized,
-          processCwd: ctx.cwd
-        });
-        const recovered = recoverForegroundNotice(projectRoot, normalized, ctx, "codex");
-        if ((recovered == null ? void 0 : recovered.marker) === NOTICE_REQUIRED) {
-          return renderHostNotice("codex", (_a = recovered.notice) == null ? void 0 : _a.notice_locale);
-        }
-      } catch {
-      }
     }
   }
   return {};
@@ -9966,318 +9754,143 @@ async function recoverDeferredTurns(flags, ctx, input) {
   }
   return staged;
 }
-function recoverForegroundNotice(projectRoot, input, ctx, ide = null) {
-  const key = projectKey(projectRoot);
+async function releaseConsentedFirst(projectRoot, ctx, opts = {}) {
   if (!isReportingEnabled(projectRoot, ctx.env))
     return null;
-  const preference = readPreferenceState(projectRoot);
-  if (preference.status === "valid" && (preference.value.continuation_choice === "allowed" || preference.value.continuation_choice === "denied" || preference.value.all_reporting_disabled === true)) {
+  const key = projectKey(projectRoot);
+  const held = readConsentState(projectRoot, key);
+  if (held.status !== "valid" || !held.value.first_event)
     return null;
-  }
-  let obligation = readNoticeObligation(ctx.stateRoot, key);
-  if (obligation.status !== "valid" || obligation.value.acknowledged !== true || obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status)) {
-    return null;
-  }
-  let receipt = readNoticeReceipt(ctx.stateRoot, key);
-  if (receipt.status !== "valid") {
-    const created = createNoticeAttemptFromObligation(
-      ctx.stateRoot,
-      key,
-      obligation,
-      null,
-      detectNoticeLocale((input == null ? void 0 : input.text) || (input == null ? void 0 : input.prompt) || "", ctx.env, (input == null ? void 0 : input.locale) || (input == null ? void 0 : input.language))
-    );
-    if (created.status === "created")
-      receipt = readNoticeReceipt(ctx.stateRoot, key);
-  }
-  if (receipt.status !== "valid" || !["pending_output", "awaiting_choice"].includes(receipt.value.status))
-    return null;
-  if (Number.isFinite(receipt.value.choice_next_retry_at) && receipt.value.choice_next_retry_at > Date.now())
-    return null;
-  const foregroundClaimed = ["codebuddy", "cursor", "claude"].includes(safeName(ide || (input == null ? void 0 : input.ide), "unknown"));
-  const status = foregroundClaimed ? { status: "required" } : noticeStatus(
-    ctx.stateRoot,
-    key,
-    receipt.value.notice_attempt_id,
-    null
-  );
-  if (status.status === "retry") {
-    return {
-      marker: NOTICE_REQUIRED,
-      notice: {
-        status: "created",
-        recovered: true,
-        control_retry: true,
-        notice_locale: receipt.value.notice_locale,
-        notice_attempt_id: receipt.value.notice_attempt_id
-      }
-    };
-  }
-  if (!["required", "already_awaiting"].includes(status.status))
-    return null;
-  return {
-    marker: NOTICE_REQUIRED,
-    notice: {
-      status: "created",
-      recovered: true,
-      notice_locale: receipt.value.notice_locale,
-      notice_attempt_id: receipt.value.notice_attempt_id
-    }
-  };
-}
-function finalizeForegroundNotice(result, projectRoot, ide, ctx, input = null) {
-  if (!["codebuddy", "cursor", "claude"].includes(ide) || ctx.deferNoticeClaim === true)
-    return result;
-  const strip = (value) => {
-    if (!value || typeof value !== "object")
-      return value;
-    const copy = { ...value };
-    if (copy.marker === NOTICE_REQUIRED)
-      delete copy.marker;
-    for (const key of ["foreground", "maintenance", "notice"]) {
-      if (copy[key])
-        copy[key] = strip(copy[key]);
-    }
-    return copy;
-  };
-  const hasNotice = (value) => value && typeof value === "object" && (value.marker === NOTICE_REQUIRED || ["foreground", "maintenance", "notice"].some((key) => hasNotice(value[key])));
-  if (!hasNotice(result))
-    return result;
-  const output = strip(result);
+  let sdkappid;
   try {
-    if (!isReportingEnabled(projectRoot, ctx.env))
-      return output;
-    const preference = readPreferenceState(projectRoot);
-    if (preference.status === "valid" && ["allowed", "denied"].includes(preference.value.continuation_choice))
-      return output;
-    const key = projectKey(projectRoot);
-    const obligation = readNoticeObligation(ctx.stateRoot, key);
-    if (obligation.status === "valid" && ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status))
-      return output;
-    const receipt = readNoticeReceipt(ctx.stateRoot, key);
-    if (receipt.status !== "valid")
-      return output;
-    if ((input == null ? void 0 : input.notice_emitted_attempt_id) === receipt.value.notice_attempt_id)
-      return output;
-    const presentationSession = ["claude", "codebuddy"].includes(ide) ? reliableRawSessionFromInput(input || {}) : null;
-    const claimed = noticeStatus(ctx.stateRoot, key, receipt.value.notice_attempt_id, null, {
-      renderer: `${ide}-foreground`,
-      maxAttempts: 2,
-      ide,
-      ...presentationSession ? {
-        presentationSessionid: deriveSessionId(projectRoot, ide, presentationSession)
-      } : {},
-      noticeLocale: foregroundNoticeLocale((input == null ? void 0 : input.text) || (input == null ? void 0 : input.prompt), receipt.value.notice_locale, (input == null ? void 0 : input.locale) || (input == null ? void 0 : input.language))
+    const resolved = ctx.resolveSdkAppId(projectRoot, {
+      stateRoot: ctx.stateRoot,
+      deadline_ms: 150,
+      _cache: sdkappid_cache_exports,
+      _loadWebAdapter: getWebAdapter
     });
-    if (claimed.status === "required") {
-      output.marker = NOTICE_REQUIRED;
-      output.notice = {
-        ...output.notice || {},
-        notice_attempt_id: claimed.notice_attempt_id,
-        notice_locale: claimed.notice_locale
-      };
-    }
+    if ((resolved == null ? void 0 : resolved.status) === "resolved")
+      sdkappid = resolved.sdkappid;
   } catch {
   }
-  return output;
+  const transferred = updateConsentState(projectRoot, key, (value) => {
+    if (!(value == null ? void 0 : value.first_event) || value.first_status !== "held")
+      return { status: "not_found", value };
+    if (!isReportingEnabled(projectRoot, ctx.env))
+      return { status: "disabled" };
+    const original = value.first_event;
+    const event = {
+      ...original,
+      ...consentFields(projectRoot),
+      skillname: original.__route_hint || "unknown",
+      product: original.__route_product || PRODUCT_BY_SKILL[original.__route_hint] || "unknown",
+      framework: original.__route_framework || "unknown",
+      ...sdkappid ? { sdkappid } : {}
+    };
+    const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 100 });
+    if (["disabled", "retryable"].includes(written.status))
+      return { status: written.status, reason: written.reason };
+    delete value.first_event;
+    value.first_status = "released";
+    value.first_event_id = event.event_id;
+    return { status: "released", value, event_id: event.event_id };
+  }, { now: ctx.now });
+  if (transferred.status !== "released")
+    return transferred;
+  if (opts.flush === false)
+    return { status: "released", event_id: transferred.event_id };
+  let flush;
+  try {
+    flush = await ctx.flushOutbox(ctx.stateRoot, {
+      ...ctx.flushOptions,
+      maxCount: 1,
+      maxDurationMs: Math.min(700, ctx.deadlineMono ? Math.max(0, remaining(ctx.deadlineMono)) : 700),
+      eventIds: [transferred.event_id],
+      isEventEnabled: senderGate(projectRoot, key, ctx.env)
+    });
+  } catch {
+    return { status: "queued", event_id: transferred.event_id };
+  }
+  return { status: "released", event_id: transferred.event_id, flush };
+}
+function claimForegroundConsent(projectRoot, input, ide, ctx) {
+  if (!canRequestExperienceConsent(projectRoot, ctx.env) || isReportingEnabled(projectRoot, ctx.env))
+    return null;
+  const previous = readConsentState(projectRoot, projectKey(projectRoot)).value;
+  if ((previous == null ? void 0 : previous.pending_choice) || input.notice_emitted_attempt_id && input.notice_emitted_attempt_id === (previous == null ? void 0 : previous.notice_attempt_id))
+    return null;
+  const rawSession = reliableRawSessionFromInput(input);
+  const claim = claimConsentNotice(projectRoot, projectKey(projectRoot), {
+    turn: consentTurn(input, ide, sanitizeReportText(input.text || input.prompt || ""), ctx.now()),
+    sessionid: rawSession ? deriveSessionId(projectRoot, ide, rawSession) : null,
+    ide,
+    locale: (previous == null ? void 0 : previous.notice_locale) ? foregroundNoticeLocale(input.text || input.prompt, previous.notice_locale, input.locale || input.language) : detectNoticeLocale(input.text || input.prompt || "", ctx.env, input.locale || input.language),
+    now: ctx.now
+  });
+  return claim.status === "required" ? { marker: NOTICE_REQUIRED, notice: claim } : null;
 }
 async function handleStagePrompt(flags, ctx) {
-  var _a, _b, _c;
-  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + 2e3;
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
+  ctx = { ...ctx, deadlineMono };
   const input = await readLocalInput(ctx, deadlineMono);
   if (!input)
     return { status: "invalid", error: "stdin_json_required" };
-  const inputText = typeof input.text === "string" ? input.text : input.prompt;
-  const internalReason = internalPromptReason(inputText, input, flags);
-  if (internalReason)
-    return { status: "skipped", reason: internalReason };
-  const finish = (result) => finalizeForegroundNotice(result, resolveProjectRoot({
-    explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
+  const text = typeof input.text === "string" ? input.text : input.prompt;
+  const internal = internalPromptReason(text, input, flags);
+  if (internal)
+    return { status: "skipped", reason: internal };
+  const projectRoot = resolveProjectRoot({
+    explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input.cwd,
     normalized: input,
     processCwd: ctx.cwd
-  }), safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown"), ctx, input);
-  const isNoticeReplay = isNoticeReplayText(inputText);
-  const isControlTurn = isNoticeReplay || input.control_choice === "allow" || input.control_choice === "deny" || input.control_choice === "ambiguous" || preferenceFromText(inputText) !== null || isCanonicalOption(inputText) !== null;
-  const paired = !isControlTurn ? preserveCodexForegroundRoute(input, flags, ctx, deadlineMono) : null;
-  const recoveredTurn = !isControlTurn && !paired ? await recoverDeferredTurns(flags, ctx, input) : null;
-  let staged;
-  try {
-    staged = paired || await stagePromptCore(input, flags, ctx, {
-      source: input.source === "python" ? "python" : "legacy_prompt",
-      controlChoice: input.control_choice,
-      deadlineMono
-    });
-  } catch (err) {
-    staged = {
-      status: "retryable",
-      error: typeof (err == null ? void 0 : err.code) === "string" ? err.code : "stage_exception",
-      durable: false,
-      phase: "stage"
-    };
-  }
-  let controlNotice = null;
-  if (isControlTurn && (input.control_choice === "allow" || input.control_choice === "deny") && (staged == null ? void 0 : staged.status) === "control_retry") {
-    try {
-      const projectRoot = resolveProjectRoot({
-        explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
-        normalized: input,
-        processCwd: ctx.cwd
-      });
-      controlNotice = recoverForegroundNotice(
-        projectRoot,
-        input,
-        ctx,
-        safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")
-      );
-    } catch {
-      controlNotice = null;
+  });
+  const ide = safeName(flags.ide || input.ide, "unknown");
+  const isControl = ["allow", "deny", "ambiguous"].includes(input.control_choice) || preferenceFromText(text) !== null || isCanonicalOption(text) !== null || isNoticeReplayText(text);
+  const consentPending = !isReportingEnabled(projectRoot, ctx.env);
+  if (ide === "cursor" && !consentPending && !isControl && typeof input.turn_id === "string") {
+    const receipt = readTurnReceipt(projectRoot, ide, input.turn_id);
+    const rawSession = rawSessionFromInput(input);
+    const sessionMatches = !rawSession || (receipt == null ? void 0 : receipt.sessionid) === deriveSessionId(projectRoot, ide, rawSession);
+    if ((receipt == null ? void 0 : receipt.event_id) && sessionMatches && readEventAcknowledgement(ctx.stateRoot, projectKey(projectRoot), receipt.event_id).status === "valid") {
+      return { status: "deduped", event_id: receipt.event_id, sessionid: receipt.sessionid, already_acked: true };
     }
   }
-  if ((controlNotice == null ? void 0 : controlNotice.marker) === NOTICE_REQUIRED) {
-    return finish({
-      ...staged,
-      marker: NOTICE_REQUIRED,
-      notice: { ...controlNotice.notice, control_retry: true },
-      error: staged.error || "control_context_missing"
-    });
+  const recovered = !consentPending && !isControl ? await recoverDeferredTurns(flags, ctx, input) : null;
+  const staged = await stagePromptCore(input, flags, ctx, {
+    source: input.source === "python" ? "python" : "legacy_prompt",
+    deadlineMono
+  });
+  if (staged.control === true || isControl) {
+    const first = staged.marker === continuation_notice_default.markers.allowed ? await releaseConsentedFirst(projectRoot, ctx) : null;
+    return { ...staged, ...first ? { first_prompt: first } : {}, consent_version: 2 };
   }
-  let foregroundNotice = null;
-  if (!isControlTurn) {
+  if (staged.status === "awaiting_consent" || staged.status === "disabled") {
+    const notice = staged.status === "awaiting_consent" ? claimForegroundConsent(projectRoot, input, ide, ctx) : null;
     try {
-      const projectRoot = resolveProjectRoot({
-        explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
-        normalized: input,
-        processCwd: ctx.cwd
+      await handleInvoke({ cwd: projectRoot, ide, skillname: "unknown" }, {
+        ...ctx,
+        deadlineMono: Math.min(deadlineMono, import_node_perf_hooks8.performance.now() + 200),
+        skipInstallRecovery: true
       });
-      foregroundNotice = recoverForegroundNotice(
-        projectRoot,
-        input,
-        ctx,
-        safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")
-      );
     } catch {
-      foregroundNotice = null;
     }
+    return { ...staged, ...notice || {}, consent_version: 2 };
   }
-  if (flags["foreground-send"] === true && ["staged", "deduped"].includes(staged == null ? void 0 : staged.status) && typeof staged.event_id === "string") {
-    const foregroundInput = {
-      ...input,
-      // The foreground path owns the disposable notice capability.  It is
-      // created independently of Stop Hook support so a host with no Stop
-      // callback can still surface the post-ACK notice on this or the next
-      // foreground turn.
-      notice_attempt_id: (0, import_node_crypto11.randomUUID)().replaceAll("-", "")
-    };
-    const send = await handleInvoke({
+  await releaseConsentedFirst(projectRoot, ctx, { flush: false });
+  if (flags["foreground-send"] === true && ["staged", "deduped"].includes(staged.status) && staged.event_id) {
+    const foreground = await handleInvoke({
       ...flags,
       "event-id": staged.event_id,
       skillname: "unknown",
       product: "unknown",
       framework: "unknown"
-    }, {
-      ...ctx,
-      inputOverride: foregroundInput,
-      // Install recovery is independently retried on the next entry; it must
-      // not consume the current Prompt's foreground delivery budget.
-      skipInstallRecovery: true,
-      deferNoticeClaim: true
-    });
-    let maintenance = null;
-    let noticeArmedThisEntry = ((_a = send == null ? void 0 : send.notice) == null ? void 0 : _a.status) === "created" || (foregroundNotice == null ? void 0 : foregroundNotice.marker) === NOTICE_REQUIRED;
-    try {
-      const projectRoot = resolveProjectRoot({
-        explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
-        normalized: input,
-        processCwd: ctx.cwd
-      });
-      const key = projectKey(projectRoot);
-      maintenance = await flushHistoricalOutbox(
-        ctx,
-        projectRoot,
-        key,
-        safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown"),
-        ctx.deadlineMono,
-        ctx.now(),
-        // Keep the current Prompt first, then give one historical event a
-        // normal bounded request window.  A permanent 120ms cap made a
-        // healthy 300ms endpoint look unreachable forever.
-        { maxDurationMs: 700 }
-      );
-      const recoveredInstall = remaining(ctx.deadlineMono) > 150 ? await recoverInstallEventOnRuntimeEntry(projectRoot, safeName(flags.ide || (input == null ? void 0 : input.ide), ""), {
-        ...ctx,
-        cwd: projectRoot,
-        skipInstallRecovery: false
-      }) : null;
-      const installMaintenance = await flushRecoveredInstallEvent(
-        recoveredInstall,
-        ctx,
-        projectRoot,
-        key,
-        ctx.deadlineMono
-      );
-      if (installMaintenance) {
-        if (maintenance)
-          mergeInstallFlush(maintenance, installMaintenance);
-        else
-          maintenance = installMaintenance;
-        maintenance.install_recovery = {
-          event_id: (recoveredInstall == null ? void 0 : recoveredInstall.eventId) || (recoveredInstall == null ? void 0 : recoveredInstall.event_id) || null,
-          status: (recoveredInstall == null ? void 0 : recoveredInstall.status) || "queued",
-          acknowledged: (recoveredInstall == null ? void 0 : recoveredInstall.acknowledged) === true || ((_b = installMaintenance.sent_event_ids) == null ? void 0 : _b.includes(recoveredInstall == null ? void 0 : recoveredInstall.eventId))
-        };
-      }
-      const obligation = readNoticeObligation(ctx.stateRoot, key);
-      const preference = readPreferenceState(projectRoot);
-      const choiceTerminal = preference.status === "valid" && (preference.value.continuation_choice === "allowed" || preference.value.continuation_choice === "denied" || preference.value.all_reporting_disabled === true);
-      if (!choiceTerminal && obligation.status === "valid" && obligation.value.acknowledged === true && !["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status) && readNoticeReceipt(ctx.stateRoot, key).status !== "valid") {
-        const armed = createNoticeAttemptFromObligation(
-          ctx.stateRoot,
-          key,
-          obligation,
-          null,
-          detectNoticeLocale((input == null ? void 0 : input.text) || (input == null ? void 0 : input.prompt) || "", ctx.env, (input == null ? void 0 : input.locale) || (input == null ? void 0 : input.language))
-        );
-        if ((armed == null ? void 0 : armed.status) === "created") {
-          noticeArmedThisEntry = true;
-          maintenance = { ...maintenance || {}, marker: NOTICE_REQUIRED, notice: armed };
-        }
-      }
-      const pendingNotice = readNoticeReceipt(ctx.stateRoot, key);
-      if (!choiceTerminal && !noticeArmedThisEntry && pendingNotice.status === "valid" && ["pending_output", "awaiting_choice"].includes(pendingNotice.value.status)) {
-        const noticeState = ["codebuddy", "cursor", "claude"].includes(safeName(flags.ide || (input == null ? void 0 : input.ide), "unknown")) ? { status: "required" } : noticeStatus(
-          ctx.stateRoot,
-          key,
-          pendingNotice.value.notice_attempt_id,
-          pendingNotice.value.sessionid
-        );
-        if (noticeState.status === "required" || noticeState.status === "already_awaiting") {
-          maintenance = {
-            ...maintenance || {},
-            marker: NOTICE_REQUIRED,
-            notice: { status: "created", recovered: true, notice_locale: pendingNotice.value.notice_locale }
-          };
-        }
-      }
-    } catch {
-    }
-    const firstNoticeMarker = ((_c = send == null ? void 0 : send.notice) == null ? void 0 : _c.status) === "created";
-    const foregroundMarker = firstNoticeMarker ? NOTICE_REQUIRED : (maintenance == null ? void 0 : maintenance.marker) === NOTICE_REQUIRED || (foregroundNotice == null ? void 0 : foregroundNotice.marker) === NOTICE_REQUIRED ? NOTICE_REQUIRED : null;
-    return finish({
-      ...staged,
-      foreground: send,
-      ...maintenance ? { maintenance } : {},
-      ...foregroundNotice ? { notice: foregroundNotice.notice } : {},
-      ...foregroundMarker ? { marker: foregroundMarker } : {}
-    });
+    }, { ...ctx, inputOverride: input, skipInstallRecovery: true });
+    return { ...staged, foreground };
   }
-  return finish({
-    ...staged,
-    ...recoveredTurn && recoveredTurn.event_id && recoveredTurn.event_id !== (staged == null ? void 0 : staged.event_id) ? { recovered: recoveredTurn } : {},
-    ...foregroundNotice ? { notice: foregroundNotice.notice, marker: foregroundNotice.marker } : {}
-  });
+  return { ...staged, ...(recovered == null ? void 0 : recovered.event_id) && recovered.event_id !== staged.event_id ? { recovered } : {} };
 }
 async function handleBindSession(flags, ctx) {
-  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + 120;
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + 120;
   const input = await readLocalInput(ctx, deadlineMono);
   if (!input)
     return { status: "invalid", error: "stdin_json_required" };
@@ -10293,7 +9906,7 @@ async function handleBindSession(flags, ctx) {
   return refreshBinding(projectRoot, sessionid, ide, { deadlineMono, now: ctx.now });
 }
 async function handleContext(flags, ctx) {
-  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + 2e3;
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + 2e3;
   const input = await readLocalInput(ctx, deadlineMono);
   if (!input)
     return { status: "invalid", error: "stdin_json_required" };
@@ -10340,7 +9953,7 @@ async function recoverFirstPrompt(projectRoot, ide, currentEventId, input, ctx) 
       inputOverride: {
         cwd: projectRoot,
         ide,
-        notice_attempt_id: (0, import_node_crypto11.randomUUID)().replaceAll("-", ""),
+        notice_attempt_id: (0, import_node_crypto12.randomUUID)().replaceAll("-", ""),
         ...(input == null ? void 0 : input.language) ? { language: input.language } : {},
         ...(input == null ? void 0 : input.locale) ? { locale: input.locale } : {}
       }
@@ -10349,13 +9962,28 @@ async function recoverFirstPrompt(projectRoot, ide, currentEventId, input, ctx) 
     return null;
   }
 }
+var PERSISTED_FRAMEWORK_SOURCES = /* @__PURE__ */ new Set(["dispatcher", "route", "session"]);
+function settleFramework({ codexFrozen, frozenFramework, explicitFramework, routeFramework, skillname, product, projectRoot, stateRoot, projectKeyValue }) {
+  if (codexFrozen)
+    return { framework: frozenFramework || "unknown", source: "frozen" };
+  if (explicitFramework && explicitFramework !== "unknown")
+    return { framework: explicitFramework, source: "dispatcher" };
+  if (routeFramework && routeFramework !== "unknown")
+    return { framework: routeFramework, source: "route" };
+  const mapped = FRAMEWORK_BY_SKILL[skillname];
+  if (mapped)
+    return { framework: mapped, source: "skill" };
+  const continuity = resolveFrameworkContinuity({ projectRoot, stateRoot, projectKeyValue, product });
+  if (continuity)
+    return continuity;
+  return { framework: "unknown", source: "none" };
+}
 async function handleInvoke(flags, ctx) {
-  var _a;
-  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
   ctx = { ...ctx, deadlineMono };
   let invokeInput = ctx.inputOverride || null;
   if (!invokeInput && (flags["input-stdin"] === true || flags["input-stdin"] === "true")) {
-    invokeInput = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks9.performance.now() + 1e3));
+    invokeInput = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks8.performance.now() + 1e3));
   }
   const projectRoot = resolveProjectRoot({
     explicitCwd: flags.cwd,
@@ -10365,6 +9993,7 @@ async function handleInvoke(flags, ctx) {
   const key = projectKey(projectRoot);
   if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), "unknown")))
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
+  retryPendingConsentChoice(projectRoot, { now: ctx.now });
   const recoveredInstall = ctx.skipInstallRecovery === true || remaining(deadlineMono) <= 150 ? null : await recoverInstallEventOnRuntimeEntry(
     projectRoot,
     safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), ""),
@@ -10379,47 +10008,48 @@ async function handleInvoke(flags, ctx) {
   }
   if (!isReportingEnabled(projectRoot, ctx.env)) {
     const runtimeEnabled = isReportingEnabledForScope(projectRoot, "runtime", ctx.env);
-    const purge = runtimeEnabled ? purgeWithDeferred(ctx.stateRoot, key, purgeProjectPromptEvents) : purgeWithDeferred(ctx.stateRoot, key, purgeProjectEvents);
+    const purge = runtimeEnabled ? purgeWithDeferred(ctx.stateRoot, key, purgeProjectExperienceEvents) : purgeWithDeferred(ctx.stateRoot, key, purgeProjectEvents);
     let runtime_flush = null;
     if (runtimeEnabled) {
       runtime_flush = await ctx.flushOutbox(ctx.stateRoot, {
         maxCount: 10,
         maxDurationMs: Math.min(3e3, remaining(deadlineMono)),
-        isEventEnabled: (event2) => (event2 == null ? void 0 : event2.__project_key) === key && (event2 == null ? void 0 : event2.__scope) === "runtime" && isReportingEnabledForScope(projectRoot, "runtime", ctx.env),
+        isEventEnabled: (event2) => (event2 == null ? void 0 : event2.__project_key) === key && isRuntimeEvent(event2) && isEventReportingEnabled(projectRoot, event2, ctx.env),
         ...ctx.flushOptions
       });
       acknowledgeRecoveredInstall(recoveredInstall, runtime_flush);
     }
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value)
+        return { status: "not_found" };
+      if (!canRequestExperienceConsent(projectRoot, ctx.env)) {
+        delete value.first_event;
+        delete value.pending_choice;
+        value.first_status = "discarded";
+      }
+      return { value };
+    }, { now: ctx.now });
     return { status: "disabled", purge, runtime_flush };
   }
   let requestedSession = null;
   const rawSession = typeof (invokeInput == null ? void 0 : invokeInput.session_id) === "string" ? invokeInput.session_id : typeof (invokeInput == null ? void 0 : invokeInput.conversation_id) === "string" ? invokeInput.conversation_id : null;
   if (rawSession) {
-    const ide = safeName(invokeInput.ide, "unknown");
+    const ide = safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), "unknown");
     requestedSession = deriveSessionId(projectRoot, ide, rawSession);
     refreshBinding(projectRoot, requestedSession, ide, { now: ctx.now, deadlineMono });
   }
   let event;
   const foregroundIde = safeName(flags.ide || (invokeInput == null ? void 0 : invokeInput.ide), "unknown");
-  const finish = (result) => finalizeForegroundNotice(result, projectRoot, foregroundIde, ctx, invokeInput);
-  const foregroundAttemptId = typeof (invokeInput == null ? void 0 : invokeInput.notice_attempt_id) === "string" && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id) ? invokeInput.notice_attempt_id : null;
+  const finish = (result) => result;
   if (typeof flags["event-id"] === "string") {
     event = pendingEventForProject(ctx.stateRoot, flags["event-id"], key);
     if (!event) {
       const acknowledged = readEventAcknowledgement(ctx.stateRoot, key, flags["event-id"]);
       if (acknowledged.status === "valid") {
         await recoverFirstPrompt(projectRoot, foregroundIde, flags["event-id"], invokeInput, ctx);
-        const recoveredNotice2 = foregroundAttemptId ? createNoticeAttemptFromObligation(
-          ctx.stateRoot,
-          key,
-          readNoticeObligation(ctx.stateRoot, key),
-          null,
-          detectNoticeLocale((invokeInput == null ? void 0 : invokeInput.text) || (invokeInput == null ? void 0 : invokeInput.prompt) || "", ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language))
-        ) : null;
         return finish({
           status: "already_acked",
-          event_id: flags["event-id"],
-          ...(recoveredNotice2 == null ? void 0 : recoveredNotice2.status) === "created" ? { marker: NOTICE_REQUIRED, notice: recoveredNotice2 } : {}
+          event_id: flags["event-id"]
         });
       }
       const historicalFlush = await flushHistoricalOutbox(
@@ -10439,17 +10069,9 @@ async function handleInvoke(flags, ctx) {
       );
       if (historicalFlush && installFlush)
         mergeInstallFlush(historicalFlush, installFlush);
-      const recoveredNotice = foregroundAttemptId ? createNoticeAttemptFromObligation(
-        ctx.stateRoot,
-        key,
-        readNoticeObligation(ctx.stateRoot, key),
-        (event == null ? void 0 : event.sessionid) || null,
-        detectNoticeLocale((invokeInput == null ? void 0 : invokeInput.text) || (invokeInput == null ? void 0 : invokeInput.prompt) || "", ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language))
-      ) : null;
       return finish({
         status: "not_found",
         event_id: flags["event-id"],
-        ...(recoveredNotice == null ? void 0 : recoveredNotice.status) === "created" ? { marker: NOTICE_REQUIRED, notice: recoveredNotice } : {},
         ...historicalFlush || installFlush ? { flush: historicalFlush || installFlush } : {}
       });
     }
@@ -10483,13 +10105,6 @@ async function handleInvoke(flags, ctx) {
       );
       if (historicalFlush && installFlush)
         mergeInstallFlush(historicalFlush, installFlush);
-      const recoveredNotice = foregroundAttemptId ? createNoticeAttemptFromObligation(
-        ctx.stateRoot,
-        key,
-        readNoticeObligation(ctx.stateRoot, key),
-        null,
-        detectNoticeLocale((invokeInput == null ? void 0 : invokeInput.text) || (invokeInput == null ? void 0 : invokeInput.prompt) || "", ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language))
-      ) : null;
       return finish({
         // A no-event owner invoke is a legal maintenance/no-op after the
         // foreground Prompt already sent and removed its event. Keep the
@@ -10498,7 +10113,6 @@ async function handleInvoke(flags, ctx) {
         // an explicit event-id miss (which remains a foreground failure).
         status: selected.status,
         ...selected.status === "not_found" ? { current_event: false } : {},
-        ...(recoveredNotice == null ? void 0 : recoveredNotice.status) === "created" ? { marker: NOTICE_REQUIRED, notice: recoveredNotice } : {},
         ...historicalFlush || installFlush ? { flush: historicalFlush || installFlush } : {}
       });
     }
@@ -10561,10 +10175,27 @@ async function handleInvoke(flags, ctx) {
     const explicitProduct = safeName(flags.product, "");
     const explicitFramework = safeName(flags.framework, "");
     const product = codexFrozen ? event.product : explicitProduct && explicitProduct !== "unknown" ? explicitProduct : routeProduct && routeProduct !== "unknown" ? routeProduct : PRODUCT_BY_SKILL[skillname] || "unknown";
-    const framework = codexFrozen ? event.framework : explicitFramework && explicitFramework !== "unknown" ? explicitFramework : routeFramework && routeFramework !== "unknown" ? routeFramework : "unknown";
+    const settled = settleFramework({
+      codexFrozen,
+      frozenFramework: event.framework,
+      explicitFramework,
+      routeFramework,
+      skillname,
+      product,
+      projectRoot,
+      stateRoot: ctx.stateRoot,
+      projectKeyValue: key
+    });
+    const framework = settled.framework;
+    if (PERSISTED_FRAMEWORK_SOURCES.has(settled.source) && remaining(deadlineMono) > 60) {
+      try {
+        rememberFramework(ctx.stateRoot, key, product, framework, { source: settled.source });
+      } catch {
+      }
+    }
     let eventIsOutbox = false;
     try {
-      eventIsOutbox = listOutbox(ctx.stateRoot).some((path2) => (0, import_node_path12.basename)(path2) === `${event.event_id}.json`);
+      eventIsOutbox = listOutbox(ctx.stateRoot).some((path2) => (0, import_node_path14.basename)(path2) === `${event.event_id}.json`);
     } catch {
     }
     if (eventIsOutbox) {
@@ -10635,7 +10266,6 @@ async function handleInvoke(flags, ctx) {
       releaseCoordinationReservation(stageLock);
   }
   let flush = null;
-  let notice = null;
   if (outcome.status === "promoted" || outcome.status === "deduped") {
     const recoveredInstallPending = Boolean(recoveredInstall == null ? void 0 : recoveredInstall.eventId) && recoveredInstall.eventId !== event.event_id;
     const promptFlushOptions = {
@@ -10649,7 +10279,7 @@ async function handleInvoke(flags, ctx) {
       isEventEnabled: senderGate(projectRoot, key, ctx.env),
       // Sender persists the first-event ACK before it removes the Outbox
       // record.  Keep locale selection in this foreground transaction so the
-      // durable obligation and later notice use the host's language.
+      // legacy ACK bookkeeping retains the host language.
       _acknowledgePrompt: (_ackRoot, queuedEvent, queuedProjectKey) => acknowledgeNoticeObligation(
         ctx.stateRoot,
         queuedProjectKey || key,
@@ -10686,10 +10316,7 @@ async function handleInvoke(flags, ctx) {
     } else {
       acknowledgeRecoveredInstall(recoveredInstall, flush);
     }
-    const firstRecovery = await recoverFirstPrompt(projectRoot, foregroundIde, event.event_id, invokeInput, ctx);
-    if (((_a = firstRecovery == null ? void 0 : firstRecovery.notice) == null ? void 0 : _a.status) === "created")
-      notice = firstRecovery.notice;
-    const attemptId = typeof (invokeInput == null ? void 0 : invokeInput.notice_attempt_id) === "string" && /^[a-f0-9]{32}$/.test(invokeInput.notice_attempt_id) ? invokeInput.notice_attempt_id : null;
+    await recoverFirstPrompt(projectRoot, foregroundIde, event.event_id, invokeInput, ctx);
     const delivered = Array.isArray(flush == null ? void 0 : flush.sent_event_ids) && flush.sent_event_ids.includes(event.event_id);
     if (delivered) {
       const obligation = readNoticeObligation(ctx.stateRoot, key);
@@ -10701,220 +10328,75 @@ async function handleInvoke(flags, ctx) {
         });
       }
     }
-    if (attemptId && delivered && (notice == null ? void 0 : notice.status) !== "created") {
-      notice = writeNoticeReceipt(ctx.stateRoot, key, {
-        event_id: event.event_id,
-        sessionid: event.sessionid ?? null,
-        notice_attempt_id: attemptId,
-        notice_locale: detectNoticeLocale(event.text, ctx.env, (invokeInput == null ? void 0 : invokeInput.locale) || (invokeInput == null ? void 0 : invokeInput.language)),
-        created_at: Date.now()
-      });
-    }
   }
   return finish({
     ...outcome,
-    flush,
-    notice,
-    ...(notice == null ? void 0 : notice.status) === "created" ? { marker: NOTICE_REQUIRED } : {}
+    flush
   });
 }
 async function handleHostStop(flags, ctx) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
-  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
+  var _a;
+  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
   ctx = { ...ctx, deadlineMono };
-  const input = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks9.performance.now() + 1e3));
+  const input = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks8.performance.now() + 1e3));
   if (!input)
     return { status: "invalid", error: "stdin_json_required" };
   if (input.stop_hook_active === true)
-    return { status: "skipped", reason: "stop_hook_active" };
+    return { continue: true };
   const ide = safeName(flags.ide || input.ide, "unknown");
   if (!["cursor", "codebuddy", "claude", "codex"].includes(ide))
-    return { status: "skipped", reason: "unsupported_ide" };
-  const noticeStatusAtStop = (...args) => ["cursor", "claude"].includes(ide) ? { status: "pending_foreground" } : noticeStatus(...args);
-  if (ide === "cursor" && typeof input.status === "string" && input.status !== "completed") {
-    return { status: "skipped", reason: "stop_not_completed" };
-  }
-  const hostCwd = flags.cwd || input.cwd || ((_a = input.workspace_roots) == null ? void 0 : _a[0]) || ctx.env.CURSOR_PROJECT_DIR || ctx.env.CODEBUDDY_PROJECT_DIR || ctx.cwd;
-  const projectRoot = resolveProjectRoot({ explicitCwd: hostCwd, normalized: input, processCwd: hostCwd });
-  const key = projectKey(projectRoot);
+    return { continue: true };
+  if (ide === "cursor" && input.status && input.status !== "completed")
+    return { continue: true };
+  if (internalPromptReason(input.prompt || input.text || "", input, flags))
+    return { continue: true };
+  const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd || input.cwd || ((_a = input.workspace_roots) == null ? void 0 : _a[0]) || ctx.env.CURSOR_PROJECT_DIR || ctx.env.CODEBUDDY_PROJECT_DIR, normalized: input, processCwd: ctx.cwd });
   if (!nodeReportingAllowed(projectRoot, ctx.env, ide))
-    return { status: "disabled", error: "reporting_mode_not_node_v2" };
-  if (remaining(deadlineMono) > 150) {
-    await recoverInstallEventOnRuntimeEntry(projectRoot, ide, { ...ctx, cwd: hostCwd });
-  }
-  let existingNotice = readNoticeReceipt(ctx.stateRoot, key);
-  const noticeObligation = readNoticeObligation(ctx.stateRoot, key);
-  if (existingNotice.status !== "valid" && noticeObligation.status === "valid") {
-    createNoticeAttemptFromObligation(
-      ctx.stateRoot,
-      key,
-      noticeObligation,
-      null,
-      detectNoticeLocale(input.prompt || input.text || "", ctx.env, input.locale || input.language)
-    );
-    existingNotice = readNoticeReceipt(ctx.stateRoot, key);
-  }
-  const codexSelection = ide === "codex" ? selectCodexStopPrompt(ctx, projectRoot, key, input) : null;
-  const staged = codexSelection ? codexSelection.event : latestPendingPrompt(ctx.stateRoot, key, ctx.now(), ide);
-  const pendingOutputNotice = existingNotice.status === "valid" && existingNotice.value.status === "pending_output" ? existingNotice.value : null;
-  const pendingOutputAgeMs = pendingOutputNotice ? Math.max(0, Date.now() - pendingOutputNotice.created_at) : 0;
-  const pendingOutputRecoveryAllowed = Boolean(pendingOutputNotice) && (pendingOutputNotice.sessionid === null || Boolean(staged == null ? void 0 : staged.sessionid) && pendingOutputNotice.sessionid === staged.sessionid || pendingOutputAgeMs >= PENDING_OUTPUT_CROSS_SESSION_TTL_MS);
-  if (existingNotice.status === "valid" && ["pending_output", "awaiting_choice", "allow_pending", "deny_pending"].includes(existingNotice.value.status) && !staged) {
-    if (["pending_output", "awaiting_choice"].includes(existingNotice.value.status) && isReportingEnabled(projectRoot, ctx.env) && remaining(deadlineMono) > 150) {
-      await flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, ctx.now());
-    }
-    const rawSession = typeof input.session_id === "string" ? input.session_id : typeof input.conversation_id === "string" ? input.conversation_id : null;
-    const sessionid = rawSession ? deriveSessionId(projectRoot, ide, rawSession) : null;
-    const receiptSession = existingNotice.value.sessionid;
-    if (receiptSession && sessionid && receiptSession !== sessionid) {
-      return { status: "skipped", reason: "notice_session_mismatch" };
-    }
-    const status2 = noticeStatusAtStop(
-      ctx.stateRoot,
-      key,
-      existingNotice.value.notice_attempt_id,
-      sessionid
-    );
-    if (status2.status === "expired") {
-      const refreshedObligation = readNoticeObligation(ctx.stateRoot, key);
-      const recreated = createNoticeAttemptFromObligation(
-        ctx.stateRoot,
-        key,
-        refreshedObligation,
-        sessionid,
-        ((_b = refreshedObligation.value) == null ? void 0 : _b.notice_locale) || existingNotice.value.notice_locale
+    return { continue: true };
+  if (isReportingEnabled(projectRoot, ctx.env)) {
+    await releaseConsentedFirst(projectRoot, ctx);
+    const selected = ide === "codex" ? selectCodexStopPrompt(ctx, projectRoot, projectKey(projectRoot), input) : selectForegroundPrompt(ctx.stateRoot, projectKey(projectRoot), ctx.now(), ide);
+    if (selected.status === "selected") {
+      await handleInvoke(
+        {
+          cwd: projectRoot,
+          ide,
+          "event-id": selected.event.event_id,
+          skillname: "unknown",
+          product: "unknown",
+          framework: "unknown"
+        },
+        { ...ctx, inputOverride: input }
       );
-      if (recreated.status === "created") {
-        const freshStatus = noticeStatusAtStop(
-          ctx.stateRoot,
-          key,
-          recreated.receipt.notice_attempt_id,
-          sessionid
+    } else {
+      await flushHistoricalOutbox(ctx, projectRoot, projectKey(projectRoot), ide, deadlineMono, ctx.now());
+    }
+    if (ide === "codex") {
+      const key = projectKey(projectRoot);
+      const pending = listPending(ctx.stateRoot).map(readEvent).filter((event) => (event == null ? void 0 : event.ide) === "codex" && event.method === METHOD.PROMPT && event.__project_key === key && isEventReportingEnabled(projectRoot, event, ctx.env) && event.time <= ctx.now() && ctx.now() - event.time <= OUTBOX_RECOVERY_TTL_MS).sort((a, b) => a.time - b.time).slice(0, 3);
+      for (const event of pending) {
+        if (remaining(deadlineMono) < 150)
+          break;
+        await handleInvoke(
+          {
+            cwd: projectRoot,
+            ide,
+            "event-id": event.event_id,
+            skillname: "unknown",
+            product: "unknown",
+            framework: "unknown"
+          },
+          { ...ctx, inputOverride: { cwd: projectRoot, ide } }
         );
-        if (freshStatus.status === "required")
-          return renderHostNotice(ide, recreated.receipt.notice_locale);
-        if (freshStatus.status === "retry")
-          return { status: "retry", marker: freshStatus.marker };
-      }
-      return { status: "skipped", reason: "notice_attempt_expired" };
-    }
-    if (status2.status === "required")
-      return renderHostNotice(ide, existingNotice.value.notice_locale);
-    if (status2.status === "already_awaiting") {
-      if (ide === "codex") {
-        return renderHostNotice(ide, existingNotice.value.notice_locale);
-      }
-      return { status: "skipped", reason: "notice_choice_pending" };
-    }
-    if (status2.status === "retry")
-      return { status: "retry", marker: status2.marker };
-    return { status: "skipped", reason: "notice_choice_pending" };
-  }
-  if (codexSelection && codexSelection.status !== "selected") {
-    const flush = await flushHistoricalOutbox(ctx, projectRoot, key, ide, deadlineMono, ctx.now());
-    return { status: codexSelection.status, ...flush ? { flush } : {} };
-  }
-  const sourceText = input.prompt || input.text || (staged == null ? void 0 : staged.text) || "";
-  const routeHint = safeName((staged == null ? void 0 : staged.__route_hint) || input.route_hint || flags.route_hint, "");
-  const explicitOwner = Object.prototype.hasOwnProperty.call(PRODUCT_BY_SKILL, routeHint) ? routeHint : "unknown";
-  const explicitProduct = explicitOwner !== "unknown" ? safeName(flags.product, PRODUCT_BY_SKILL[explicitOwner] || "unknown") : "unknown";
-  const attribution = { skillname: explicitOwner, product: explicitProduct };
-  const framework = ide === "codex" ? "unknown" : inferHostFramework(sourceText);
-  const attemptId = (0, import_node_crypto11.randomUUID)().replaceAll("-", "");
-  const invokeFlags = {
-    ...flags,
-    cwd: hostCwd,
-    skillname: safeName(flags.skillname, attribution.skillname),
-    product: safeName(flags.product, attribution.product),
-    framework: safeName(flags.framework, framework)
-  };
-  if (staged == null ? void 0 : staged.event_id)
-    invokeFlags["event-id"] = staged.event_id;
-  const invokeInput = { ...input, cwd: hostCwd, ide, notice_attempt_id: attemptId };
-  if (ide === "codebuddy" && (staged == null ? void 0 : staged.event_id)) {
-    delete invokeInput.session_id;
-    delete invokeInput.raw_session_id;
-    delete invokeInput.conversation_id;
-    delete invokeInput.thread_id;
-  }
-  let result = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (remaining(deadlineMono) <= 150)
-      break;
-    result = await handleInvoke(invokeFlags, {
-      ...ctx,
-      cwd: hostCwd,
-      inputOverride: invokeInput,
-      skipInstallRecovery: true,
-      // This is recovery, not a model-visible foreground response. Do not
-      // consume the foreground presentation budget in a hidden Stop.
-      deferNoticeClaim: true
-    });
-    if (((_c = result == null ? void 0 : result.notice) == null ? void 0 : _c.status) === "created")
-      break;
-    if (pendingOutputRecoveryAllowed && pendingOutputNotice && ((_d = result == null ? void 0 : result.notice) == null ? void 0 : _d.status) === "already_present") {
-      const recovered = noticeStatusAtStop(
-        ctx.stateRoot,
-        key,
-        pendingOutputNotice.notice_attempt_id,
-        pendingOutputNotice.sessionid
-      );
-      if (recovered.status === "required") {
-        return renderHostNotice(ide, pendingOutputNotice.notice_locale);
-      }
-      if (recovered.status === "retry")
-        return { status: "retry", marker: recovered.marker };
-      if (recovered.status === "already_awaiting" && ide === "codex") {
-        return renderHostNotice(ide, pendingOutputNotice.notice_locale);
       }
     }
-    const status2 = noticeStatusAtStop(ctx.stateRoot, key, attemptId, (result == null ? void 0 : result.sessionid) || (staged == null ? void 0 : staged.sessionid) || null);
-    if (status2.status === "required") {
-      result = { ...result, notice: { status: "created", recovered: true } };
-      break;
-    }
-    if (attempt === 2 || (result == null ? void 0 : result.status) === "disabled")
-      break;
-    const sleepMs = Math.min(100 * (attempt + 1), Math.max(0, remaining(deadlineMono) - 150));
-    if (sleepMs <= 0)
-      break;
-    await new Promise((resolve5) => setTimeout(resolve5, sleepMs));
+  } else {
+    await handleInvoke({ cwd: projectRoot, ide, skillname: "unknown" }, { ...ctx, inputOverride: input });
   }
-  if (((_e = result == null ? void 0 : result.notice) == null ? void 0 : _e.status) === "not_ready" && !pendingOutputRecoveryAllowed) {
-    const delivered = Array.isArray((_f = result == null ? void 0 : result.flush) == null ? void 0 : _f.sent_event_ids) && result.flush.sent_event_ids.includes(result.event_id);
-    if (delivered || (result == null ? void 0 : result.status) === "promoted" || (result == null ? void 0 : result.status) === "deduped") {
-      return { status: "sent", event_id: result.event_id };
-    }
-  }
-  if (!["created", "already_present", "not_ready"].includes((_g = result == null ? void 0 : result.notice) == null ? void 0 : _g.status)) {
-    return {
-      status: (result == null ? void 0 : result.status) || "not_found",
-      ...(result == null ? void 0 : result.event_id) ? { event_id: result.event_id } : {},
-      ...(result == null ? void 0 : result.error) ? { error: result.error } : {},
-      reason: "notice_not_created"
-    };
-  }
-  if (pendingOutputRecoveryAllowed && pendingOutputNotice && ["already_present", "not_ready"].includes((_h = result == null ? void 0 : result.notice) == null ? void 0 : _h.status)) {
-    const recovered = noticeStatusAtStop(
-      ctx.stateRoot,
-      key,
-      pendingOutputNotice.notice_attempt_id,
-      pendingOutputNotice.sessionid
-    );
-    if (recovered.status === "required") {
-      return renderHostNotice(ide, pendingOutputNotice.notice_locale);
-    }
-    if (recovered.status === "retry")
-      return { status: "retry", marker: recovered.marker };
-  }
-  const status = noticeStatusAtStop(ctx.stateRoot, key, attemptId, result.sessionid || null);
-  if (status.status !== "required")
-    return { status: "sent", event_id: result.event_id };
-  const noticeLocale = (_i = readNoticeReceipt(ctx.stateRoot, key).value) == null ? void 0 : _i.notice_locale;
-  return renderHostNotice(ide, noticeLocale);
+  return { continue: true };
 }
 async function handleNoticeStatus(flags, ctx) {
-  const input = await readLocalInput(ctx, import_node_perf_hooks9.performance.now() + 250);
+  const input = await readLocalInput(ctx, import_node_perf_hooks8.performance.now() + 250);
   if (!input || typeof input.notice_attempt_id !== "string")
     return { status: "not_found" };
   const projectRoot = resolveProjectRoot({ explicitCwd: flags.cwd, normalized: input, processCwd: ctx.cwd });
@@ -10923,8 +10405,8 @@ async function handleNoticeStatus(flags, ctx) {
   return noticeStatus(ctx.stateRoot, key, input.notice_attempt_id, sessionid);
 }
 async function handleForegroundNotice(flags, ctx) {
-  const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks9.performance.now() + 500;
-  const input = await readLocalInput(ctx, Math.min(deadlineMono, import_node_perf_hooks9.performance.now() + 250));
+  var _a;
+  const input = await readLocalInput(ctx, import_node_perf_hooks8.performance.now() + 250);
   if (!input)
     return { status: "not_found" };
   const ide = safeName(flags.ide || input.ide, "unknown");
@@ -10935,62 +10417,12 @@ async function handleForegroundNotice(flags, ctx) {
     normalized: input,
     processCwd: ctx.cwd
   });
-  const key = projectKey(projectRoot);
-  if (!nodeReportingAllowed(projectRoot, ctx.env, ide)) {
-    return { status: "disabled", error: "reporting_mode_not_node_v2" };
-  }
-  if (!isReportingEnabled(projectRoot, ctx.env))
-    return { status: "disabled" };
-  const preference = readPreferenceState(projectRoot);
-  if (preference.status === "valid" && (preference.value.continuation_choice === "allowed" || preference.value.continuation_choice === "denied" || preference.value.all_reporting_disabled === true)) {
-    return { status: "skipped", reason: "notice_terminal" };
-  }
-  const obligation = readNoticeObligation(ctx.stateRoot, key);
-  if (obligation.status !== "valid" || obligation.value.acknowledged !== true || obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status)) {
-    return { status: "skipped", reason: "notice_not_ready" };
-  }
-  let receipt = readNoticeReceipt(ctx.stateRoot, key);
-  if (receipt.status !== "valid") {
-    const created = createNoticeAttemptFromObligation(
-      ctx.stateRoot,
-      key,
-      obligation,
-      null,
-      detectNoticeLocale(input.text || input.prompt || "", ctx.env, input.locale || input.language)
-    );
-    if (created.status !== "created") {
-      return { status: "retry", marker: CONTROL_RETRY, reason: "notice_receipt_unavailable" };
-    }
-    receipt = readNoticeReceipt(ctx.stateRoot, key);
-  }
-  if (receipt.status !== "valid" || !["pending_output", "awaiting_choice"].includes(receipt.value.status)) {
-    return { status: "skipped", reason: "notice_not_pending" };
-  }
-  if (Number.isFinite(receipt.value.choice_next_retry_at) && receipt.value.choice_next_retry_at > Date.now()) {
-    return { status: "retry", marker: CONTROL_RETRY, reason: "notice_choice_retry_backoff" };
-  }
-  const claimed = noticeStatus(
-    ctx.stateRoot,
-    key,
-    receipt.value.notice_attempt_id,
-    null,
-    {
-      renderer: "codebuddy-foreground",
-      maxAttempts: 2,
-      ide: "codebuddy",
-      noticeLocale: foregroundNoticeLocale(
-        input.text || input.prompt,
-        receipt.value.notice_locale,
-        input.locale || input.language
-      )
-    }
-  );
-  if (claimed.status === "required") {
-    return renderHostNotice("codebuddy", claimed.notice_locale || receipt.value.notice_locale);
-  }
-  if (claimed.status === "retry")
-    return { status: "retry", marker: claimed.marker || CONTROL_RETRY };
-  return { status: "skipped", reason: claimed.status === "exhausted" ? "notice_attempt_exhausted" : "notice_not_required" };
+  if (!nodeReportingAllowed(projectRoot, ctx.env, ide) || !canRequestExperienceConsent(projectRoot, ctx.env) || isReportingEnabled(projectRoot, ctx.env))
+    return { status: "skipped" };
+  if ((_a = readConsentState(projectRoot, projectKey(projectRoot)).value) == null ? void 0 : _a.pending_choice)
+    return { status: "skipped" };
+  const claim = claimConsentNotice(projectRoot, projectKey(projectRoot), { ide, now: ctx.now });
+  return claim.status === "required" ? renderHostNotice(ide, claim.notice_locale) : { status: "skipped" };
 }
 function selectPendingForSession(stateRoot, key, sessionid, now = Date.now()) {
   const candidates = [];
@@ -11021,18 +10453,6 @@ function renderHostNotice(ide, locale = "zh-CN") {
     };
   }
   return { continue: true, systemMessage: noticeText };
-}
-function createNoticeAttemptFromObligation(stateRoot, key, obligation, sessionid = null, locale = null) {
-  if ((obligation == null ? void 0 : obligation.status) !== "valid" || obligation.value.acknowledged !== true || obligation.value.first_event_expired === true || ["allowed", "denied", "defaulted", "expired"].includes(obligation.value.notice_status))
-    return { status: "not_needed" };
-  const attempt = (0, import_node_crypto11.randomUUID)().replaceAll("-", "");
-  return writeNoticeReceipt(stateRoot, key, {
-    event_id: obligation.value.first_event_id,
-    sessionid,
-    notice_attempt_id: attempt,
-    notice_locale: obligation.value.notice_locale || locale || "zh-CN",
-    created_at: Date.now()
-  });
 }
 function parseHookResults(raw) {
   if (typeof raw !== "string")
@@ -11125,9 +10545,9 @@ async function handleInstall(flags, ctx) {
   const reusable = findReusableInstallEvent(ctx.stateRoot, key, installedIdes, version, generation);
   if (reusable == null ? void 0 : reusable.__install_generation)
     generation = reusable.__install_generation;
-  const eventId = (reusable == null ? void 0 : reusable.event_id) || (typeof flags["event-id"] === "string" ? flags["event-id"] : (0, import_node_crypto11.randomUUID)());
+  const eventId = (reusable == null ? void 0 : reusable.event_id) || (typeof flags["event-id"] === "string" ? flags["event-id"] : (0, import_node_crypto12.randomUUID)());
   const legacyIdentityPaths = [
-    typeof flags["legacy-identity-path"] === "string" ? flags["legacy-identity-path"] : (0, import_node_path12.join)((0, import_node_os3.homedir)(), ".mcp", "identifier")
+    typeof flags["legacy-identity-path"] === "string" ? flags["legacy-identity-path"] : (0, import_node_path14.join)((0, import_node_os3.homedir)(), ".mcp", "identifier")
   ];
   maintainIdentityState(ctx.stateRoot);
   const identity = identityFields({
@@ -11286,7 +10706,7 @@ async function handleCaptureSdkAppId(flags, ctx) {
   const raw = await readStdinJson({
     stream: ctx.stdin,
     maxBytes: 16 * 1024,
-    deadlineMono: import_node_perf_hooks9.performance.now() + 2e3
+    deadlineMono: import_node_perf_hooks8.performance.now() + 2e3
   });
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return { status: "invalid", error: "invalid_json" };
@@ -11312,6 +10732,7 @@ async function handleCaptureSdkAppId(flags, ctx) {
   const event = makeEnvelope({
     method: METHOD.EVENT,
     text: EVENT_TYPES.SDKAPPID_COLLECTED,
+    ...consentFields(projectRoot),
     sdkappid,
     ...identityFields({ stateRoot: ctx.stateRoot, ...ctx.noEphemeralIdentity ? { allowEphemeral: false } : {} }),
     skillname: safeName(raw.skillname, void 0),
@@ -11354,9 +10775,10 @@ async function handleEvent(flags, ctx) {
   }
   const key = projectKey(projectRoot);
   const event = makeEnvelope({
-    event_id: typeof flags["event-id"] === "string" ? flags["event-id"] : (0, import_node_crypto11.randomUUID)(),
+    event_id: typeof flags["event-id"] === "string" ? flags["event-id"] : (0, import_node_crypto12.randomUUID)(),
     method: METHOD.EVENT,
     text: flags.text,
+    ...consentFields(projectRoot),
     ...identityFields({ stateRoot: ctx.stateRoot, ...ctx.noEphemeralIdentity ? { allowEphemeral: false } : {} }),
     skillname: safeName(flags.skillname, void 0),
     product: safeName(flags.product, void 0),
@@ -11365,6 +10787,8 @@ async function handleEvent(flags, ctx) {
     __project_key: key,
     __scope: scope
   });
+  if (!isEventReportingEnabled(projectRoot, event, ctx.env))
+    return { status: "disabled" };
   validateEvent(event);
   const written = writeOutboxWithProducerLease(ctx, key, event, { timeoutMs: 120 });
   if (written.status === "disabled" || written.status === "retryable")
@@ -11387,23 +10811,31 @@ async function handlePreference(flags, ctx) {
   if (!["on", "off"].includes(normalized))
     return { status: "invalid", error: "enabled_must_be_on_or_off" };
   const enabled = normalized === "on";
+  const all = flags.scope === "all";
+  if (flags.scope && !["experience", "all"].includes(flags.scope))
+    return { status: "invalid", error: "invalid_scope" };
+  const result = setReportingPreference(projectRoot, enabled, {
+    purgePending: !enabled,
+    ...all ? { allReportingDisabled: !enabled } : {}
+  });
+  if (result.action !== "updated")
+    return { status: "retryable", error: result.reason };
   const key = projectKey(projectRoot);
-  const notice = readNoticeReceipt(ctx.stateRoot, key);
-  if (notice.status === "valid" && ["awaiting_choice", "allow_pending", "deny_pending"].includes(notice.value.status)) {
-    const label = enabled ? continuation_notice_default.allow_label : continuation_notice_default.deny_label;
-    const resumed = await consumeContinuationChoice(projectRoot, label, {
-      stateRoot: ctx.stateRoot,
-      source: "python",
-      purge: () => purgeWithDeferred(ctx.stateRoot, key, purgeProjectEvents),
-      timeoutMs: 120
-    });
-    if ((resumed == null ? void 0 : resumed.control) === true)
-      return { ...resumed, enabled };
+  const purge = enabled ? null : purgeWithDeferred(
+    ctx.stateRoot,
+    key,
+    all ? purgeProjectEvents : purgeProjectExperienceEvents
+  );
+  if (!enabled) {
+    updateConsentState(projectRoot, key, (value) => {
+      if (!value)
+        return { status: "not_found" };
+      delete value.first_event;
+      delete value.pending_choice;
+      value.first_status = "discarded";
+      return { value };
+    }, { now: ctx.now });
   }
-  const result = setReportingPreference(projectRoot, enabled);
-  const purge = enabled ? null : purgeWithDeferred(ctx.stateRoot, key, purgeProjectPromptEvents);
-  if (!enabled && (purge == null ? void 0 : purge.busy) === 0)
-    setReportingPreference(projectRoot, false, { purgePending: false });
   return { status: result.action, enabled, purge };
 }
 function normalizeLegacy(raw, projectRoot) {
@@ -11434,7 +10866,7 @@ function normalizeLegacy(raw, projectRoot) {
     if (allow.has(internal))
       event[internal] = value;
   }
-  event.event_id = typeof event.event_id === "string" ? event.event_id : (0, import_node_crypto11.randomUUID)();
+  event.event_id = typeof event.event_id === "string" ? event.event_id : (0, import_node_crypto12.randomUUID)();
   event.time = typeof event.time === "number" ? event.time : Date.now();
   event.platform = PLATFORM;
   event.client_generation = CLIENT_GENERATION_LEGACY;
@@ -11467,18 +10899,27 @@ async function handleSend(flags, ctx) {
   const raw = await readStdinJson({
     stream: ctx.stdin,
     maxBytes: 1024 * 1024,
-    deadlineMono: import_node_perf_hooks9.performance.now() + 2e3
+    deadlineMono: import_node_perf_hooks8.performance.now() + 2e3
   });
   if (!raw)
     return { status: "invalid", error: "invalid_json" };
   const event = normalizeLegacy(raw, projectRoot);
+  if (event.method === METHOD.PROMPT) {
+    const internal = internalPromptReason(event.text, raw, flags);
+    if (internal)
+      return { status: "skipped", reason: internal };
+    if (isNoticeReplayText(event.text) || ["allow", "deny", "ambiguous"].includes(raw.control_choice)) {
+      return { status: "skipped", reason: "control_requires_prompt_entry" };
+    }
+  }
+  Object.assign(event, consentFields(projectRoot));
   if (!nodeReportingAllowed(projectRoot, ctx.env, safeName(event.ide || flags.ide, "unknown"))) {
     return { status: "disabled", error: "reporting_mode_not_node_v2" };
   }
   validateLegacyEvent(event);
   if (!event.__scope)
     return { status: "invalid", error: "invalid_scope" };
-  if (!isReportingEnabledForScope(projectRoot, event.__scope, ctx.env))
+  if (!isEventReportingEnabled(projectRoot, event, ctx.env))
     return { status: "disabled" };
   if (event.method === METHOD.PROMPT) {
     const explicitSdkAppId = event.sdkappid;
@@ -11504,7 +10945,7 @@ async function handleSend(flags, ctx) {
   }
   if (!event.useragent) {
     if (flags["dry-run"] === true || flags["dry-run"] === "true") {
-      const existing = peekIdentity((0, import_node_path12.join)(ctx.stateRoot, "identity.json"));
+      const existing = peekIdentity((0, import_node_path14.join)(ctx.stateRoot, "identity.json"));
       if (existing) {
         event.useragent = existing;
         event.identity_scope = "device";
@@ -11535,11 +10976,11 @@ async function handleSend(flags, ctx) {
 async function runCli(argv = process.argv.slice(2), opts = {}) {
   const { command, flags } = parseArgs(argv);
   const foregroundBudget = command === "invoke" || command === "host-stop" || command === "foreground-notice" || command === "stage-prompt" && flags["foreground-send"] === true ? FOREGROUND_TOTAL_BUDGET_MS : null;
-  const deadlineMono = opts.deadlineMono ?? (foregroundBudget === null ? void 0 : import_node_perf_hooks9.performance.now() + foregroundBudget);
+  const deadlineMono = opts.deadlineMono ?? (foregroundBudget === null ? void 0 : import_node_perf_hooks8.performance.now() + foregroundBudget);
   let hookInput;
   let cursorHookDeadline;
   if (command === "hook" && flags.ide === "cursor") {
-    cursorHookDeadline = deadlineMono ?? import_node_perf_hooks9.performance.now() + HOOK_TOTAL_BUDGET_MS;
+    cursorHookDeadline = deadlineMono ?? import_node_perf_hooks8.performance.now() + HOOK_TOTAL_BUDGET_MS;
     hookInput = await readStdinJson({ stream: opts.stdin ?? process.stdin, deadlineMono: cursorHookDeadline });
     const normalized = parseAdapter("cursor", hookInput);
     if (normalized && isNoticeReplayText(normalized.prompt)) {
@@ -11563,6 +11004,17 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
     stateRootBinding: runtimeRoot,
     noEphemeralIdentity: runtimeRoot.bound === true && isCodexInvocation(flags),
     flushOutbox: opts.flushOutbox || (async (root, flushOpts = {}) => {
+      if (isCodexInvocation(flags) && !["host-stop", "install"].includes(command) && (opts.env ?? process.env).CODEX_SANDBOX_NETWORK_DISABLED === "1") {
+        return {
+          sent: 0,
+          sent_event_ids: [],
+          retried: 0,
+          rejected: 0,
+          skipped: 0,
+          errors: [],
+          deferred: "network_sandbox_disabled"
+        };
+      }
       const sender = await Promise.resolve().then(() => (init_sender(), sender_exports));
       return sender.flushOutbox(root, { env: opts.env ?? process.env, ...flushOpts });
     }),

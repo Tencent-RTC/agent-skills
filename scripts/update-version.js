@@ -11,6 +11,7 @@
  *
  * 会统一把下列文件的版本号更新为 <newVersion>：
  *   - package.json                       (JSON 的 "version" 字段)
+ *   - package-lock.json                  (顶层及 packages[""].version)
  *   - skills/trtc/.package-version       (安装后 reporting helper 使用)
  *   - skills/trtc/SKILL.md               (YAML frontmatter 的 metadata.version)
  *   - skills/trtc-chat/SKILL.md          (同上)
@@ -36,6 +37,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
  */
 const TARGETS = [
   { path: "package.json", type: "json" },
+  { path: "package-lock.json", type: "json" },
   { path: "skills/trtc/.package-version", type: "text" },
   { path: "skills/trtc/SKILL.md", type: "metadata-version" },
   { path: "skills/trtc-call/SKILL.md", type: "metadata-version" },
@@ -58,6 +60,10 @@ function updateJson(absPath, relPath, newVersion) {
   const json = JSON.parse(content);
   const currentVersion = json.version;
   json.version = newVersion;
+  // Lockfile v2/v3 repeats the root package version; dependencies keep theirs.
+  if (json.lockfileVersion && json.packages && json.packages[""]) {
+    json.packages[""].version = newVersion;
+  }
   fs.writeFileSync(absPath, JSON.stringify(json, null, 2) + os.EOL);
   console.log(`${relPath} 版本号已从 ${currentVersion} 更新为 ${newVersion}`);
 }

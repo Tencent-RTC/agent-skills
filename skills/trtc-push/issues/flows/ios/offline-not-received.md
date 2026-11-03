@@ -1,3 +1,16 @@
+---
+doc_source:
+  - faq-ios-normal-msg-offline
+  - ts-offline-chain
+  - ts-chain-cert
+  - faq-ios-cert-expired
+  - faq-ios-click-ext
+  - faq-ios-no-display
+  - faq-ios-receipt
+  - ts-by-type
+doc_revision: 84c0fc9f
+---
+
 # iOS 离线推送收不到 / 不展示 / 证书 / 点击排查流程
 
 ## 与 MCP 的关系（必读）
@@ -11,6 +24,7 @@
 | `stage-0-investigation-plan` | 排查计划确认（开场闸口） | plan |
 | `stage-1-console-validity` | 控制台有效性（服务 + APNs 证书） | verify |
 | `stage-2-scenario` | 测法与场景 | collect |
+| `stage-2b-online-check` | 在线分支（stage-2 选 `channel_path=online` 时进入；只查前台开关 / 发送端推送信息 / `onRecvPushMessage`，不涉及厂商证书与 token 绑定） | verify |
 | `stage-3-config-alignment` | 配置对齐（Bundle ID / businessID / 开发生产） | verify |
 | `stage-4-register-observation` | registerPush 观测 | observe |
 | `stage-5-token-binding` | 排查工具：已绑定的推送 token | observe |
@@ -37,6 +51,7 @@ card，再回到主链补查；card 入口须回补 stage-1 与 stage-3。
 
 | 现象 | 走哪条 |
 |------|--------|
+| App 在前台才收不到通知 / `onRecvPushMessage` 不触发（在线通道） | `stage-2b-online-check`（见 `../../cards/common/online-not-received.md`） |
 | 「收不到 / 杀进程无 APNs / 离线不通」，尚说不清卡在哪 | `troubleshoot-ios` 主链 stage-0→6 |
 | 换证失效、证书/Token 异常、明确错误码 | 证书 / Token 子链（下方）+ 回补 stage-1、stage-3 |
 | 控制台/回执成功但不弹、角标异常 | 展示异常子链（建议仍做 stage-1 服务校验） |
@@ -59,7 +74,9 @@ card，再回到主链补查；card 入口须回补 stage-1 与 stage-3。
 
 先回补 stage-1（证书有效），再：
 
-1. 证书环境 = App 运行环境（校验提醒）。
+1. 证书环境 = App 运行环境（校验提醒）：Xcode 直接 Run 的 Debug 包走开发环境，Archive 发布包走生产环境；控制台证书或 p8 的环境、服务端推送环境须与该包一致。
+   普通消息收不到离线推送时，先切到生产环境测试：开发环境向苹果申请 deviceToken 可能失败（官网《普通消息为什么收不到离线推送？》）。
+   证书过期时在控制台编辑更新原证书，不要删除后重建（证书 ID 会变，旧版本需更新配置并重新发版）；改过 Bundle ID 要新增对应证书，不要替换旧证书。
 2. P8：Key ID / Team ID / Bundle ID；P12：密码与环境（校验提醒）。
 3. `businessID` 已同步到客户端（校验提醒）。
 4. 真机重测（观测）。
@@ -73,7 +90,7 @@ card，再回到主链补查；card 入口须回补 stage-1 与 stage-3。
 
 1. 建议校验 stage-1 服务状态。
 2. 用 TaskId / APNs 回执确认已送达；未送达回主链查证书与绑定。
-3. 通知权限、专注模式、通知样式。
+3. 通知权限、通知样式（锁屏 / 通知中心 / 横幅 / 定时送达）、专注模式是否静音该应用（官网《iOS 已收到推送但没有看到通知，如何检查？》）。
 4. 区分 App 状态；角标 → `../../flows/common/badge.md`；统计 → `../../cards/ios/stats-extension.md`。
 
 ## 点击跳转子链
@@ -88,6 +105,7 @@ card，再回到主链补查；card 入口须回补 stage-1 与 stage-3。
 
 | 分支 | 判断信号 | 处理动作 |
 |------|----------|----------|
+| 在线通道收不到 | App 在前台才收不到通知，或 `onRecvPushMessage` 不触发 | MCP stage-2 选 `channel_path=online` → `stage-2b-online-check`；知识见 `../../cards/common/online-not-received.md` |
 | 服务未开通 / 到期或证书无效 | 插件关闭、套餐过期、APNs 证无效 | `../../cards/common/console-validity-gate.md`；MCP stage-1 |
 | 测法错误 | 模拟器、只在前台 | MCP stage-2 校正 |
 | 配置不一致 | Bundle ID / businessID / 环境 | MCP stage-3 + `certificate-businessid.md` |

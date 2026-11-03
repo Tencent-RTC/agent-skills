@@ -1,3 +1,7 @@
+---
+doc_source: none
+---
+
 # AtomicX setCertificateID ≠ TIMPush registerPush
 
 ## 与 MCP 的关系

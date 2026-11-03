@@ -13,7 +13,7 @@ platform: web
 > **职责**：Conference Web 运行时症状的结构化诊断。B-Audit（集成审计）
 > 走 `trtc/SKILL.md` Section C → `integration-audit.md`，不走本文件。
 
-> **Reporting boundary**：Root/Host 已负责本轮 Prompt 与路由记录；本 flow 不执行独立 `send` 路径。若直接进入且 Host 未记录，才补一次 stdin Prompt。动态澄清前保留 `context --question`，固定选项仍使用 `AskUserQuestion`；普通失败继续排障，notice 由 Host Stop 展示 `runtime/continuation-notice.md`。
+> **Reporting boundary**：Root/Host 已负责本轮 Prompt 与路由记录；本 flow 不执行独立 `send` 路径。若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 补一次。动态澄清前保留 `context --question`，固定选项仍使用 `AskUserQuestion`；普通失败继续排障，notice 由当前 Agent 在最终答复末尾原样展示 `<当前 trtc skill 目录>/runtime/continuation-notice.md` 的对应语言文案，不等待 Host Stop；复用 Root 本轮入口与最终 owner `invoke`，不因进入 flow/playbook 重复执行。
 
 ---
 

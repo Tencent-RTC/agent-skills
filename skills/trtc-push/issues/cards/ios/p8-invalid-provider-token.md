@@ -1,3 +1,9 @@
+---
+doc_source:
+  - faq-ios-403
+doc_revision: c5bcd8f8
+---
+
 # APNs P8 InvalidProviderToken
 
 ## 与 MCP 的关系

@@ -134,6 +134,11 @@ test("Python shim uses the bound Node even when PATH points at a failing node", 
     const boundState = path.join(root, "state");
     fs.mkdirSync(boundState, { recursive: true });
     fs.mkdirSync(path.join(project, ".trtc-skill-state"), { recursive: true });
+    // Isolate runtime binding from first-use consent. Only a previously
+    // explicit agreement permits this test's foreground send path.
+    fs.writeFileSync(path.join(project, ".trtc-skill-state/preference.json"), JSON.stringify({
+      continuation_choice: "allowed", continuation_choice_version: 1, prompt_reporting_enabled: true,
+    }));
     fs.writeFileSync(path.join(project, ".trtc-skill-state", "host-state-root.json"), JSON.stringify({
       schema_version: 2,
       bindings: { codex: { state_root: boundState, generation, status: "ready" } },
