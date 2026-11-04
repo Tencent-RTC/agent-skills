@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "baseline": "2026-10-28 imperative UIKit; verify actual source before editing",
+  "tasks": {
+    "messages": {
+      "guide": "references/source/modules/messages.md",
+      "primary": [
+        {"path": "components/messagelist/MessageListView.swift", "symbols": ["MessageListView", "hostVisibilityDidChange"], "reason": "消息组件门面、公开扩展和可见性入口"},
+        {"path": "components/messagelist/view/MessageListViewImpl.swift", "symbols": ["MessageListViewImpl"], "reason": "列表渲染、滚动、可见性与更新消费"},
+        {"path": "components/messagelist/viewmodel/MessageListViewModel.swift", "symbols": ["MessageListViewModel"], "reason": "状态订阅、历史加载和业务动作"},
+        {"path": "components/messagelist/MessageConfig.swift", "symbols": ["ChatMessageListConfig"], "reason": "消息布局和外观配置存储；缺省再看对应config扩展"}
+      ],
+      "next": "按消息指南分支只读相关cell/布局/缓存；布局和状态入口明确后停止扩展。"
+    },
+    "custom-message": {
+      "guide": "references/source/modules/messages.md",
+      "primary": [
+        {"path": "components/messagelist/MessageListView.swift", "symbols": ["registerCustomMessageCell", "MessageContentView"], "reason": "公开注册、摘要及内容协议"},
+        {"path": "components/messagelist/cell/MessageCellRegistry.swift", "symbols": ["MessageCellRegistry"], "reason": "内部匹配、工厂和业务协议优先级"},
+        {"path": "components/common/MessageListHelper.swift", "symbols": ["CustomMessageSummaryRegistry"], "reason": "消息摘要的真实消费，区别内容view"}
+      ],
+      "next": "发送payload问题才读input；会话摘要显示问题才联动conversations。"
+    },
+    "input": {
+      "guide": "references/source/modules/input.md",
+      "primary": [
+        {"path": "components/messageinput/view/MessageInputViewImpl.swift", "symbols": ["requestSendText", "syncBottomAreaHeight"], "reason": "工具栏/键盘布局、输入事件和发送接线"},
+        {"path": "components/messageinput/view/MessageInputMorePanel.swift", "symbols": ["setupActions", "didSelectItemAt"], "reason": "更多动作过滤/customizer和点击的真实消费者"},
+        {"path": "components/messageinput/viewmodel/MessageInputViewModel.swift", "symbols": ["sendTextMessage", "createSendMessageOption"], "reason": "生成payload与发送选项、结果及草稿处理"},
+        {"path": "components/messageinput/config/MessageInputConfig+Defaults.swift", "symbols": ["ChatMessageInputConfig", "actionCustomizer"], "reason": "开关默认值及公开初始化"}
+      ],
+      "next": "只改按钮时无需读完整ASR；键盘/高度联动再读navigation。"
+    },
+    "recording": {
+      "guide": "references/source/modules/input.md",
+      "primary": [
+        {"path": "components/messageinput/view/MessageInputMediaCoordinator.swift", "symbols": ["MessageInputMediaCoordinator"], "reason": "录音与转文字业务入口"},
+        {"path": "components/messageinput/asr/RealtimeAsrRecognizer.swift", "symbols": ["RealtimeAsrRecognizer"], "reason": "prime/begin/finish/cancel的识别状态"},
+        {"path": "components/ai/impl/asr/RealtimeASRImpl.swift", "symbols": ["RealtimeASRImpl"], "reason": "底层会话生命周期、取消/重启与缓冲"}
+      ],
+      "next": "只有会话/采集问题才读同模块Session/AudioEngine；不先猜测SDK语言或超时契约。"
+    },
+    "conversations": {
+      "guide": "references/source/modules/conversations.md",
+      "primary": [
+        {"path": "components/conversationlist/viewmodel/ConversationListViewModel.swift", "symbols": ["ConversationListViewModel"], "reason": "会话Store订阅、加载、动作"},
+        {"path": "components/conversationlist/view/ConversationCell.swift", "symbols": ["ConversationCell"], "reason": "会话行绑定、未读图标和复用"},
+        {"path": "components/conversationlist/utils/ConversationCellFormatter.swift", "symbols": ["ConversationCellFormatter"], "reason": "摘要、免打扰与@标签格式"},
+        {"path": "components/conversationlist/view/ConversationListViewImpl.swift", "symbols": ["ConversationListViewImpl"], "reason": "侧滑/更多动作与列表接线"}
+      ],
+      "next": "免打扰枚举改动联动settings；Home总未读角标属于宿主navigation分支。"
+    },
+    "contacts": {
+      "guide": "references/source/modules/contacts.md",
+      "primary": [
+        {"path": "page/impl/ContactsPageImpl.swift", "symbols": ["ContactsPageImpl"], "reason": "联系人页面装配与宿主回调"},
+        {"path": "components/contactlist/ContactListView.swift", "symbols": ["ContactListView", "ContactCustomItem"], "reason": "列表门面与公开顶部入口协议"},
+        {"path": "components/contactlist/view/ContactListViewImpl.swift", "symbols": ["ContactListViewImpl"], "reason": "顶部行、联系人列表及点击消费"},
+        {"path": "components/contactlist/config/ContactListConfig+Defaults.swift", "symbols": ["ContactListConfig"], "reason": "顶部入口/搜索的默认开关"}
+      ],
+      "next": "数据/申请角标问题沿当前impl找到对应ViewModel和Store，不把顶部customizer当好友cell renderer。"
+    },
+    "settings": {
+      "guide": "references/source/modules/settings.md",
+      "primary": [
+        {"path": "components/chatsetting/impl/GroupChatSettingViewControllerImpl.swift", "symbols": ["GroupChatSettingViewControllerImpl", "setReceiveMessageOpt"], "reason": "群设置事件、状态、免打扰真实动作"},
+        {"path": "components/chatsetting/impl/ChatSettingConfig+Defaults.swift", "symbols": ["GroupChatSettingConfig", "isShowDoNotDisturb"], "reason": "公开配置构造与缺省显隐"},
+        {"path": "components/chatsetting/utils/GroupPermissionManager.swift", "symbols": ["GroupPermissionManager"], "reason": "群类型/角色权限，区别显示开关"},
+        {"path": "components/chatsetting/ChatSettingItemEditor.swift", "symbols": ["ChatSettingItemEditor", "addCustomRow"], "reason": "设置行扩展与分区结构"}
+      ],
+      "next": "单聊按指南切C2C实现；细分接收模式联动conversations，Core实现需确认真实源码引用。"
+    },
+    "navigation": {
+      "guide": "references/source/modules/navigation.md",
+      "primary": [
+        {"path": "page/ChatPage.swift", "symbols": ["ChatPage", "viewWillDisappear"], "reason": "公开页面与生命周期转发"},
+        {"path": "page/impl/ChatPageImpl.swift", "symbols": ["ChatPageImpl"], "reason": "导航、输入与列表布局联动"},
+        {"path": "components/messagelist/view/MessageListViewImpl.swift", "symbols": ["hostVisibilityDidChange"], "reason": "可见性、已读与滚动消费"},
+        {"path": "components/common/CustomNavigationBarViewController.swift", "symbols": ["CustomNavigationBarViewController"], "reason": "组件自带导航条基础实现"}
+      ],
+      "next": "Tab角标在宿主Home，按指南检查真实App文件；不要把UIKit根误当Demo根。"
+    },
+    "theme": {
+      "guide": "references/source/modules/theme.md",
+      "primary": [
+        {"path": "components/basecomponent/theme/ThemeState.swift", "symbols": ["ThemeState", "setPrimaryColor"], "reason": "主题setter、缓存与状态发布"},
+        {"path": "components/basecomponent/utils/LanguageHelper.swift", "symbols": ["LanguageHelper", "applyLayoutDirection"], "reason": "语言持久化、资源回退和RTL"},
+        {"path": "components/basecomponent/utils/AppBuilderHelper.swift", "symbols": ["AppBuilderHelper"], "reason": "JSON解析和AppBuilder缺省"},
+        {"path": "components/common/theme/TUIChatKitTheme.swift", "symbols": ["TUIChatKitTheme"], "reason": "组件语义颜色入口"}
+      ],
+      "next": "资源问题只查对应key和podspec；字段无消费则联动具体页面而不是追加更多JSON。"
+    },
+    "config": {
+      "guide": "references/source/workflow.md",
+      "primary": [],
+      "choose_modules": ["messages", "input", "conversations", "contacts", "settings", "theme"],
+      "next": "先按需求确定配置的实际消费者，再使用对应task；不默认读取多个无关模块的配置样本。"
+    },
+    "tab-badge": {
+      "guide": "references/source/modules/navigation.md",
+      "scope": "host",
+      "primary": [
+        {"path": "Pages/Home/HomePage.swift", "symbols": ["HomeTabBarController"], "reason": "宿主Tab成员、生命周期和布局回调；root须显式指定Demo的Sources"},
+        {"path": "Pages/Home/HomeTabBarController+UnreadBadges.swift", "symbols": ["updateUnreadBadgePositions"], "reason": "未读订阅、角标位置、拖拽和可见性"},
+        {"path": "Pages/Home/HomeTabBarController+Appearance.swift", "symbols": ["updateTabBarAppearance"], "reason": "Tab外观与布局几何"}
+      ],
+      "next": "仅适用于此Demo布局；其他宿主从自己的Tab实现取证，不先读ChatPage四个组件入口。"
+    }
+  }
+}

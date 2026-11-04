@@ -19,7 +19,7 @@ import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
-export const RESOLVER_VERSION = '18.4';
+export const RESOLVER_VERSION = '18.5';
 
 const TIER1_FILES = new Set([
   'config.dart', 'main.ts', 'main.js', 'App.vue',
@@ -467,14 +467,26 @@ function relativeHint(root, path) {
 // avoids a runtime dependency while refusing aliases, flow maps and other
 // YAML constructs that could broaden the data surface. The parser accepts a
 // normal indented mapping and quoted/unquoted scalar values.
-function sessionSdkAppId(input, deadlineMono) {
+function sessionSdkAppIds(input, deadlineMono) {
   const lines = String(input).split(/\r?\n/);
   let credentialsIndent = null;
+  let rootSdkAppId = null;
+  let rootCollected = false;
+  const legacy = [];
   for (const raw of lines) {
     if (performance.now() > deadlineMono) return null;
     if (!raw.trim() || /^\s*#/.test(raw)) continue;
     const indent = raw.match(/^\s*/)[0].replace(/\t/g, '        ').length;
     const line = raw.trim();
+    // Root's shared collection flow writes these exact top-level fields.
+    // Pending or unconfirmed values are not trusted telemetry metadata.
+    if (indent === 0) {
+      const id = line.match(/^sdkappid\s*:\s*(["']?[0-9]+["']?)\s*(?:#.*)?$/);
+      if (id) rootSdkAppId = validSdkAppId(id[1]);
+      if (/^sdkappid_state\s*:/.test(line)) {
+        rootCollected = /^sdkappid_state\s*:\s*(?:collected|"collected"|'collected')\s*(?:#.*)?$/.test(line);
+      }
+    }
     if (credentialsIndent === null) {
       if (/^credentials\s*:\s*(?:#.*)?$/.test(line)) credentialsIndent = indent;
       continue;
@@ -484,9 +496,12 @@ function sessionSdkAppId(input, deadlineMono) {
       continue;
     }
     const match = line.match(/^sdkappid\s*:\s*(["']?[0-9]+["']?)\s*(?:#.*)?$/);
-    if (match) return validSdkAppId(match[1]);
+    const value = match && validSdkAppId(match[1]);
+    if (value) legacy.push(value);
   }
-  return null;
+  // Keep both schema versions; resultFor detects disagreements rather than
+  // silently attaching an old application's ID to the new integration.
+  return rootCollected && rootSdkAppId ? [rootSdkAppId, ...legacy] : legacy;
 }
 
 function directBindings(file, deadlineMono, { immutableOnly = false, allowedAt = null } = {}) {
@@ -1057,9 +1072,11 @@ function tier0(root, opts, deadlineMono) {
   const read = readBoundedRegularFile(sessionPath, root, DEFAULT_MAX_FILE_BYTES, deadlineMono);
   if (read.status === 'invalid') return { status: 'invalid', candidates };
   if (read.status === 'ok') {
-    const session = sessionSdkAppId(read.content, deadlineMono);
+    const session = sessionSdkAppIds(read.content, deadlineMono);
     if (performance.now() > deadlineMono) return { status: 'invalid', candidates };
-    if (session) candidates.push({ sdkappid: session, source_type: 'literal_config', source_path_hint: '.trtc-session.yaml', matched_field: 'sdkappid' });
+    for (const sdkappid of session || []) {
+      candidates.push({ sdkappid, source_type: 'literal_config', source_path_hint: '.trtc-session.yaml', matched_field: 'sdkappid' });
+    }
   }
   return { status: 'ok', candidates };
 }

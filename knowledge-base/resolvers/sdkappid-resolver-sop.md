@@ -48,7 +48,7 @@ Run exactly in this order. Stop immediately once a unique winner is found at a h
 Accept only:
 
 - explicit resolver argument `sdkappid`
-- `.trtc-session.yaml` exact field `credentials.sdkappid`
+- `.trtc-session.yaml` exact field `credentials.sdkappid` (legacy), or top-level `sdkappid` only when top-level `sdkappid_state` is `collected` (Root flow). Pending / unconfirmed top-level values are ignored. If confirmed Root and legacy values disagree, return `conflict`; never silently choose an application.
 
 If exactly one valid value exists, return `resolved`.
 

@@ -1,20 +1,25 @@
 ---
 name: trtc-call
 description: >
-  Guides users through integrating TRTC Call (TUICallKit) into a Flutter app —
-  1v1 audio/video call, group call, or embedding a call button into an existing
-  IM chat page. Use when the user wants to add real-time calling to a Flutter
-  app — "接入通话", "1v1 音视频", "视频通话", "语音通话", "TUICallKit", "拨号",
+  Guides users through integrating TRTC Call (TUICallKit) into a Flutter app or a
+  native iOS (Swift, CocoaPods) app — 1v1 audio/video call, group call, or embedding
+  a call button into an existing IM chat page. Use when the user wants to add
+  real-time calling to a Flutter or native iOS app — "接入通话", "1v1 音视频",
+  "视频通话", "语音通话", "TUICallKit", "拨号",
   "呼叫", "来电", "客服外呼", "IM 聊天页加通话按钮", "integrate call",
   "add calling", "video call", "voice call", "ringing", "callkit".
 metadata:
-  version: 1.1.3
+  version: 1.1.4
 ---
 
 # trtc-call — Call 集成域 dispatcher
 
-**调用入口**：本文件由 `trtc/SKILL.md` 在 `product = call` 时 Read。仅支持 Flutter；
+**调用入口**：本文件由 `trtc/SKILL.md` 在 `product = call` 时 Read。支持 Flutter 与 iOS 原生（Swift）；
 其他平台走 `trtc-docs`。
+
+**iOS 原生**：Step 0 命中 iOS 原生工程、或 Step 1 读到 session `platform = ios` 时，改读
+`platforms/ios/ROUTER.md`，后续流程全部以 `platforms/ios/` 下的文件为准，**不得使用本目录下 Flutter 的
+`flows/`、`playbooks/`、`templates/`、`tools/`**。
 
 **Python tools**：`python3 -m tools.*` 命令必须从 trtc 域 skill 根目录执行
 （例如先 `cd "<当前 trtc skill 目录>"`）。
@@ -35,6 +40,10 @@ metadata:
 
 **前置**：先读 `{project_root}/.trtc-session.yaml`。若 `status = active` → 跳过 Step 0，直接进 Step 1。
 
+**例外（只针对 iOS，其余情况行为不变）**：session 是 `active`，但 `platform` 与 `active_flow` 都为空（根分发器刚收集完 SDKAppID、还没进入任何 flow）时，**不跳过** Step 0，照常扫描。扫描结果：
+- 命中 `ios-native` / `flutter-ios-subdir` → 按下面对应分支处理（写 `platform = ios` 时保留已有 `sdkappid`，不要 reset）。
+- 命中 `flutter`，或 `react-native` / `android-native` / `dart-only` / `unknown` → 回到原行为：视为已有活跃 session，**跳过 Step 0 的确认提问**，直接进 Step 1（Flutter 不会多弹一次"是否集成通话"）。
+
 在处理 intent 之前，确认用户项目平台。
 
 **扫描特征文件**（按顺序，找到即停）：
@@ -45,10 +54,21 @@ metadata:
 | `pubspec.yaml` 存在但无 flutter 字样 | `dart-only`（非 Flutter 项目） |
 | `package.json` 存在且含 `react-native` | `react-native` |
 | `build.gradle` / `settings.gradle` 存在（无 pubspec.yaml） | `android-native` |
-| `.xcodeproj` / `Podfile` 存在（无 pubspec.yaml） | `ios-native` |
+| 无 pubspec.yaml，但 `Flutter/Generated.xcconfig` 存在，或 `Podfile`（忽略注释行）含 `flutter_install_all_ios_pods` | `flutter-ios-subdir`（Flutter 项目的 `ios/` 子目录，**必须排在下一行之前**） |
+| `.xcodeproj` / `Podfile` 存在（无 pubspec.yaml） | `ios-native` ✅ 支持（Swift / CocoaPods） |
 | 以上均未命中 | `unknown` |
 
 **按扫描结果确认**（`AskUserQuestion`，用扫描依据做确认语）：
+
+- **命中 flutter-ios-subdir**：不写 session、不进入任何流程，直接告知并 STOP：
+
+  > 我看到当前打开的是 Flutter 项目的 `ios` 子目录（检测到 `<命中的特征>`）。Flutter 项目的通话集成要把项目路径切换到 Flutter 项目根目录（含 `pubspec.yaml` 的那一层），不能在 `ios` 子目录里按原生 iOS 接入。请切换项目路径后再来找我。
+
+- **命中 ios-native**：
+
+  > 我看到你的项目是 iOS 原生工程（检测到 `.xcodeproj`）。你要在这个项目里集成通话能力吗？
+  - ① 是，就是这个项目 → 写 `platform = ios`，Read `platforms/ios/ROUTER.md`，STOP（后续全部走 iOS 流程）
+  - ② 不是，我想用另一个项目 → 提示用户切换到正确项目目录后重试，STOP
 
 - **命中 flutter**：
 
@@ -64,7 +84,7 @@ metadata:
   - ① 是，就是这个项目 → 进入 Step 1
   - ② 不是，我想用另一个项目 → 提示用户切换到正确项目目录后重试，STOP
 
-- **命中其他平台（react-native / android-native / ios-native / dart-only）**：
+- **命中其他平台（react-native / android-native / dart-only）**：
 
   `AskUserQuestion` 单选：
 
@@ -77,17 +97,21 @@ metadata:
   | 3 | 查 `<platform>` 的接入文档 | 路由到 `../trtc-docs/SKILL.md`，STOP |
 
 - **platform = unknown**（找不到特征文件）：
-  > 我没有在当前目录找到项目文件来判断平台。你要接入的项目是 Flutter 吗？
+  > 我没有在当前目录找到项目文件来判断平台。你要接入的项目是 Flutter 还是 iOS 原生（Swift）？
   - ① 是 Flutter → 进入 Step 1（按 flutter 处理）
-  - ② 不是 → 路由到 `../trtc-docs/SKILL.md`，STOP
+  - ② 是 iOS 原生 → 提示用户切换到含 `.xcodeproj` 的项目目录后重试，STOP
+  - ③ 都不是 → 路由到 `../trtc-docs/SKILL.md`，STOP
 
-**已有活跃 session 时跳过 Step 0**——见上方前置说明。
+**已有活跃 session 时跳过 Step 0**——见上方前置说明（`platform` 与 `active_flow` 都为空时的 iOS 例外除外）。
 
 ---
 
 ## Step 1 — 读 session 分派
 
 Read `{project_root}/.trtc-session.yaml`：
+
+**iOS 优先判断**：session 存在且 `platform = ios`（不论 `status` 是 `active` 还是 `completed`）→ Read
+`platforms/ios/ROUTER.md`，STOP。**此规则优先于下表所有行**，下表全部是 Flutter 的路由。
 
 | session 状态 | 动作 |
 |---|---|
@@ -104,7 +128,8 @@ Read `{project_root}/.trtc-session.yaml`：
 | `status = active` 且 `active_flow = waiting-run-result` | Read `flows/basic-call.md` §Phase 7.5（运行结果分支），STOP |
 | `status = active` 且 `active_flow = playbook-done` | Read `flows/basic-call.md` §Phase 7.6（微调 + P1 slice 菜单），STOP |
 | `status = active` 且 `active_flow = troubleshoot` | Read `flows/troubleshoot.md` 续接排查，STOP |
-| `status = active` 且 `active_flow` 不在以上已知值 | 告知"上次集成进度遇到了一点异常，我来帮你重置一下重新开始"；执行 `(cd "<当前 trtc skill 目录>" && python3 -m tools.session reset)`；进入 Step 2 |
+| `status = active` 且 `active_flow` 为空（根分发器刚收集完 SDKAppID、还没进入任何 flow） | **不 reset**，保留已有的 `sdkappid` 等字段，直接进 Step 2 |
+| `status = active` 且 `active_flow` 非空、但不在以上已知值 | 告知"上次集成进度遇到了一点异常，我来帮你重置一下重新开始"；先 `read --field sdkappid` 和 `--field sdkappid_state` 记下当前值；执行 `(cd "<当前 trtc skill 目录>" && python3 -m tools.session reset --project-root "<用户项目根目录>")`；reset 只是把旧文件改名备份，**此时 session 不存在**，必须先 `create --project-root "<用户项目根目录>" --intent integrate-scenario`，再用 `write-batch` 写回 `sdkappid`（JSON 整数）和 `sdkappid_state`（让用户不必重新输入；`create` 不接受 `--sdkappid` 参数）；之后进入 Step 2 |
 | `status = completed` | Read `flows/basic-call.md` §Phase 7.6（微调 + P1 slice 菜单），STOP |
 | 文件不存在 | 进入 Step 2 |
 

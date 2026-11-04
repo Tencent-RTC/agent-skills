@@ -369,8 +369,17 @@ def find_project_root(start: Optional[str] = None) -> str:
         语义符合用户对"我的项目"的直觉）
       - 用户在 monorepo 子目录仅根有 .git：用根
       - 用户从未 init 过任何项目：fallback 到 CWD（demo / 测试场景）
+
+    例外：`TRTC_PROJECT_ROOT`（`--project-root` 在 CLI 里就是设置它）是调用方明确指定的
+    项目根，按精确目录使用，不再向上找。否则没有任何标记的工程（例如还没 git init、
+    没有 Podfile 的 iOS 工程）会因为上层目录有标记，把 session 写到上层。
+    这与 hooks / apply / next_slice 直接读 `<root>/.trtc-session.yaml` 的行为一致。
+    其它宿主环境变量（CLAUDE_PROJECT_DIR 等）与显式传入的 start 仍保持原有的向上查找。
     """
     if start is None:
+        exact = os.environ.get("TRTC_PROJECT_ROOT")
+        if exact and os.path.isdir(exact):
+            return os.path.abspath(exact)
         for env_name in PROJECT_ROOT_ENV_KEYS:
             candidate = os.environ.get(env_name)
             if candidate and os.path.isdir(candidate):

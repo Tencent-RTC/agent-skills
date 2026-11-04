@@ -88,6 +88,7 @@ const SKILL_ALLOWLIST = new Set([
   "trtc-voice-ai-starter",
   "trtc-chat",
   "trtc-chat-android",
+  "trtc-chat-ios",
   "trtc-push",
   "trtc-sdk-log-analysis",
 ]);
@@ -961,7 +962,9 @@ function listSkills() {
     "trtc-ai-oral-coach": "AI oral speaking coach / 口语陪练 (TRTC Conversational AI)",
     "trtc-ai-realtime-interpreter": "AI real-time interpretation / 实时翻译",
     "trtc-voice-ai-starter": "Voice AI starter kit — unnamed conversational-AI intent (Web)",
-    "trtc-chat":          "IM / Chat SDK integration",
+    "trtc-chat":          "Web IM / Chat SDK integration",
+    "trtc-chat-android":  "Android TUIChatKit integration (View / Compose)",
+    "trtc-chat-ios":      "iOS TUIChatKit integration and source customization (UIKit)",
     "trtc-push":          "TIMPush offline push integration (via trtc-push-mcp)",
     "trtc-sdk-log-analysis": "Manual SDK runtime log collection and offline analysis",
   };

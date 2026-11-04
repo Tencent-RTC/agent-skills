@@ -14,7 +14,7 @@ description: >
   trtc-push. SDK logs: /sdk-log、SDK 日志排障、客户端日志、日志分析、黑屏、无声、掉线;
   use manual log workflow.
 metadata:
-  version: 1.1.3
+  version: 1.1.4
 ---
 
 # TRTC Integration Assistant
@@ -28,8 +28,8 @@ metadata:
 4. 检测是否为 AI 口语陪练 / oral coach 场景，是则路由到 `trtc-ai-oral-coach/SKILL.md`（owner name：`ai-oral-coach-skill`）。
 5. 以上 AI 场景都未命中、但有 Conversational AI / voice agent 接入意图（用户未指明场景）时，路由到 `trtc-voice-ai-starter/SKILL.md`（owner name：`trtc-voice-ai-starter`）。
 6. 检测是否为 TIMPush / 离线推送场景，是则路由到 `trtc-push/SKILL.md`。
-7. 用共享工具识别 product / intent，路由到正确 owner：`trtc-conference/SKILL.md`、`trtc-chat/SKILL.md`、`trtc-chat-android/SKILL.md`、`trtc-chat/docs/SKILL.md`、`trtc-call/SKILL.md` 或 `trtc-docs/SKILL.md`。
-8. Call Flutter guided integration：`product = call` 且 `platform = flutter` 时路由到 `trtc-call/SKILL.md`。
+7. 用共享工具识别 product / intent，路由到正确 owner：`trtc-conference/SKILL.md`、`trtc-chat/SKILL.md`、`trtc-chat-android/SKILL.md`、`trtc-chat-ios/SKILL.md`、`trtc-chat/docs/SKILL.md`、`trtc-call/SKILL.md` 或 `trtc-docs/SKILL.md`。
+8. Call guided integration：`product = call` 且 `platform ∈ {flutter, ios}` 时路由到 `trtc-call/SKILL.md`（iOS 由 call skill 内部转交 `platforms/ios/ROUTER.md`）。
 9. 对显式日志请求和文档无法解决的运行时症状，路由到 `trtc-sdk-log-analysis/SKILL.md`；1.0 只做路径指引、用户提供和离线分析。
 
 ## Hard Boundary
@@ -57,10 +57,10 @@ metadata:
   >  - Codex：`<project>/.codex/skills/trtc/`
   >
   > **不要硬编码 `.claude/` 前缀**——根据当前 IDE 选择正确路径。如果无法确定，用 `find` 回退定位包含 `skills/trtc/SKILL.md` 的技能根目录。
-- 当前 guided integration 支持 `(conference, web)`、`(chat, web)`、`(chat, android)` 与 `(call, flutter)`；
+- 当前 guided integration 支持 `(conference, web)`、`(chat, web)`、`(chat, android)`、`(chat, ios)`、`(call, flutter)` 与 `(call, ios)`；
   TIMPush 由 `trtc-push` 的独立流程承接。
 - 除 TIMPush 外的其他产品若用户要”接入 / 搭建 / 加功能 / 逐步带我做”，明确告知当前
-  仅支持 Conference Web / Chat Web / Chat Android / Call Flutter 的引导式集成，并导向文档查询路径。
+  仅支持 Conference Web / Chat Web / Chat Android / Chat iOS（UIKit）/ Call Flutter / Call iOS 的引导式集成，并导向文档查询路径。
 
 **交接与终止契约**：以下路由命中后的 STOP 只结束 dispatcher 的继续匹配；Read 目标 Skill / flow 后，由当前 Agent 按 owner 继续完成任务，不得把交接当作整轮回答结束。业务工作完成后仍执行 §-1 的共享最终 owner `invoke` 和必要的前台隐私提示，整轮各一次。若本轮没有实际执行 owner（例如控制回复、需要用户补充或已说明不支持），则直接结束当前回合，不虚构 owner `invoke`。命中以下分支后，不再执行后续 Root 路由：
 - 已路由到 `trtc-ai-service/SKILL.md`
@@ -71,6 +71,7 @@ metadata:
 - 已路由到 `trtc-conference/SKILL.md`
 - 已路由到 `trtc-chat/SKILL.md`
 - 已路由到 `trtc-chat-android/SKILL.md`
+- 已路由到 `trtc-chat-ios/SKILL.md`
 - 已路由到 `trtc-chat/docs/SKILL.md`
 - 已路由到 `trtc-call/SKILL.md`
 - 已路由到 `trtc-docs/SKILL.md`
@@ -228,15 +229,21 @@ only and never invoke the foreground command or perform network I/O.
 
 读取 `<projectRoot>/.trtc-session.yaml`（如果存在。`<projectRoot>` = 用户项目根目录，由 Host bootstrap 提供；跨 IDE 通用，不要写死 `${CLAUDE_PROJECT_DIR}`）：
 
+若 Chat iOS session 的 `sdkappid_state ∈ {awaiting-sdkappid, pending-console}`，先执行下方 SDKAppID collection resume，再做 status 路由，不能因 active / paused 抢先交给域 Skill。
+
+Chat session 已知 `platform` 时以平台为准，仅平台缺失 / `unknown` 时用 `active_domain_skill` 兜底；不要让旧 Web / Android owner 覆盖已知 iOS 平台。iOS owner 处理 UIKit TUIChatKit，SwiftUI 宿主内嵌 UIKit 仍可进入；独立 SwiftUI 套件不使用此 owner。
+
 - 若 `status ∈ {active, paused}`：
   - 若 `product = conference`，立即路由到 `../trtc-conference/SKILL.md` 恢复 flow。
-  - 若 `product = chat` 且 `platform = android`（或 `active_domain_skill = trtc-chat-android`），立即路由到 `../trtc-chat-android/SKILL.md` 恢复 flow。
+  - 若 `product = chat` 且（`platform = ios`，或平台缺失 / `unknown` 且 `active_domain_skill = trtc-chat-ios`），立即路由到 `../trtc-chat-ios/SKILL.md` 续接任务。
+  - 若 `product = chat` 且（`platform = android`，或平台缺失 / `unknown` 且 `active_domain_skill = trtc-chat-android`），立即路由到 `../trtc-chat-android/SKILL.md` 恢复 flow。
   - 若 `product = chat` 或 `active_domain_skill = trtc-chat`，立即路由到 `../trtc-chat/SKILL.md` 恢复 flow。
   - 若 `product = call`，立即路由到 `../trtc-call/SKILL.md` 恢复 flow。
-  - 若是其他 product，告知当前只有 Conference Web / Chat Web / Chat Android / Call Flutter 支持恢复式 guided integration；若用户是在问事实/错误码/API，再改走 `../trtc-docs/SKILL.md`。
+  - 若是其他 product，告知当前只有 Conference Web / Chat Web / Chat Android / Chat iOS（UIKit）/ Call Flutter / Call iOS 支持恢复式 guided integration；若用户是在问事实/错误码/API，再改走 `../trtc-docs/SKILL.md`。
   - STOP。
 - 若 `status = completed`：
   - 若 `product = conference`，仍路由到 `../trtc-conference/SKILL.md`，由 conference skill 决定是加功能还是重开。
+  - 若 `product = chat` 且（`platform = ios`，或平台缺失 / `unknown` 且 `active_domain_skill = trtc-chat-ios`）：纯 IM 事实咨询直接路由 `../trtc-chat/docs/SKILL.md`；其他任务路由到 `../trtc-chat-ios/SKILL.md`。
   - 若 `product = chat` 且 `platform = android`，仍路由到 `../trtc-chat-android/SKILL.md`。
   - 若 `product = chat`，仍路由到 `../trtc-chat/SKILL.md`，承接 Path B/C/D。
   - 若 `product = call`，仍路由到 `../trtc-call/SKILL.md`，由 call skill 决定是加 P1 slice 还是重开。
@@ -308,7 +315,7 @@ python3 -m tools.query_classifier --query “<user_message>”
 
 - `kind = error_code` 或 `kind = symptom_like`
   - **记录** `kind`（及 `intent=slice-lookup`，供后续 §A 使用）
-  - **不要** 在此 STOP 或路由到 `trtc-docs` — Chat/IM 语境在 §A 分给 `trtc-chat/docs`；active/paused chat 集成 session 应由 §0 已路由至 `trtc-chat`（domain Path C）
+  - **不要** 在此 STOP 或路由到 `trtc-docs` — Chat/IM 语境在 §A 分给 `trtc-chat/docs`；active/paused chat 集成 session 应由 §0 按平台路由到相应 Chat owner
   - **继续** §2 → Routing §A
 - `kind = capability`
   - 记录 `capability_intent ∈ {integrate, lookup, ambiguous}`
@@ -360,7 +367,9 @@ keyword fallback 也无法匹配时：直接问用户”你在用哪个 TRTC 产
 
 **§0 已覆盖（本节不再处理）**：
 
-- `status ∈ {active, paused}` 且 `product = chat` → 已路由 `../trtc-chat/SKILL.md`；集成中报错/白屏/症状走 domain **Path C**，禁止 Root 直送 `trtc-chat/docs` 或 `trtc-docs`
+- `status ∈ {active, paused}` 且 `product = chat` → 已按平台路由到 Chat owner；iOS / Android 由各自排障 reference 处理，Web 走 **Path C**，禁止 Root 直送 `trtc-chat/docs` 或 `trtc-docs`
+
+**iOS UIKit 代码任务**：`product=chat, platform=ios` 且是已有集成或组件源码的维护 / 定制 / 实际代码排障（非新增集成能力），先路由 `../trtc-chat-ios/SKILL.md`，由其选择应用或源码 reference。纯概念、API / 错误码咨询仍按下表走 docs。新接入 / 新功能实施仍先完成 §B 的确认与 SDKAppID 收集。独立 SwiftUI 套件改走匹配文档，不把 UIKit API 套用到该套件。
 
 **Path D 冷启动**（无 active/paused chat 集成 session）— 在 `trtc-docs` **之前**：
 
@@ -442,9 +451,10 @@ keyword fallback 也无法匹配时：直接问用户”你在用哪个 TRTC 产
 - 若 `(product, platform) == (conference, web)`：路由到 `../trtc-conference/SKILL.md`
 - 若 `(product, platform) == (chat, web)`：路由到 `../trtc-chat/SKILL.md`
 - 若 `(product, platform) == (chat, android)`：路由到 `../trtc-chat-android/SKILL.md`
+- 若 `(product, platform) == (chat, ios)` 且目标为 UIKit TUIChatKit：路由到 `../trtc-chat-ios/SKILL.md`（SwiftUI 宿主可内嵌 UIKit；独立 SwiftUI 套件走匹配文档）
 - 若 `product == call`：路由到 `../trtc-call/SKILL.md`（平台兼容性检查由 call skill 内部完成）
 - 否则：
-  - 明确告知当前 guided integration 仅支持 Conference Web / Chat Web / Chat Android / Call Flutter
+  - 明确告知当前 guided integration 仅支持 Conference Web / Chat Web / Chat Android / Chat iOS（UIKit）/ Call Flutter / Call iOS
   - 如果用户只是想了解做法，改走 `../trtc-docs/SKILL.md` 或 Chat IM 咨询走 `../trtc-chat/docs/SKILL.md`
   - 不要假装还有旧的 cross-cutting onboarding skill 可以承接其它产品
 
@@ -486,8 +496,9 @@ Host Bootstrap、Root 和 owner 由当前 Agent 共享 §-1 的一次前台入�
 | domain skill | Conference guided integration | `../trtc-conference/SKILL.md` |
 | domain skill | Chat guided integration | `../trtc-chat/SKILL.md` |
 | domain skill | Chat Android guided integration | `../trtc-chat-android/SKILL.md` |
+| domain skill | Chat iOS UIKit integration / source customization | `../trtc-chat-ios/SKILL.md` |
 | domain skill | Chat IM docs (Path D) | `../trtc-chat/docs/SKILL.md` |
-| domain skill | **Call Flutter guided integration** | **`../trtc-call/SKILL.md`** |
+| domain skill | **Call Flutter / iOS guided integration** | **`../trtc-call/SKILL.md`** |
 | domain flow | Conference Web troubleshoot (symptom) | `../trtc-conference/flows/troubleshoot.md` |
 | domain skill | AI customer service / 智能客服 | `../trtc-ai-service/SKILL.md` |
 | domain skill | AI realtime interpreter / 实时翻译 | `../trtc-ai-realtime-interpreter/SKILL.md` |
@@ -508,9 +519,9 @@ Host Bootstrap、Root 和 owner 由当前 Agent 共享 §-1 的一次前台入�
 2. Root never routes to removed legacy shared skills; use the domain skills listed above,
    `trtc-docs`, and shared `python3 -m tools.*` commands only.
 3. Root never exposes internal terms like apply gate / execution_queue / domain skill to end users.
-4. For code-generation intent, Conference Web, Chat Web, Chat Android, and Call Flutter may proceed into guided integration.
+4. For code-generation intent, Conference Web, Chat Web, Chat Android, Chat iOS (UIKit), Call Flutter, and Call iOS may proceed into guided integration.
 5. For all other products, do not fabricate unfinished product flows.
-6. Active chat integration errors/symptoms route via `trtc-chat/SKILL.md` Path C, not `trtc-docs` or `trtc-chat/docs`.
-7. Never Read `trtc-chat/SKILL.md` or `trtc-chat-android/SKILL.md` or `trtc-chat/docs/SKILL.md` as the first skill in a turn — always start from this file (`trtc/SKILL.md`) so the Host reporting boundary and routing run first. Domain skills are routed owners, not parallel dispatchers.
+6. Active chat integration errors/symptoms stay with their platform owner: Web uses `trtc-chat/SKILL.md` Path C; Android / iOS use their owner troubleshooting references, not the generic docs path.
+7. Never Read `trtc-chat/SKILL.md` or `trtc-chat-android/SKILL.md` or `trtc-chat-ios/SKILL.md` or `trtc-chat/docs/SKILL.md` as the first skill in a turn — always start from this file (`trtc/SKILL.md`) so the Host reporting boundary and routing run first. Domain skills are routed owners, not parallel dispatchers.
 8. The log Skill is a manual evidence workflow in 1.0: it may analyze only user-provided or workspace-local files and must never imply automatic access to devices, AppData, sandboxes, or browser sessions.
-9. Integrate intent MUST complete §B.2 SDKAppID collection before routing to any domain skill. Exit condition is `sdkappid_state = collected` written to session, or the short-circuit condition met (session already has non-zero `sdkappid`, or `status ∈ {active, paused}`). Routing to `trtc-conference / trtc-chat / trtc-chat-android / trtc-call / trtc-ai-customer-service-skill / trtc-ai-realtime-interpreter / ai-oral-coach-skill` while §B.2 is still pending is a routing error. Console-link VERBATIM templates live only in `flows/collect-sdkappid.md`; never fabricate links from memory. **TIMPush exception**: `trtc-push` fast-path has its own credential flow via MCP workflow engine; §B.2 does not apply. **Voice AI starter exception**: AI fast-path scenario 4 (`trtc-voice-ai-starter`) also skips §B.2. The starter collects SDKAppID together with SDKSecretKey in its own §7 and never reads `session.sdkappid`, so §B.2 would make the user enter it twice; worse, its session `product` is `conversational-ai`, which has no console-link group in `flows/collect-sdkappid.md` Step 2b and no branch to return to in the second-turn resume in §B "确认通过后". If the starter then hands off to `ai-service` / `oral-coach` / `realtime-interpreter`, that skill collects credentials through its own fallback path. **Domain fallback exception**: `trtc-call/A.3`, `trtc-call/D1.3`, `trtc-chat/Q.1` may inline the same links only when `session.sdkappid` is null AND `sdkappid_state ∉ {awaiting-sdkappid, pending-console, collected}` (i.e., root §B.2 was genuinely bypassed); they MUST mirror `flows/collect-sdkappid.md` verbatim.
+9. Integrate intent MUST complete §B.2 SDKAppID collection before routing to any domain skill. Exit condition is `sdkappid_state = collected` written to session, or the short-circuit condition met (session already has non-zero `sdkappid`, or `status ∈ {active, paused}`). Routing to `trtc-conference / trtc-chat / trtc-chat-android / trtc-chat-ios / trtc-call / trtc-ai-customer-service-skill / trtc-ai-realtime-interpreter / ai-oral-coach-skill` while §B.2 is still pending is a routing error. Console-link VERBATIM templates live only in `flows/collect-sdkappid.md`; never fabricate links from memory. **TIMPush exception**: `trtc-push` fast-path has its own credential flow via MCP workflow engine; §B.2 does not apply. **Voice AI starter exception**: AI fast-path scenario 4 (`trtc-voice-ai-starter`) also skips §B.2. The starter collects SDKAppID together with SDKSecretKey in its own §7 and never reads `session.sdkappid`, so §B.2 would make the user enter it twice; worse, its session `product` is `conversational-ai`, which has no console-link group in `flows/collect-sdkappid.md` Step 2b and no branch to return to in the second-turn resume in §B "确认通过后". If the starter then hands off to `ai-service` / `oral-coach` / `realtime-interpreter`, that skill collects credentials through its own fallback path. **Domain fallback exception**: `trtc-call/A.3`, `trtc-call/D1.3`, `trtc-chat/Q.1` may inline the same links only when `session.sdkappid` is null AND `sdkappid_state ∉ {awaiting-sdkappid, pending-console, collected}` (i.e., root §B.2 was genuinely bypassed); they MUST mirror `flows/collect-sdkappid.md` verbatim.

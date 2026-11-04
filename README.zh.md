@@ -66,11 +66,13 @@ npx -y @tencent-rtc/trtc-agent-skills@latest add --clean
 | **Conversational AI：AI 客服** | Web | 语音智能体配置、知识库、人工转接、工具调用、会话摘要和现有后端集成 | • *"使用 TRTC 构建一个 AI 客服"*<br>• *"给我的网站添加语音 AI 客服"*<br>• *"将 AI 客服接入现有的 Node.js 后端"*<br>• *"为我的语音智能体添加知识库问答和人工转接"* |
 | **Conversational AI：AI 口语陪练** | Web | 场景角色扮演、即时纠错、回复建议、能力报告、自定义学习知识和现有应用集成 | • *"使用 TRTC 构建一个 AI 英语口语陪练"*<br>• *"在现有应用中添加 AI 口语练习"* |
 | **Conversational AI：AI 实时翻译** | Web | 实时翻译、多语言会议口译、双语字幕、转写和会议扇出 | • *"使用 TRTC 构建一个 AI 实时翻译助手"*<br>• *"为我的会议室添加实时翻译"*<br>• *"在视频会议中显示双语字幕"* |
-| **Chat** | Web | Chat 集成、消息、会话、群组、用户资料、功能扩展和问题排查 | • *"在我的 Web 应用中添加即时通信"*<br>• *"构建一个客服聊天页面"*<br>• *"在现有 React 应用中添加群聊"*<br>• *"帮我排查收不到消息的问题"* |
+| **Chat** | Web（Vue 3）/ Android（View / Compose）/ iOS（UIKit） | Chat 集成、消息、会话、联系人、群组、定制和排障；支持 iOS TUIChatKit 源码定制 | • *"给我的 Vue 3 应用接入聊天"*<br>• *"在 Android 应用中接入 TUIChatKit"*<br>• *"给 iOS UIKit 应用添加聊天"*<br>• *"修改 iOS TUIChatKit 的消息气泡"* |
 | **Push** | Android / iOS / Flutter / UniApp | TIMPush 配置、厂商通道、APNs、角标、服务端 API、控制台限制检查和问题排查 | • *"帮我在 Android 应用中集成 TIMPush"*<br>• *"为 iOS 应用配置 APNs 离线推送"*<br>• *"为 Flutter 应用配置厂商推送通道"*<br>• *"为推送通知添加未读消息角标"*<br>• *"`registerPush` 失败，错误码为 800006"* |
 | **Call** | Flutter | Demo 体验、1v1 和群组音视频通话、将通话嵌入现有应用、功能扩展和问题排查 | • *"我想体验 Flutter 通话 Demo"*<br>• *"在我的 Flutter 应用中添加 1v1 视频通话"*<br>• *"在现有应用中添加群组语音通话"*<br>• *"来电页面没有显示"* |
 | **Live** | 即将支持 | 暂不提供引导式集成 | • *"查看观众连麦的相关文档"*<br>• *"Tencent RTC 提供哪些直播能力？"* |
 | **RTC Engine** | 即将支持 | 暂不提供引导式集成 | • *"如何发布和订阅音视频流？"*<br>• *"查看 RTC Engine 房间管理文档"* |
+
+iOS Chat Skill 面向 UIKit 版 TUIChatKit，也支持 SwiftUI 宿主内嵌其 UIKit 控制器；不包含独立 SwiftUI 套件或旧 TUIKit。
 
 即使尚未支持引导式集成，也可以查询所有 Tencent RTC 产品的文档、错误码、计费和产品限制。
 
