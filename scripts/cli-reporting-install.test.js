@@ -549,6 +549,18 @@ test("all IDE installs share persistent experience and global reporting preferen
       assert.equal(fs.existsSync(reporter), true, `${ide} missing reporting.py`);
       assert.equal(fs.existsSync(reporterV2), true, `${ide} missing reporting_v2.py`);
       assert.equal(fs.existsSync(chatReporter), true, `${ide} missing chat reporting.py`);
+      for (const relative of [
+        "SKILL.md", "references/app/integration.md", "references/source/tasks.json",
+        "references/examples/ChatIntegration.swift", "references/examples/DebugSignature.swift",
+        "scripts/locate_source.py", "scripts/validate_skill.py",
+      ]) {
+        assert.ok(fs.existsSync(path.join(project, `.${ide}`, "skills", "trtc-chat-ios", relative)),
+          `${ide} missing Chat iOS resource ${relative}`);
+      }
+      assert.equal(fs.existsSync(path.join(project, `.${ide}`, "skills", "trtc-chat-ios", "tests")),
+        false, `${ide} must not install maintainer Chat iOS tests`);
+      assert.match(fs.readFileSync(path.join(project, `.${ide}`, "skills", "trtc-chat-ios", "SKILL.md"), "utf8"),
+        /^version: 1\.2\.0$/m, "Chat iOS retains its independent version");
       const sdkLogSkill = path.join(project, `.${ide}`, "skills", "trtc-sdk-log-analysis");
       assert.equal(
         fs.existsSync(path.join(sdkLogSkill, "viewer")),

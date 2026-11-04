@@ -166,6 +166,7 @@ const PRODUCT_BY_SKILL = Object.freeze({
   'trtc-conference': 'conference',
   'trtc-chat': 'chat',
   'trtc-chat-android': 'chat',
+  'trtc-chat-ios': 'chat',
   'trtc-chat-docs': 'chat',
   'trtc-call': 'call',
   'trtc-live': 'live',
@@ -197,8 +198,8 @@ const PRODUCT_BY_SKILL = Object.freeze({
 //
 // Deliberate exclusions (Chat in particular spans Web + Android + iOS):
 //   - `trtc-chat`: the largest bucket, but its `unsupported_platform` block is
-//     about non-Vue3 *Web* frameworks, not about native targets, and there is
-//     no `trtc-chat-ios`. Measured against a week of Chat samples, platforms
+//     about non-Vue3 *Web* frameworks, not a strict native-platform ban.
+//     Native owners have their own mappings. In historical Chat samples, platforms
 //     that were actually identified split Android 10 / Web 7 / iOS 1, so a
 //     `web` fallback would mislabel most Chat turns. An unknown here is
 //     recovered by continuity or by the dispatcher instead.
@@ -206,6 +207,7 @@ const PRODUCT_BY_SKILL = Object.freeze({
 //     contains no non-Web block, so Web is an assumption, not a guarantee.
 const FRAMEWORK_BY_SKILL = Object.freeze({
   'trtc-chat-android': 'android',
+  'trtc-chat-ios': 'ios',
   'trtc-call': 'flutter',
   'trtc-voice-ai-starter': 'web',
   'trtc-ai-customer-service-skill': 'web',

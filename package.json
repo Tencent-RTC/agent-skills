@@ -1,12 +1,12 @@
 {
   "name": "@tencent-rtc/trtc-agent-skills",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "Installer for the TRTC Agent Skills suite (Chat, Call, RTC Engine, Live, Conference) plus manual SDK runtime log troubleshooting and knowledge base, with one-command MCP setup for Claude Code / Cursor / CodeBuddy / Codex.",
   "bin": {
     "trtc-agent-skills": "bin/cli.js"
   },
   "scripts": {
-    "test": "npm run test:reporting-release && npm run test:sdk-log",
+    "test": "npm run test:reporting-release && npm run test:chat-ios && npm run test:sdk-log",
     "build:telemetry": "node scripts/build-telemetry.js",
     "check:telemetry-bundle": "node scripts/build-telemetry.js --check",
     "test:reporting": "node --test scripts/test-codex-attribution-permissions.test.js scripts/cli.test.js scripts/cli-reporting-install.test.js scripts/cli-c19-mode.test.js scripts/cli-c19-migration.test.js scripts/cli-runtime-binding.test.js scripts/test-reporting-python.test.js && node scripts/test-reporting-python.js",
@@ -25,7 +25,8 @@
     "test:sdk-log": "node --test skills/trtc-sdk-log-analysis/scripts/lib/*.test.js skills/trtc-sdk-log-analysis/scripts/*.test.js",
     "prepack": "npm run build:telemetry",
     "version": "node scripts/update-version.js",
-    "release": "npm publish --access public"
+    "release": "npm publish --access public",
+    "test:chat-ios": "python3 -B skills/trtc-chat-ios/scripts/validate_skill.py --acceptance-file tests/trtc-chat-ios/acceptance.json && python3 -B -m unittest discover -s tests/trtc-chat-ios -p \"test_*.py\""
   },
   "files": [
     "bin/",

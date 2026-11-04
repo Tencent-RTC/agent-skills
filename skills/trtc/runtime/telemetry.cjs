@@ -5689,7 +5689,7 @@ var import_node_fs10 = require("node:fs");
 var import_node_path10 = require("node:path");
 var import_node_crypto9 = require("node:crypto");
 var import_node_perf_hooks6 = require("node:perf_hooks");
-var RESOLVER_VERSION = "18.4";
+var RESOLVER_VERSION = "18.5";
 var TIER1_FILES = /* @__PURE__ */ new Set([
   "config.dart",
   "main.ts",
@@ -6239,9 +6239,12 @@ function topLevelCallArguments(file, openParen, deadlineMono, maxChars = 2e3) {
 function relativeHint(root, path2) {
   return (0, import_node_path10.relative)(root, path2).split(import_node_path10.sep).join("/");
 }
-function sessionSdkAppId(input, deadlineMono) {
+function sessionSdkAppIds(input, deadlineMono) {
   const lines = String(input).split(/\r?\n/);
   let credentialsIndent = null;
+  let rootSdkAppId = null;
+  let rootCollected = false;
+  const legacy = [];
   for (const raw of lines) {
     if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return null;
@@ -6249,6 +6252,14 @@ function sessionSdkAppId(input, deadlineMono) {
       continue;
     const indent = raw.match(/^\s*/)[0].replace(/\t/g, "        ").length;
     const line = raw.trim();
+    if (indent === 0) {
+      const id = line.match(/^sdkappid\s*:\s*(["']?[0-9]+["']?)\s*(?:#.*)?$/);
+      if (id)
+        rootSdkAppId = validSdkAppId(id[1]);
+      if (/^sdkappid_state\s*:/.test(line)) {
+        rootCollected = /^sdkappid_state\s*:\s*(?:collected|"collected"|'collected')\s*(?:#.*)?$/.test(line);
+      }
+    }
     if (credentialsIndent === null) {
       if (/^credentials\s*:\s*(?:#.*)?$/.test(line))
         credentialsIndent = indent;
@@ -6259,10 +6270,11 @@ function sessionSdkAppId(input, deadlineMono) {
       continue;
     }
     const match = line.match(/^sdkappid\s*:\s*(["']?[0-9]+["']?)\s*(?:#.*)?$/);
-    if (match)
-      return validSdkAppId(match[1]);
+    const value = match && validSdkAppId(match[1]);
+    if (value)
+      legacy.push(value);
   }
-  return null;
+  return rootCollected && rootSdkAppId ? [rootSdkAppId, ...legacy] : legacy;
 }
 function directBindings(file, deadlineMono, { immutableOnly = false, allowedAt = null } = {}) {
   const bindings = /* @__PURE__ */ new Map();
@@ -6904,11 +6916,12 @@ function tier0(root, opts, deadlineMono) {
   if (read.status === "invalid")
     return { status: "invalid", candidates };
   if (read.status === "ok") {
-    const session = sessionSdkAppId(read.content, deadlineMono);
+    const session = sessionSdkAppIds(read.content, deadlineMono);
     if (import_node_perf_hooks6.performance.now() > deadlineMono)
       return { status: "invalid", candidates };
-    if (session)
-      candidates.push({ sdkappid: session, source_type: "literal_config", source_path_hint: ".trtc-session.yaml", matched_field: "sdkappid" });
+    for (const sdkappid of session || []) {
+      candidates.push({ sdkappid, source_type: "literal_config", source_path_hint: ".trtc-session.yaml", matched_field: "sdkappid" });
+    }
   }
   return { status: "ok", candidates };
 }
@@ -7329,7 +7342,7 @@ var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
 var FOREGROUND_TOTAL_BUDGET_MS = 2200;
 var FOREGROUND_FLUSH_BUDGET_MS = 1800;
-var RUNTIME_VERSION = "1.1.3";
+var RUNTIME_VERSION = "1.1.4";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
   // Docs is an answer-layer owner rather than a product.  Keep it in the
@@ -7340,6 +7353,7 @@ var PRODUCT_BY_SKILL = Object.freeze({
   "trtc-conference": "conference",
   "trtc-chat": "chat",
   "trtc-chat-android": "chat",
+  "trtc-chat-ios": "chat",
   "trtc-chat-docs": "chat",
   "trtc-call": "call",
   "trtc-live": "live",
@@ -7357,6 +7371,7 @@ var PRODUCT_BY_SKILL = Object.freeze({
 });
 var FRAMEWORK_BY_SKILL = Object.freeze({
   "trtc-chat-android": "android",
+  "trtc-chat-ios": "ios",
   "trtc-call": "flutter",
   "trtc-voice-ai-starter": "web",
   "trtc-ai-customer-service-skill": "web",
