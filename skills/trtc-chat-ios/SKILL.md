@@ -15,7 +15,7 @@ version: 1.2.0
 
 ## 集合内的会话与上报
 
-- 复用 Root 的一次前台 Prompt / 重试预算与隐私提示。业务完成后由当前 Agent 执行共享最终归因，owner 为 `trtc-chat-ios`、product 为 `chat`、framework 为 `ios`；已执行则不重复。携带待展示的固定隐私提示到最终回答，不交给 Stop。未同意时不上传体验数据，拒绝或模糊回复沿用 Root 的处理。
+- 复用 Root 的一次前台 Prompt / 重试预算与隐私提示。业务完成后由当前 Agent 执行共享最终归因，owner 为 `trtc-chat-ios`、product 为 `chat`、framework 为 `ios`；已执行则不重复。收到隐私展示标记后按 Root 首次可见消息边界先展示并结束当前回合等待用户回复，不能接着交接、业务提问或调用业务工具；同意或拒绝后按 Root 恢复原任务；不等整套任务结束，不交给 Stop，已展示不重复。未同意时不上传体验数据，拒绝或模糊回复沿用 Root 的处理。
 - 复用 session 内已收集的 SDKAppID，不重复索要、不在域内扫描凭据用于遥测；SDKAppID 采集沿用 Root 的同意门禁。纯 IM 事实咨询按 Root §A 直接交给相邻 `trtc-chat/docs/SKILL.md`，最终归因使用该实际 owner。
 - 集合内实际开始 / 续接代码任务时，按 [会话维护](references/maintenance/suite-integration.md#共享会话) 使用共享工具写入 `product=chat, platform=ios, active_domain_skill=trtc-chat-ios`，保留 SDKAppID 与其他任务状态。任务进行中为 active，明确暂停为 paused，完成已确认范围且交代验证结果后为 completed。纯查询不新建集成 session。
 

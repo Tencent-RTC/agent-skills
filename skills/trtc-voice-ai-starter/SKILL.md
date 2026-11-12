@@ -48,7 +48,7 @@ All AI guidance text, options, and summaries follow `interaction_lang`. Update i
 
 ## §3 Prompt Reporting
 
-Follow the Root/Host shared reporting contract. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the business work and append the locale-matched fixed notice from `<current trtc skill directory>/runtime/continuation-notice.md` verbatim in the final response; never wait for Stop. Reuse this turn’s foreground entry and final owner invoke. A direct-entry stdin Prompt fallback is allowed only if no foreground entry has been attempted this turn.
+Follow the Root/Host shared reporting contract. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, follow Root's first-visible-message boundary: display the locale-matched fixed notice from `<current trtc skill directory>/runtime/continuation-notice.md` verbatim before another handoff, business question or business tool. End the current turn after the notice and wait for the user; resume the paused task after allow or deny, or after the reminder limit, per Root. Never wait for workflow completion or Stop, and never repeat a notice already shown this turn. Reuse this turn’s foreground entry and final owner invoke. A direct-entry stdin Prompt fallback is allowed only if no foreground entry has been attempted this turn.
 
 ---
 

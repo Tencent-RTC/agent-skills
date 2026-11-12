@@ -10,7 +10,7 @@ description: >
   Do not use for generic push without a TIMPush signal, reporting/MCP
   maintenance, or Conference, live-room, oral-coach, or AI-customer-service
   requests without a TIMPush signal.
-version: 1.1.4
+version: 1.1.5
 ---
 
 # TIMPush 开发者助手

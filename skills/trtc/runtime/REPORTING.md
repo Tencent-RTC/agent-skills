@@ -63,6 +63,13 @@ budget. A sudden OS/power loss can therefore lose the newest unflushed Hook
 event; normal process exit and IDE sandbox cleanup do not. Installer,
 Dispatcher, Sender, and other non-Hook writes retain full file/directory sync.
 
+The default destination is the original Nanjing CLS topic
+`a1310e66-a3f5-4572-a1c3-7a327a27496d` on
+`https://ap-nanjing.cls.tencentcs.com`. Endpoint and topic environment overrides
+remain supported. Queued events do not freeze a destination: the next eligible
+send uses the active configuration while preserving their event IDs and consent.
+Changing the topic does not change a host's network permissions.
+
 ### Codex sandbox delivery
 
 New and upgraded Codex installations bind all commands to
@@ -72,9 +79,15 @@ preserves event IDs and ACKs, and reuses its device identity. Other IDE queues
 remain in their original location. The V2 binding redirects cached old Hook
 commands to the same spool; runtime commands never perform the migration.
 
-With `CODEX_SANDBOX_NETWORK_DISABLED=1`, foreground commands persist locally
-without making a transport attempt or recording network backoff. A permitted
-Stop sender retries the exact events. A Stop payload need not contain `ide`:
+`CODEX_SANDBOX_NETWORK_DISABLED=1` is an inherited network hint, not an
+upload result. After explicit consent, foreground commands attempt ordinary
+HTTPS within their existing deadline; host network policy still applies.
+Permission/DNS-denied attempts retain the event and actual error without
+adding backoff that would suppress a later permitted caller. Timeouts, TLS
+and server failures retain normal backoff. Once the current event is ACKed,
+spare foreground budget (at most 300 ms) can retry older consented Outbox
+events, so delivery does not depend solely on a local Stop hook being run.
+A permitted Stop sender remains a recovery path. A Stop payload need not contain `ide`:
 the installed `--ide codex` flag defines its session hash. Interrupted Pending
 turns are recovered in a bounded batch using their own attribution receipts.
 
@@ -157,6 +170,18 @@ Prompt deliverable. The fallback key is retained only in private
 `__correlation_key` state, `userid` is omitted from the CLS payload, and no
 Context from another live conversation is borrowed. This lowers session-level
 analytics precision but does not block Prompt delivery.
+All four IDEs share the Prompt input gate on Hook, foreground and legacy
+Prompt sending paths before consent state, queues, recovery or SDK scans.
+Known host `internal` / `is_internal` and internal provenance metadata are
+filtered for Claude, Codex, Cursor and CodeBuddy. CodeBuddy's complete native
+`<question_answer><questions><question_item>` envelope is normalized to its
+selected answers only. Assistant questions and XML wrappers never become
+Prompt text; malformed/empty native envelopes are skipped without consuming
+a first-Prompt slot. Parsing is bounded and has no DTD, external-entity or I/O
+support. Plain answers, surrounding user prose, code fences and explicit
+`user_initiated: true` pasted examples remain reportable. A selected business
+answer never implicitly creates privacy agreement.
+
 Claude and Codex Hook and foreground Prompt paths also discard host-generated
 internal tasks before staging, deferred sends, notice recovery, or SDKAppID
 resolution. Host-supplied `internal`/`is_internal` and recognized
@@ -184,10 +209,25 @@ statistics. Nested packages inherit the nearest saved parent-project preference.
 
 Experience sending is OFF until a durable explicit agreement is present.
 Installation / Hook activation statistics remain eligible under their separate
-runtime settings. The initial Prompt is redacted and held locally, then the
-model answers the business request and renders the exact fixed notice.
-The first unanswered business input gets one reminder after its normal answer;
-an ambiguous privacy reply is consumed and gets the reminder immediately.
+runtime settings. The initial Prompt is redacted and held locally. When Runtime
+returns NOTICE_REQUIRED, the next user-visible assistant message renders the
+exact fixed notice before another Skill/flow handoff, business question or
+business tool/network work. Reading the fixed localized notice is the only
+permitted intervening tool when the command returned only a marker. A short
+business answer already ready may precede the fixed block in that same message;
+otherwise emit ONLY the standalone notice as the final response and END THE TURN.
+Wait for a real user reply: no more handoff, business tools/questions, or owner
+invoke in that turn. After ALLOWED or DISABLED, resume the paused task without
+reporting the control reply or replaying the original Prompt. Consent is optional;
+no new notice after the two-presentation limit means business resumes with
+experience reporting still OFF. Never
+wait for plan approval, integration completion or the whole workflow. Collapsed
+tool stdout is not a visible privacy question. Already-rendered notices are not
+repeated in the final answer or reclaimed across a handoff.
+The first unanswered business input gets at most one reminder at the same
+first-visible-message boundary; an ambiguous privacy reply is consumed and
+gets a returned reminder as the final response, then the turn ends.
+A new business message returning a reminder has the same bounded-wait behavior.
 After two presentations total, silence/ambiguity leaves reporting OFF and
 ordinary business continues without further prompts. No control reply is
 uploaded, including a reply with an invalid or missing receipt.
@@ -195,7 +235,9 @@ uploaded, including a reply with an invalid or missing receipt.
 Notice delivery and consent live in the project-local
 experience-consent-v2.json file. Hook, foreground, tool fallback and Stop cannot
 each consume a presentation for the same logical user turn. Stop never claims
-a notice. CodeBuddy's visible tool fallback shares the same turn and quota.
+a notice. CodeBuddy's visible tool fallback shares the same turn, quota and end-of-turn
+wait: when it has already rendered the notice, do not copy the notice again
+or continue business work in that same turn.
 Foreground delivery is claimed atomically; a failed local write cannot authorize
 sending. There is no defaulted authorization state.
 
@@ -234,7 +276,7 @@ Explicit preference --enabled off --scope all / --no-report disables both.
 | TRTC_REPORTING_ALLOW_RETRY_V1 / TRTC_REPORTING_DISABLE_RETRY_V1 | Choice write failed; never claim success |
 | TRTC_REPORTING_CHOICE_RETRY_V1 | Control state unavailable |
 
-All four IDEs retain foreground rendering after the business answer. Claude,
+All four IDEs retain foreground rendering at the first-visible-message boundary. Claude,
 Cursor and Codex Stop remain silent; CodeBuddy's visible fallback shares the
 project-local quota. The notice JSON generates the JS/MD projections.
 No consent fields, local authorization IDs, receipt state, or new CLS fields
@@ -311,8 +353,9 @@ The official npx installer wires each host Prompt event directly to the
 self-contained `telemetry.cjs hook` entry point. The Hook performs no upload,
 stays stdout/stderr-silent for ordinary Prompts, binds local state to the current
 IDE conversation, and stages the locally-redacted Prompt for post-route attribution.
-Cursor renders the notice as a separate fixed block at the end of the normal
-answer. Its Stop hook never emits `followup_message` or consumes foreground
+Cursor renders the notice as a separate fixed block in the next visible
+FINAL assistant response, then ends the turn to await the reply; an already-ready short
+answer may precede it in that message. Its Stop hook never emits `followup_message` or consumes foreground
 presentation attempts. An unanswered real user turn can claim the one
 remaining reminder. The Python command returns the localized canonical text
 alongside its marker, claiming at most two presentation attempts on the same
@@ -336,15 +379,16 @@ reinstalled; both paths share the same local receipt and event-id dedupe:
   their host-provided plugin-root environment variable as the deterministic
   fallback.
 - Claude, Cursor and Codex keep Stop silent and render the fixed notice
-  after the normal foreground answer. Claude and Cursor claim at most two
+  as the final response and ends the turn before business tools/questions. Claude and Cursor claim at most two
   foreground presentations for the same pending receipt; Stop cannot consume
   that budget or start a model continuation to display the notice.
   Cursor's
   `beforeSubmitPrompt` cancellation remains only a guard for legacy replays.
   The pending choice remains available for the real user. CodeBuddy's foreground
-  dispatcher is the first-use renderer: after the normal answer it emits the
-  exact generated notice from `continuation-notice.md` as a separate final
-  block, regardless of whether a post-answer channel is available. CodeBuddy
+  dispatcher is the first-use renderer: its next visible assistant message emits
+  the exact generated notice from `continuation-notice.md` as a separate final block
+  and waits for the user instead of continuing business in that turn,
+  regardless of whether a post-answer channel is available. CodeBuddy
   Stop (and its narrowly matched `PostToolUse` fallback for
   `ask_followup_question`/`AskUserQuestion`) is recovery/flush only; it must
   not be the first renderer and no `stopHookFeedback` or hidden
@@ -563,10 +607,13 @@ never sent as a duplicate. The local invocation identifier remains private
 implementation state and is never written to CLS.
 
 The foreground `prompt --input-stdin --require-input` and `invoke` stdout marker
-`TRTC_REPORTING_NOTICE_REQUIRED_V1` must be consumed after the normal answer is
-rendered. The foreground integration MUST render the
-same generated notice after the normal answer and accept the fixed choice on
-the next prompt entry. The two fixed continuation labels are sent through the same stdin protocol. They are control messages only
+`TRTC_REPORTING_NOTICE_REQUIRED_V1` must be consumed in the next visible
+assistant message, before another handoff, business question or business tool.
+The foreground integration MUST render the same generated notice immediately
+and accept a privacy reply on the next applicable prompt entry; it never waits
+for the entire integration or repeats an already-rendered notice. A returned
+notice ends the current turn; only a later real user reply resumes the task
+according to the bounded reminder and allow/deny rules. The two fixed continuation labels are sent through the same stdin protocol. They are control messages only
 when the matching project notice/receipt is present; otherwise they follow the
 ordinary Prompt path. `TRTC_REPORTING_CHOICE_RETRY_V1` and the other choice
 markers mean the control state is uncertain and the fixed choice must be

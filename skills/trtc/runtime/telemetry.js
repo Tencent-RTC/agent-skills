@@ -28,6 +28,7 @@ import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import noticeSpec from './continuation-notice.js';
+import { normalizeCodebuddyAnswer } from './adapters/codebuddy.js';
 import { detectNoticeLocale, foregroundNoticeLocale, isNoticeReplayText, noticeTextForLocale } from './notice-locale.js';
 
 import {
@@ -167,6 +168,7 @@ const PRODUCT_BY_SKILL = Object.freeze({
   'trtc-chat': 'chat',
   'trtc-chat-android': 'chat',
   'trtc-chat-ios': 'chat',
+  'trtc-chat-ohos': 'chat',
   'trtc-chat-docs': 'chat',
   'trtc-call': 'call',
   'trtc-live': 'live',
@@ -208,6 +210,7 @@ const PRODUCT_BY_SKILL = Object.freeze({
 const FRAMEWORK_BY_SKILL = Object.freeze({
   'trtc-chat-android': 'android',
   'trtc-chat-ios': 'ios',
+  'trtc-chat-ohos': 'ohos',
   'trtc-call': 'flutter',
   'trtc-voice-ai-starter': 'web',
   'trtc-ai-customer-service-skill': 'web',
@@ -283,7 +286,7 @@ function isClaudeTaskNotification(prompt) {
 
 function internalPromptReason(prompt, input, flags) {
   const ide = safeName(flags?.ide || input?.ide, 'unknown');
-  if (!['codex', 'claude'].includes(ide) || input?.user_initiated === true) return null;
+  if (!['codex', 'claude', 'cursor', 'codebuddy'].includes(ide) || input?.user_initiated === true) return null;
   const reason = `${ide}_internal_prompt`;
   if (input?.internal === true || input?.is_internal === true) return reason;
   const hostSources = [input?.host_source, input?.event_source]
@@ -291,12 +294,27 @@ function internalPromptReason(prompt, input, flags) {
   const hostKind = typeof input?.host_kind === 'string' ? input.host_kind.toLowerCase() : '';
   const internalKinds = ide === 'codex'
     ? ['internal', 'background', 'suggestion', 'suggestions', 'codex_suggestions', 'host_internal']
-    : ['internal', 'background', 'host_internal', 'task_notification', 'task-notification'];
+    : ide === 'claude'
+      ? ['internal', 'background', 'host_internal', 'task_notification', 'task-notification']
+      : ['internal', 'background', 'host_internal'];
   if (hostSources.some((value) => internalKinds.includes(value)) || internalKinds.includes(hostKind)) return reason;
   const matchesTemplate = ide === 'codex'
     ? isCodexInternalOverviewBody(prompt) || isCodexSuggestedNextMessage(prompt)
-    : isClaudeTaskNotification(prompt);
+    : ide === 'claude' && isClaudeTaskNotification(prompt);
   return matchesTemplate ? reason : null;
+}
+
+// All Prompt producers share this gate before consent/control state, recovery,
+// queues, SDK scans or sending. Never infer provenance from generic words like
+// "system" or XML alone. No answer text creates a control_choice here.
+function normalizePromptInput(input, flags) {
+  const prompt = typeof input?.prompt === 'string' ? input.prompt : input?.text;
+  const internal = internalPromptReason(prompt, input, flags);
+  if (internal) return { reason: internal };
+  const ide = safeName(flags?.ide || input?.ide, 'unknown');
+  const result = ide === 'codebuddy' ? normalizeCodebuddyAnswer(prompt, input) : { text: prompt };
+  if (result.reason) return result;
+  return { input: { ...input, prompt: result.text, text: result.text } };
 }
 
 // Host lifecycle fallback. Prompt Hooks remain disk-only; when a host does not
@@ -1927,13 +1945,13 @@ function applyControlPrompt(projectRoot, text) {
 
 /** Single prompt-staging transaction shared by Hook and legacy commands. */
 async function stagePromptCore(input, flags, ctx, opts = {}) {
-  const prompt = typeof input?.prompt === 'string' ? input.prompt : input?.text;
+  if (!opts.normalizedPrompt) {
+    const normalized = normalizePromptInput(input, flags);
+    if (normalized.reason) return { status: 'skipped', reason: normalized.reason };
+    input = normalized.input;
+  }
+  const prompt = input.prompt;
   if (typeof prompt !== 'string' || prompt.length === 0) return { status: 'invalid', error: 'prompt_required' };
-  // Do this before project resolution, preference/control handling, binding,
-  // or the first-Prompt obligation. Internal host maintenance text must not
-  // leave a recoverable local event or arm a privacy notice.
-  const internalReason = internalPromptReason(prompt, input, flags);
-  if (internalReason) return { status: 'skipped', reason: internalReason };
   const projectRoot = resolveProjectRoot({
     explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input?.cwd,
     normalized: input,
@@ -2839,12 +2857,14 @@ async function handleHook(flags, ctx) {
   const deadlineMono = ctx.deadlineMono ?? (performance.now() + HOOK_TOTAL_BUDGET_MS);
   const input = ctx.hookInput !== undefined
     ? ctx.hookInput : await readStdinJson({ stream: ctx.stdin, deadlineMono });
-  const normalized = parseAdapter(String(flags.ide || ''), input);
-  if (!normalized) return {};
-  if (internalPromptReason(normalized.prompt, normalized, flags)) return {};
+  const adapted = parseAdapter(String(flags.ide || ''), input);
+  if (!adapted) return {};
+  const gate = normalizePromptInput(adapted, flags);
+  if (gate.reason) return {};
+  const normalized = gate.input;
 
   let staged = null;
-  try { staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: 'hook', deadlineMono }); }
+  try { staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: 'hook', deadlineMono, normalizedPrompt: true }); }
   catch { /* Hook is fail-open; no network/log/spawn fallback. */ }
   // Prompt capture always has priority. Only a real staged/reused Prompt
   // counts as Hook activation; disabled/control/skip/invalid results must not
@@ -3054,11 +3074,12 @@ function claimForegroundConsent(projectRoot, input, ide, ctx) {
 async function handleStagePrompt(flags, ctx) {
   const deadlineMono = ctx.deadlineMono ?? (performance.now() + FOREGROUND_TOTAL_BUDGET_MS);
   ctx = { ...ctx, deadlineMono };
-  const input = await readLocalInput(ctx, deadlineMono);
-  if (!input) return { status: 'invalid', error: 'stdin_json_required' };
-  const text = typeof input.text === 'string' ? input.text : input.prompt;
-  const internal = internalPromptReason(text, input, flags);
-  if (internal) return { status: 'skipped', reason: internal };
+  const rawInput = await readLocalInput(ctx, deadlineMono);
+  if (!rawInput) return { status: 'invalid', error: 'stdin_json_required' };
+  const gate = normalizePromptInput(rawInput, flags);
+  if (gate.reason) return { status: 'skipped', reason: gate.reason };
+  const input = gate.input;
+  const text = input.text;
   const projectRoot = resolveProjectRoot({
     explicitCwd: typeof flags.cwd === 'string' ? flags.cwd : input.cwd,
     normalized: input, processCwd: ctx.cwd,
@@ -3084,7 +3105,7 @@ async function handleStagePrompt(flags, ctx) {
   const recovered = !consentPending && !isControl
     ? await recoverDeferredTurns(flags, ctx, input) : null;
   const staged = await stagePromptCore(input, flags, ctx, {
-    source: input.source === 'python' ? 'python' : 'legacy_prompt', deadlineMono,
+    source: input.source === 'python' ? 'python' : 'legacy_prompt', deadlineMono, normalizedPrompt: true,
   });
   if (staged.control === true || isControl) {
     const first = staged.marker === noticeSpec.markers.allowed
@@ -3650,9 +3671,20 @@ async function handleInvoke(flags, ctx) {
     }
 
   }
+  // After the current event is ACKed, use only spare foreground budget to
+  // drain previously consented Outbox events. Clarification-only Work turns
+  // may never receive Stop or an owner invoke; they still provide a bounded
+  // recovery opportunity without replaying any Prompt or changing its owner.
+  let historical_flush = null;
+  if (foregroundIde === 'codex' && ctx.skipInstallRecovery === true
+    && flush?.sent_event_ids?.includes(event.event_id) && remaining(deadlineMono) >= 180) {
+    historical_flush = await flushHistoricalOutbox(ctx, projectRoot, key,
+      foregroundIde, deadlineMono, ctx.now(), { maxDurationMs: 300 });
+  }
   return finish({
     ...outcome,
     flush,
+    ...(historical_flush ? { historical_flush } : {}),
   });
 }
 
@@ -4206,8 +4238,9 @@ async function handleSend(flags, ctx) {
   if (!raw) return { status: 'invalid', error: 'invalid_json' };
   const event = normalizeLegacy(raw, projectRoot);
   if (event.method === METHOD.PROMPT) {
-    const internal = internalPromptReason(event.text, raw, flags);
-    if (internal) return { status: 'skipped', reason: internal };
+    const gate = normalizePromptInput(raw, flags);
+    if (gate.reason) return { status: 'skipped', reason: gate.reason };
+    event.text = sanitizeReportText(gate.input.text);
     if (isNoticeReplayText(event.text) || ['allow', 'deny', 'ambiguous'].includes(raw.control_choice)) {
       return { status: 'skipped', reason: 'control_requires_prompt_entry' };
     }
@@ -4311,19 +4344,20 @@ export async function runCli(argv = process.argv.slice(2), opts = {}) {
     stateRootBinding: runtimeRoot,
     noEphemeralIdentity: runtimeRoot.bound === true && isCodexInvocation(flags),
     flushOutbox: opts.flushOutbox || (async (root, flushOpts = {}) => {
-      if (isCodexInvocation(flags) && !['host-stop', 'install'].includes(command)
-        && (opts.env ?? process.env).CODEX_SANDBOX_NETWORK_DISABLED === '1') {
-        // A restricted tool can persist the project spool, but cannot send.
-        // Do not record a transport failure/backoff that would suppress a
-        // permitted Stop sender immediately after the answer.
-        return { sent: 0, sent_event_ids: [], retried: 0, rejected: 0,
-          skipped: 0, errors: [], deferred: 'network_sandbox_disabled' };
-      }
+      // The inherited flag is a hint, not proof that this caller's HTTPS
+      // transport is blocked. Work can retain it while tools have permitted
+      // networking, and local Stop hooks are not guaranteed in every host.
+      // Use the ordinary bounded transport; the host still enforces its real
+      // policy. Never clear the flag, escalate or spawn a detached sender.
+      const restrictedCodexForeground = isCodexInvocation(flags)
+        && !['host-stop', 'install'].includes(command)
+        && (opts.env ?? process.env).CODEX_SANDBOX_NETWORK_DISABLED === '1';
       const sender = await import('./sender.js');
       // Keep embedded/test callers' environment isolated from the parent
       // process. The standalone CLI already inherits the same environment,
       // while runCli({ env }) must not accidentally send to production CLS.
-      return sender.flushOutbox(root, { env: opts.env ?? process.env, ...flushOpts });
+      return sender.flushOutbox(root, { env: opts.env ?? process.env, ...flushOpts,
+        deferRestrictedNetworkErrors: restrictedCodexForeground });
     }),
     promote: opts.promote,
     resolveSdkAppId: opts.resolveSdkAppId || resolveSdkAppId,

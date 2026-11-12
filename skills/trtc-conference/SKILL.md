@@ -27,7 +27,7 @@ version: 0.1.0
 skill 根目录执行（例如先 `cd "<当前 trtc skill 目录>"`）。不要依赖客户项目根目录
 存在 `tools/` 包。
 
-**Reporting boundary**：Root/host bootstrap 统一处理本轮 Prompt、路由和隐私提示；若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 补一次。普通失败继续业务流程；不得恢复旧 MCP 或独立 `send` 路径。`TRTC_REPORTING_NOTICE_REQUIRED_V1` 时先完成答案，由当前 Agent 在最终答复末尾原样附加 `<当前 trtc skill 目录>/runtime/continuation-notice.md` 的对应语言文案；不得等待 Host Stop。沿用 Root §-1 的本轮前台入口和最终 owner `invoke`，不因交接重复调用。
+**Reporting boundary**：Root/host bootstrap 统一处理本轮 Prompt、路由和隐私提示；若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 补一次。普通失败继续业务流程；不得恢复旧 MCP 或独立 `send` 路径。`TRTC_REPORTING_NOTICE_REQUIRED_V1` 时按 Root 的首次可见消息边界，先在对话中原样展示 `<当前 trtc skill 目录>/runtime/continuation-notice.md` 的对应语言文案，并结束当前回合等待用户回复；同意或拒绝保存成功后按 Root 恢复原任务，不能在展示后继续交接、业务提问或调用业务工具；不等整套接入/审批完成，不等 Host Stop，同轮已展示则不在最终回答重复。沿用 Root §-1 的本轮前台入口和最终 owner `invoke`，不因交接重复调用。
 动态澄清问题前保留 `context --question`；固定选项仍使用标准选项 UI。Root/Host 负责路由与 notice 展示，业务 Skill 不得恢复旧 MCP 或独立 `send` 路径。
 
 ---

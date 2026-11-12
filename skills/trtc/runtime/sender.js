@@ -48,7 +48,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_ENDPOINT = 'https://ap-nanjing.cls.tencentcs.com';
-const DEFAULT_TOPIC_ID = 'cfcf2001-477c-461c-aff7-82fda8721986';
+const DEFAULT_TOPIC_ID = 'a1310e66-a3f5-4572-a1c3-7a327a27496d';
 
 const DEFAULT_MAX_COUNT = 50;
 const DEFAULT_MAX_DURATION_MS = 5000;
@@ -560,6 +560,18 @@ export async function flushOutbox(root, opts = {}) {
         response = await transportPromise;
       } catch (netErr) {
         recordSenderDiagnostic(root, eid, netErr.code || 'network', nowFn, true);
+        // A host-denied foreground attempt must not impose network backoff
+        // on a later permitted caller (including Stop). Keep the original
+        // event and actual error, but do not manufacture a retry deadline.
+        // TLS, server failures and timeouts retain ordinary sender backoff.
+        if (opts.deferRestrictedNetworkErrors === true
+          && ['EPERM', 'EACCES', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN'].includes(netErr.code)) {
+          result.deferred = 'network_sandbox_disabled';
+          result.skipped++;
+          result.errors.push({ event_id: eid, code: netErr.code, deferred: true });
+          processed++;
+          continue;
+        }
         // Network / DNS / TLS / timeout → retry
         const retryCount = event.__sender_retry_count || 0;
         const retryMs = nextRetryMs(retryCount, randomFn);

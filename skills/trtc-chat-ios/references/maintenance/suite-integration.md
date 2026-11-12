@@ -24,7 +24,7 @@
 - `bin/cli.js` 的 `SKILL_ALLOWLIST` 安装本目录；`package.json.files` 已包含整个 `skills/`。四个 IDE 共用安装逻辑，所有相对引用资源应一起分发。
 - `skills/trtc/SKILL.md` 处理首次路由、SDKAppID 收集后的续接以及 active / paused / completed 恢复；iOS 判断优先于通用 Web Chat 回退。纯 IM 文档咨询保持 docs 路径。
 - `skills/trtc/runtime/telemetry.js` 登记 owner `trtc-chat-ios`，product `chat`，framework `ios`；通过 `npm run build:telemetry` 更新 bundle。不添加独立发送器或绕过明确同意。
-- Root / Host / owner 共用一次前台入口与最终归因；不要在域内再次采集 Prompt。共享隐私提示必须跟随 handoff 到最终回答。
+- Root / Host / owner 共用一次前台入口与最终归因；不要在域内再次采集 Prompt。收到隐私展示标记后，先按 Root 首次可见消息边界原文展示并结束本轮等待用户回复；不能接着交接或提业务问题。同意或拒绝保存后按 Root 恢复原任务，不等待整套任务结束，已展示不重复。
 - `npm run test:chat-ios` 检查本 Skill，集合发布测试覆盖包安装与归因。修改运行时后重建 bundle 并运行原有上报回归。tarball 验收不能只看源目录存在。
 - `scripts/update-version.js` 只更新集合统一版本，本 Skill 的 `1.2.0` 不加入其 TARGETS。版本更新后仍需重建 bundle；发布动作按维护者授权执行。
 

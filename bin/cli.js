@@ -89,6 +89,7 @@ const SKILL_ALLOWLIST = new Set([
   "trtc-chat",
   "trtc-chat-android",
   "trtc-chat-ios",
+  "trtc-chat-ohos",
   "trtc-push",
   "trtc-sdk-log-analysis",
 ]);
@@ -965,6 +966,7 @@ function listSkills() {
     "trtc-chat":          "Web IM / Chat SDK integration",
     "trtc-chat-android":  "Android TUIChatKit integration (View / Compose)",
     "trtc-chat-ios":      "iOS TUIChatKit integration and source customization (UIKit)",
+    "trtc-chat-ohos":     "HarmonyOS NEXT / OpenHarmony Chat integration (ArkTS)",
     "trtc-push":          "TIMPush offline push integration (via trtc-push-mcp)",
     "trtc-sdk-log-analysis": "Manual SDK runtime log collection and offline analysis",
   };
