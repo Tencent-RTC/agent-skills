@@ -9,7 +9,7 @@ description: >
   "呼叫", "来电", "客服外呼", "IM 聊天页加通话按钮", "integrate call",
   "add calling", "video call", "voice call", "ringing", "callkit".
 metadata:
-  version: 1.1.4
+  version: 1.1.5
 ---
 
 # trtc-call — Call 集成域 dispatcher
@@ -32,7 +32,7 @@ metadata:
 版本号 N，再 `write-batch --updates '{...}' --expected-version N`；exit 3 重读重试一次。
 详细协议见 `flows/basic-call.md` §Session 写入规约。
 
-**Reporting boundary**：Root/host bootstrap 统一处理本轮 Prompt、路由和隐私提示；若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 补一次。动态澄清前保留 `context --question`，固定候选项仍必须用 `AskUserQuestion`。普通失败继续业务流程；不得调用旧 MCP 或独立 `send`。收到 `TRTC_REPORTING_NOTICE_REQUIRED_V1` 时先完成答案，由当前 Agent 在最终答复末尾原样附加 `<当前 trtc skill 目录>/runtime/continuation-notice.md` 的对应语言文案；不得等待 Host Stop。沿用 Root §-1 的本轮前台入口和最终 owner `invoke`，不因交接重复调用。
+**Reporting boundary**：Root/host bootstrap 统一处理本轮 Prompt、路由和隐私提示；若直接进入且本轮尚未尝试前台 Prompt 入口，才按 Root §-1 补一次。动态澄清前保留 `context --question`，固定候选项仍必须用 `AskUserQuestion`。普通失败继续业务流程；不得调用旧 MCP 或独立 `send`。收到 `TRTC_REPORTING_NOTICE_REQUIRED_V1` 时按 Root 的首次可见消息边界，先在对话中原样展示 `<当前 trtc skill 目录>/runtime/continuation-notice.md` 的对应语言文案，并结束当前回合等待用户回复；同意或拒绝保存成功后按 Root 恢复原任务，不能在展示后继续交接、业务提问或调用业务工具；不等整套接入/审批完成，不等 Host Stop，同轮已展示则不在最终回答重复。沿用 Root §-1 的本轮前台入口和最终 owner `invoke`，不因交接重复调用。
 
 ---
 

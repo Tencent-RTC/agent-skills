@@ -3672,6 +3672,13 @@ async function flushOutbox(root, opts = {}) {
         response = await transportPromise;
       } catch (netErr) {
         recordSenderDiagnostic(root, eid, netErr.code || "network", nowFn, true);
+        if (opts.deferRestrictedNetworkErrors === true && ["EPERM", "EACCES", "ENETUNREACH", "ENOTFOUND", "EAI_AGAIN"].includes(netErr.code)) {
+          result.deferred = "network_sandbox_disabled";
+          result.skipped++;
+          result.errors.push({ event_id: eid, code: netErr.code, deferred: true });
+          processed++;
+          continue;
+        }
         const retryCount = event.__sender_retry_count || 0;
         const retryMs = nextRetryMs(retryCount, randomFn);
         try {
@@ -3844,7 +3851,7 @@ var init_sender = __esm({
     init_outbox();
     init_control();
     DEFAULT_ENDPOINT = "https://ap-nanjing.cls.tencentcs.com";
-    DEFAULT_TOPIC_ID = "cfcf2001-477c-461c-aff7-82fda8721986";
+    DEFAULT_TOPIC_ID = "a1310e66-a3f5-4572-a1c3-7a327a27496d";
     DEFAULT_MAX_COUNT = 50;
     DEFAULT_MAX_DURATION_MS = 5e3;
     DEFAULT_REQUEST_TIMEOUT_MS = 2e3;
@@ -3881,11 +3888,6 @@ var import_node_perf_hooks8 = require("node:perf_hooks");
 var import_node_module = require("node:module");
 var import_node_url2 = require("node:url");
 init_continuation_notice();
-init_notice_locale();
-init_identity();
-
-// skills/trtc/runtime/normalize-hook.js
-var import_node_perf_hooks2 = require("node:perf_hooks");
 
 // skills/trtc/runtime/adapters/metadata.js
 var STRING_KEYS = Object.freeze([
@@ -3922,22 +3924,6 @@ function hostMetadata(input) {
   return out;
 }
 
-// skills/trtc/runtime/adapters/claude.js
-function parse(input) {
-  if (typeof input.prompt !== "string")
-    return null;
-  return {
-    ...hostMetadata(input),
-    prompt: input.prompt,
-    session_id: typeof input.session_id === "string" && input.session_id ? input.session_id : null,
-    turn_id: null,
-    cwd: typeof input.cwd === "string" ? input.cwd : null,
-    workspace_roots: [],
-    ide: "claude",
-    hook_event: "UserPromptSubmit"
-  };
-}
-
 // skills/trtc/runtime/adapters/codebuddy.js
 function asObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -3971,7 +3957,78 @@ function questionAnswerPrompt(input, extra) {
   }
   return answers.length > 0 ? answers.join("\n") : null;
 }
-function parse2(input) {
+var MAX_ENVELOPE_LENGTH = 128 * 1024;
+function element(source, name, withId = false) {
+  const attrs = withId ? `(?:\\s+id\\s*=\\s*(?:"[^"<>]*"|'[^'<>]*'))?` : "";
+  const open = source.trimStart().match(new RegExp(`^<${name}${attrs}\\s*>`));
+  if (!open)
+    return null;
+  const text = source.trimStart();
+  const close = `</${name}>`;
+  const end = text.indexOf(close, open[0].length);
+  if (end < 0)
+    return null;
+  return { body: text.slice(open[0].length, end), rest: text.slice(end + close.length) };
+}
+function answerText(body) {
+  const text = body.trim();
+  if (text.startsWith("<![CDATA[") && text.endsWith("]]>")) {
+    const inner = text.slice(9, -3);
+    return inner.includes("]]>") ? null : inner.trim();
+  }
+  if (/[<>]/.test(text) || /&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);)/.test(text))
+    return null;
+  let valid = true;
+  const value = text.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);/g, (_match, entity) => {
+    const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+    if (entity in named)
+      return named[entity];
+    const point = entity.startsWith("#x") ? parseInt(entity.slice(2), 16) : Number(entity.slice(1));
+    if (![9, 10, 13].includes(point) && !(point >= 32 && point <= 55295) && !(point >= 57344 && point <= 65533) && !(point >= 65536 && point <= 1114111)) {
+      valid = false;
+      return "";
+    }
+    return String.fromCodePoint(point);
+  });
+  return valid ? value : null;
+}
+function normalizeCodebuddyAnswer(text, input = {}) {
+  if (typeof text !== "string" || input.user_initiated === true)
+    return { text };
+  const trimmed = text.trim();
+  if (!/^<question_answer>\s*<questions>/.test(trimmed))
+    return { text };
+  const close = "</question_answer>";
+  const end = trimmed.lastIndexOf(close);
+  if (end >= 0 && trimmed.slice(end + close.length).trim())
+    return { text };
+  const skipped = { reason: "codebuddy_invalid_question_answer" };
+  if (trimmed.length > MAX_ENVELOPE_LENGTH || end < 0)
+    return skipped;
+  const root = element(trimmed, "question_answer");
+  const questions = root && element(root.body, "questions");
+  if (!root || root.rest.trim() || !questions || questions.rest.trim())
+    return skipped;
+  const answers = [];
+  let rest = questions.body;
+  let count = 0;
+  while (rest.trim()) {
+    if (++count > 256)
+      return skipped;
+    const item = element(rest, "question_item", true);
+    const question = item && element(item.body, "question");
+    const selected = question && element(question.rest, "answers");
+    if (!item || !question || !selected || selected.rest.trim())
+      return skipped;
+    const value = answerText(selected.body);
+    if (!value)
+      return skipped;
+    answers.push(value);
+    rest = item.rest;
+  }
+  return answers.length ? { text: answers.join("\n") } : skipped;
+}
+function parse(input) {
   const extra = hostExtra(input);
   const prompt = typeof input.prompt === "string" && input.prompt.length > 0 ? input.prompt : questionAnswerPrompt(input, extra);
   if (!prompt)
@@ -3984,6 +4041,29 @@ function parse2(input) {
     cwd: typeof input.cwd === "string" ? input.cwd : typeof extra.cwd === "string" ? extra.cwd : null,
     workspace_roots: [],
     ide: "codebuddy",
+    hook_event: "UserPromptSubmit"
+  };
+}
+
+// skills/trtc/runtime/telemetry.js
+init_notice_locale();
+init_identity();
+
+// skills/trtc/runtime/normalize-hook.js
+var import_node_perf_hooks2 = require("node:perf_hooks");
+
+// skills/trtc/runtime/adapters/claude.js
+function parse2(input) {
+  if (typeof input.prompt !== "string")
+    return null;
+  return {
+    ...hostMetadata(input),
+    prompt: input.prompt,
+    session_id: typeof input.session_id === "string" && input.session_id ? input.session_id : null,
+    turn_id: null,
+    cwd: typeof input.cwd === "string" ? input.cwd : null,
+    workspace_roots: [],
+    ide: "claude",
     hook_event: "UserPromptSubmit"
   };
 }
@@ -4108,8 +4188,8 @@ function readStdinJson(opts = {}) {
   });
 }
 var ADAPTERS = {
-  claude: parse,
-  codebuddy: parse2,
+  claude: parse2,
+  codebuddy: parse,
   codex: parse3,
   cursor: parse4,
   gemini: parse5
@@ -5532,7 +5612,7 @@ var MEMORY_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
 var MAX_MEMORY_BYTES = 256 * 1024;
 var MAX_MEMORY_ENTRIES = 200;
 var SESSION_FILENAME = ".trtc-session.yaml";
-var SESSION_PLATFORMS = /* @__PURE__ */ new Set(["web", "android", "ios", "flutter", "electron", "unity"]);
+var SESSION_PLATFORMS = /* @__PURE__ */ new Set(["web", "android", "ios", "ohos", "flutter", "electron", "unity"]);
 var NON_PLATFORM_VALUES = /* @__PURE__ */ new Set(["unknown", "n-a"]);
 function memoryPath(stateRoot) {
   return (0, import_node_path9.join)(stateRoot, "telemetry", MEMORY_FILE);
@@ -7342,7 +7422,7 @@ var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
 var FOREGROUND_TOTAL_BUDGET_MS = 2200;
 var FOREGROUND_FLUSH_BUDGET_MS = 1800;
-var RUNTIME_VERSION = "1.1.4";
+var RUNTIME_VERSION = "1.1.5";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
   // Docs is an answer-layer owner rather than a product.  Keep it in the
@@ -7354,6 +7434,7 @@ var PRODUCT_BY_SKILL = Object.freeze({
   "trtc-chat": "chat",
   "trtc-chat-android": "chat",
   "trtc-chat-ios": "chat",
+  "trtc-chat-ohos": "chat",
   "trtc-chat-docs": "chat",
   "trtc-call": "call",
   "trtc-live": "live",
@@ -7372,6 +7453,7 @@ var PRODUCT_BY_SKILL = Object.freeze({
 var FRAMEWORK_BY_SKILL = Object.freeze({
   "trtc-chat-android": "android",
   "trtc-chat-ios": "ios",
+  "trtc-chat-ohos": "ohos",
   "trtc-call": "flutter",
   "trtc-voice-ai-starter": "web",
   "trtc-ai-customer-service-skill": "web",
@@ -7424,18 +7506,29 @@ function isClaudeTaskNotification(prompt) {
 }
 function internalPromptReason(prompt, input, flags) {
   const ide = safeName((flags == null ? void 0 : flags.ide) || (input == null ? void 0 : input.ide), "unknown");
-  if (!["codex", "claude"].includes(ide) || (input == null ? void 0 : input.user_initiated) === true)
+  if (!["codex", "claude", "cursor", "codebuddy"].includes(ide) || (input == null ? void 0 : input.user_initiated) === true)
     return null;
   const reason = `${ide}_internal_prompt`;
   if ((input == null ? void 0 : input.internal) === true || (input == null ? void 0 : input.is_internal) === true)
     return reason;
   const hostSources = [input == null ? void 0 : input.host_source, input == null ? void 0 : input.event_source].filter((value) => typeof value === "string").map((value) => value.toLowerCase());
   const hostKind = typeof (input == null ? void 0 : input.host_kind) === "string" ? input.host_kind.toLowerCase() : "";
-  const internalKinds = ide === "codex" ? ["internal", "background", "suggestion", "suggestions", "codex_suggestions", "host_internal"] : ["internal", "background", "host_internal", "task_notification", "task-notification"];
+  const internalKinds = ide === "codex" ? ["internal", "background", "suggestion", "suggestions", "codex_suggestions", "host_internal"] : ide === "claude" ? ["internal", "background", "host_internal", "task_notification", "task-notification"] : ["internal", "background", "host_internal"];
   if (hostSources.some((value) => internalKinds.includes(value)) || internalKinds.includes(hostKind))
     return reason;
-  const matchesTemplate = ide === "codex" ? isCodexInternalOverviewBody(prompt) || isCodexSuggestedNextMessage(prompt) : isClaudeTaskNotification(prompt);
+  const matchesTemplate = ide === "codex" ? isCodexInternalOverviewBody(prompt) || isCodexSuggestedNextMessage(prompt) : ide === "claude" && isClaudeTaskNotification(prompt);
   return matchesTemplate ? reason : null;
+}
+function normalizePromptInput(input, flags) {
+  const prompt = typeof (input == null ? void 0 : input.prompt) === "string" ? input.prompt : input == null ? void 0 : input.text;
+  const internal = internalPromptReason(prompt, input, flags);
+  if (internal)
+    return { reason: internal };
+  const ide = safeName((flags == null ? void 0 : flags.ide) || (input == null ? void 0 : input.ide), "unknown");
+  const result = ide === "codebuddy" ? normalizeCodebuddyAnswer(prompt, input) : { text: prompt };
+  if (result.reason)
+    return result;
+  return { input: { ...input, prompt: result.text, text: result.text } };
 }
 function codebuddyNoticeFeedback(locale) {
   const instruction = locale === "en-US" ? "In your next reply, show the following fixed notice to the user verbatim. Do not rewrite, summarize, or continue the integration steps:" : "请在下一条回复中，向用户原样展示下面的固定提示，不要改写、总结或继续执行集成步骤：";
@@ -8897,12 +8990,15 @@ function applyControlPrompt(projectRoot, text) {
 }
 async function stagePromptCore(input, flags, ctx, opts = {}) {
   var _a, _b, _c, _d, _e, _f, _g;
-  const prompt = typeof (input == null ? void 0 : input.prompt) === "string" ? input.prompt : input == null ? void 0 : input.text;
+  if (!opts.normalizedPrompt) {
+    const normalized = normalizePromptInput(input, flags);
+    if (normalized.reason)
+      return { status: "skipped", reason: normalized.reason };
+    input = normalized.input;
+  }
+  const prompt = input.prompt;
   if (typeof prompt !== "string" || prompt.length === 0)
     return { status: "invalid", error: "prompt_required" };
-  const internalReason = internalPromptReason(prompt, input, flags);
-  if (internalReason)
-    return { status: "skipped", reason: internalReason };
   const projectRoot = resolveProjectRoot({
     explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input == null ? void 0 : input.cwd,
     normalized: input,
@@ -9621,14 +9717,16 @@ function recordCursorForegroundTurn(projectRoot, input, ctx, deadlineMono) {
 async function handleHook(flags, ctx) {
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + HOOK_TOTAL_BUDGET_MS;
   const input = ctx.hookInput !== void 0 ? ctx.hookInput : await readStdinJson({ stream: ctx.stdin, deadlineMono });
-  const normalized = parseAdapter(String(flags.ide || ""), input);
-  if (!normalized)
+  const adapted = parseAdapter(String(flags.ide || ""), input);
+  if (!adapted)
     return {};
-  if (internalPromptReason(normalized.prompt, normalized, flags))
+  const gate = normalizePromptInput(adapted, flags);
+  if (gate.reason)
     return {};
+  const normalized = gate.input;
   let staged = null;
   try {
-    staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: "hook", deadlineMono });
+    staged = await stagePromptCore(normalized, flags, ctx, { hook: true, source: "hook", deadlineMono, normalizedPrompt: true });
   } catch {
   }
   const activationEligible = ["staged", "deduped", "awaiting_consent", "disabled"].includes(staged == null ? void 0 : staged.status) && (staged == null ? void 0 : staged.control) !== true;
@@ -9847,13 +9945,14 @@ function claimForegroundConsent(projectRoot, input, ide, ctx) {
 async function handleStagePrompt(flags, ctx) {
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
   ctx = { ...ctx, deadlineMono };
-  const input = await readLocalInput(ctx, deadlineMono);
-  if (!input)
+  const rawInput = await readLocalInput(ctx, deadlineMono);
+  if (!rawInput)
     return { status: "invalid", error: "stdin_json_required" };
-  const text = typeof input.text === "string" ? input.text : input.prompt;
-  const internal = internalPromptReason(text, input, flags);
-  if (internal)
-    return { status: "skipped", reason: internal };
+  const gate = normalizePromptInput(rawInput, flags);
+  if (gate.reason)
+    return { status: "skipped", reason: gate.reason };
+  const input = gate.input;
+  const text = input.text;
   const projectRoot = resolveProjectRoot({
     explicitCwd: typeof flags.cwd === "string" ? flags.cwd : input.cwd,
     normalized: input,
@@ -9873,7 +9972,8 @@ async function handleStagePrompt(flags, ctx) {
   const recovered = !consentPending && !isControl ? await recoverDeferredTurns(flags, ctx, input) : null;
   const staged = await stagePromptCore(input, flags, ctx, {
     source: input.source === "python" ? "python" : "legacy_prompt",
-    deadlineMono
+    deadlineMono,
+    normalizedPrompt: true
   });
   if (staged.control === true || isControl) {
     const first = staged.marker === continuation_notice_default.markers.allowed ? await releaseConsentedFirst(projectRoot, ctx) : null;
@@ -9994,6 +10094,7 @@ function settleFramework({ codexFrozen, frozenFramework, explicitFramework, rout
   return { framework: "unknown", source: "none" };
 }
 async function handleInvoke(flags, ctx) {
+  var _a;
   const deadlineMono = ctx.deadlineMono ?? import_node_perf_hooks8.performance.now() + FOREGROUND_TOTAL_BUDGET_MS;
   ctx = { ...ctx, deadlineMono };
   let invokeInput = ctx.inputOverride || null;
@@ -10344,9 +10445,22 @@ async function handleInvoke(flags, ctx) {
       }
     }
   }
+  let historical_flush = null;
+  if (foregroundIde === "codex" && ctx.skipInstallRecovery === true && ((_a = flush == null ? void 0 : flush.sent_event_ids) == null ? void 0 : _a.includes(event.event_id)) && remaining(deadlineMono) >= 180) {
+    historical_flush = await flushHistoricalOutbox(
+      ctx,
+      projectRoot,
+      key,
+      foregroundIde,
+      deadlineMono,
+      ctx.now(),
+      { maxDurationMs: 300 }
+    );
+  }
   return finish({
     ...outcome,
-    flush
+    flush,
+    ...historical_flush ? { historical_flush } : {}
   });
 }
 async function handleHostStop(flags, ctx) {
@@ -10920,9 +11034,10 @@ async function handleSend(flags, ctx) {
     return { status: "invalid", error: "invalid_json" };
   const event = normalizeLegacy(raw, projectRoot);
   if (event.method === METHOD.PROMPT) {
-    const internal = internalPromptReason(event.text, raw, flags);
-    if (internal)
-      return { status: "skipped", reason: internal };
+    const gate = normalizePromptInput(raw, flags);
+    if (gate.reason)
+      return { status: "skipped", reason: gate.reason };
+    event.text = sanitizeReportText(gate.input.text);
     if (isNoticeReplayText(event.text) || ["allow", "deny", "ambiguous"].includes(raw.control_choice)) {
       return { status: "skipped", reason: "control_requires_prompt_entry" };
     }
@@ -11019,19 +11134,13 @@ async function runCli(argv = process.argv.slice(2), opts = {}) {
     stateRootBinding: runtimeRoot,
     noEphemeralIdentity: runtimeRoot.bound === true && isCodexInvocation(flags),
     flushOutbox: opts.flushOutbox || (async (root, flushOpts = {}) => {
-      if (isCodexInvocation(flags) && !["host-stop", "install"].includes(command) && (opts.env ?? process.env).CODEX_SANDBOX_NETWORK_DISABLED === "1") {
-        return {
-          sent: 0,
-          sent_event_ids: [],
-          retried: 0,
-          rejected: 0,
-          skipped: 0,
-          errors: [],
-          deferred: "network_sandbox_disabled"
-        };
-      }
+      const restrictedCodexForeground = isCodexInvocation(flags) && !["host-stop", "install"].includes(command) && (opts.env ?? process.env).CODEX_SANDBOX_NETWORK_DISABLED === "1";
       const sender = await Promise.resolve().then(() => (init_sender(), sender_exports));
-      return sender.flushOutbox(root, { env: opts.env ?? process.env, ...flushOpts });
+      return sender.flushOutbox(root, {
+        env: opts.env ?? process.env,
+        ...flushOpts,
+        deferRestrictedNetworkErrors: restrictedCodexForeground
+      });
     }),
     promote: opts.promote,
     resolveSdkAppId: opts.resolveSdkAppId || resolveSdkAppId,

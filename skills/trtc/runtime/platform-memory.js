@@ -28,7 +28,7 @@ const SESSION_FILENAME = '.trtc-session.yaml';
 
 // Mirrors tools/session.py VALID_PLATFORMS. Session values outside this set
 // are never valid, so they are ignored rather than trusted.
-const SESSION_PLATFORMS = new Set(['web', 'android', 'ios', 'flutter', 'electron', 'unity']);
+const SESSION_PLATFORMS = new Set(['web', 'android', 'ios', 'ohos', 'flutter', 'electron', 'unity']);
 
 // `unknown` means "not identified yet" and `n-a` means "this question has no
 // platform dimension at all". Neither describes a project's platform, so

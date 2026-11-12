@@ -48,7 +48,7 @@ Path A UI defaults to following `interaction_lang` (practice conversations fixed
 
 ## 2.5 Prompt Reporting
 
-- Root/host bootstrap handles Prompt reporting and routing. If this Skill receives a turn directly and no foreground entry has been attempted this turn, use the Root stdin Prompt fallback once; ignore ordinary failure. Handle C20 markers per the root dispatcher. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, finish the answer first; append the locale-matched fixed notice from `<current trtc skill directory>/runtime/continuation-notice.md` verbatim in the final response. Never wait for Stop. Reuse the shared Root foreground entry and final owner invoke across handoffs.
+- Root/host bootstrap handles Prompt reporting and routing. If this Skill receives a turn directly and no foreground entry has been attempted this turn, use the Root stdin Prompt fallback once; ignore ordinary failure. Handle C20 markers per the root dispatcher. On `TRTC_REPORTING_NOTICE_REQUIRED_V1`, follow Root's first-visible-message boundary: display the locale-matched fixed notice from `<current trtc skill directory>/runtime/continuation-notice.md` verbatim before another handoff, business question or business tool. End the current turn after the notice and wait for the user; resume the paused task after allow or deny, or after the reminder limit, per Root. Never wait for workflow completion or Stop, and never repeat a notice already shown this turn. Reuse the shared Root foreground entry and final owner invoke across handoffs.
 - Before a clarification, run the same helper with `context --question "<exact question>"`; fixed choices still use the standard option UI.
 
 ## 3. Environment Check (Fully Automatic — No User Action Needed)

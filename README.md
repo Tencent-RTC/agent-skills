@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh.md)
 
-Build applications with TRTC, including video conferencing, audio and video calling, instant messaging, mobile offline push notifications, and Conversational AI experiences such as general-purpose voice AI agents, AI customer service agents, AI speaking coaches, and real-time translation. Works with Web, iOS, Android, and Flutter.
+Build applications with TRTC, including video conferencing, audio and video calling, instant messaging, mobile offline push notifications, and Conversational AI experiences such as general-purpose voice AI agents, AI customer service agents, AI speaking coaches, and real-time translation. Works with Web, iOS, Android, HarmonyOS NEXT, and Flutter.
 
 Describe what you want to build in plain language. The skill routes your request to the right integration path, asks a few clarifying questions, and walks you through implementation step by step — from first setup to production-ready code.
 
@@ -57,7 +57,7 @@ The skill activates automatically when you describe a real-time communication or
 
 ## Supported TRTC Products, Capabilities & AI Scenarios
 
-Supported TRTC capabilities and scenarios include **video conferencing**, **audio and video calling**, **instant messaging**, **mobile offline push notifications**, and **Conversational AI** experiences such as a **general-purpose voice AI agent**, **AI customer service**, **AI speaking coach**, and **real-time translation** — across Web, iOS, Android, and Flutter.
+Supported TRTC capabilities and scenarios include **video conferencing**, **audio and video calling**, **instant messaging**, **mobile offline push notifications**, and **Conversational AI** experiences such as a **general-purpose voice AI agent**, **AI customer service**, **AI speaking coach**, and **real-time translation** — across Web, iOS, Android, HarmonyOS NEXT, and Flutter.
 
 | Product or scenario | Supported platforms | Guided capabilities | Sample prompts |
 |---|---|---|---|
@@ -66,13 +66,15 @@ Supported TRTC capabilities and scenarios include **video conferencing**, **audi
 | **Conversational AI: Customer Service** | Web | Voice agent setup, knowledge base, human handoff, tool calling, session summary, and integration with an existing backend | • *"Build an AI customer service agent with TRTC"*<br>• *"Add voice-based AI support to my website"*<br>• *"Connect AI customer service to my existing Node.js backend"*<br>• *"Add knowledge-base answers and human handoff to my voice agent"* |
 | **Conversational AI: Oral Coach** | Web | Scenario roleplay, quick correction, reply suggestions, ability reports, custom learning knowledge, and integration with an existing app | • *"Build an AI oral English coach with TRTC"*<br>• *"Add AI speaking practice to my existing app"* |
 | **Conversational AI: Realtime Interpreter** | Web | Realtime translation, multilingual meeting interpretation, bilingual subtitles, transcription, and meeting fanout | • *"Build a real-time AI interpreter with TRTC"*<br>• *"Add real-time translation to my meeting room"*<br>• *"Show bilingual subtitles during a video conference"* |
-| **Chat** | Web (Vue 3) / Android (View / Compose) / iOS (UIKit) | Chat integration, messages, conversations, contacts, groups, customization, and troubleshooting; iOS TUIChatKit source customization | • *"Add chat to my Vue 3 app"*<br>• *"Integrate TUIChatKit into my Android app"*<br>• *"Add chat to my iOS UIKit app"*<br>• *"Customize an iOS TUIChatKit message cell"* |
+| **Chat** | Web (Vue 3) / Android (View / Compose) / iOS (UIKit) / HarmonyOS NEXT (ArkTS) | Chat integration, messages, conversations, contacts, groups, customization, and troubleshooting; iOS TUIChatKit source customization | • *"Add chat to my Vue 3 app"*<br>• *"Integrate TUIChatKit into my Android app"*<br>• *"Add chat to my iOS UIKit app"*<br>• *"Customize an iOS TUIChatKit message cell"*<br>• *"Add chat to my HarmonyOS NEXT app"* |
 | **Push** | Android / iOS / Flutter / UniApp | TIMPush setup, vendor channels, APNs, badges, server APIs, console limit checks, and troubleshooting | • *"Help me integrate TIMPush into my Android app"*<br>• *"Set up APNs offline push for my iOS app"*<br>• *"Configure vendor push channels for my Flutter app"*<br>• *"Add unread-message badges to push notifications"*<br>• *"`registerPush` failed with error 800006"* |
 | **Call** | Flutter | Demo experience, 1-on-1 and group audio/video calls, embedding calls into an existing app, feature extension, and troubleshooting | • *"Let me try the Flutter calling demo"*<br>• *"Add 1-on-1 video calling to my Flutter app"*<br>• *"Add group audio calls to my existing app"*<br>• *"The incoming call screen is not appearing"* |
 | **Live** | Coming soon | Guided integration is not yet available | • *"Show me the documentation for audience co-hosting"*<br>• *"What live-streaming capabilities does Tencent RTC provide?"* |
 | **RTC Engine** | Coming soon | Guided integration is not yet available | • *"How do I publish and subscribe to audio and video tracks?"*<br>• *"Show me the RTC Engine room-management documentation"* |
 
 The iOS Chat skill targets UIKit-based TUIChatKit, including SwiftUI apps that embed its UIKit controllers. It does not cover the separate SwiftUI kit or legacy TUIKit.
+
+HarmonyOS Chat targets HarmonyOS NEXT / OpenHarmony ArkTS projects and uses the `trtc-chat-ohos` skill; it does not reuse Android APIs.
 
 Documentation lookup, error-code search, pricing questions, and product-limit questions are available across all Tencent RTC products, even when guided integration is not yet supported.
 

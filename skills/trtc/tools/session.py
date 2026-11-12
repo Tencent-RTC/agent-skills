@@ -39,7 +39,7 @@ session.py 是一层薄包装，把这些 concern 收口到一处。
   Routing：
     product: str               单产品（与 products 互斥）
     products: list[str]        跨产品（与 product 互斥）
-    platform: str              web / android / ios / flutter / electron / unity
+    platform: str              web / android / ios / ohos / flutter / electron / unity
     intent: str                integrate-scenario / troubleshoot / lookup / ...
     agent: str                 claude / cursor / codebuddy / codex
 
@@ -288,7 +288,7 @@ VALID_INTENTS = {
 }
 VALID_STATUSES = {"active", "paused", "completed"}
 VALID_AGENTS = {"claude", "cursor", "codebuddy", "codex", None}
-VALID_PLATFORMS = {"web", "android", "ios", "flutter", "electron", "unity", None}
+VALID_PLATFORMS = {"web", "android", "ios", "ohos", "flutter", "electron", "unity", None}
 
 VALID_AUTO_ADVANCE = {"pause_each", "pause_on_failure", "pause_at_end", None}
 VALID_INTEGRATION_PATHS = {"topic", "medical-quickstart", "official-roomkit", None}
