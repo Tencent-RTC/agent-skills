@@ -21,7 +21,7 @@
 
 `page/impl/PageImplementation.swift` 是NSObject+weak owner，不是child UIViewController。child containment针对宿主嵌入ChatPage，不要机械把Impl也包成child。`components/common/RTCBaseView.swift` 在首次didMoveToWindow才执行建树/约束/绑定/样式；热缓存状态回调可能先于setupViewStyle，改首帧样式时需核对这个顺序。
 
-以上Impl链只适用于重构基线；发布Pod的平铺ChatPage可能直接负责布局和生命周期，先读实际文件。会话点击携带NavigationInfo.conversation与locateMessage进入ChatPage；onBack/onMoreClick由宿主接线。部分版有showsNavigationBar、客户9.1.7822反馈无该参数，未核实不能传；默认保留组件条并隐藏宿主系统条，见 [能力检查](../../shared/versions.md)。
+以上Impl链适用于当前发布版9.1.7825（重构布局）；更早的发布Pod可能是平铺ChatPage直接负责布局和生命周期，先读实际文件。会话点击携带NavigationInfo.conversation与locateMessage进入ChatPage；onBack/onMoreClick由宿主接线。9.1.7825有showsNavigationBar，9.1.7822等旧版无该参数，以客户实际init为准；默认保留组件条并隐藏宿主系统条，见 [能力检查](../../shared/versions.md)。
 
 ## 修改配方
 

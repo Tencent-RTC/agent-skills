@@ -11,23 +11,23 @@
 | `components/messagelist/MessageListView.swift` | 组件门面、registerCustomMessageCell、MessageContentView、可见性转发 |
 | `components/messagelist/view/MessageListViewImpl.swift` | 状态渲染到列表、滚动/更新及可见性 |
 | `components/messagelist/viewmodel/MessageListViewModel.swift` | Store订阅、历史加载、消息处理 |
-| `components/messagelist/MessageConfig.swift` | ChatMessageListConfig存储及外观类型 |
+| `components/messagelist/MessageListConfig.swift` | ChatMessageListConfig存储及外观类型；init与 `_xxx` 缺省在 `config/MessageListConfig+Default.swift` |
 
-自定义协议任务替换后两项为 `components/messagelist/cell/MessageCellRegistry.swift`、`components/common/MessageListHelper.swift`，见定位器custom-message任务。不要两组一次全读。
+自定义协议任务替换后两项为 `components/messagelist/MessageListHelper.swift`（公开注册入口）、`components/messagelist/cell/MessageCellRegistry.swift`，摘要消费在 `components/common/MessageDisplayHelper.swift`，见定位器custom-message任务。不要两组一次全读。
 
 ## 调用链
 
 ChatPageImpl创建MessageListView → 内部MessageListViewImpl与ViewModel → Core MessageListStore状态 → 数据处理/列表更新 → registry选内容 → cell bind与布局。用户动作/已读通过相应Store回到业务层，不能只把UI数组移除当作删除消息成功。
 
-自定义注册：公开registerCustomMessageCell → 内部MessageCellRegistry工厂及摘要登记 → 解析messagePayload.custom中的String customData/businessID → 匹配规则 → makeContentView/bind；摘要由公共MessageListHelper等消费者读取，不等于view里的label。
+自定义注册：公开 `MessageListHelper.registerCustomMessageCell` → 内部MessageCellRegistry工厂及摘要登记 → 解析messagePayload.custom中的String customData/businessID → 匹配规则 → makeContentView/bind；摘要由 `MessageDisplayHelper` 等消费者读取，不等于view里的label。
 
 ## 修改配方
 
 ### 气泡、头像、时间和行布局
 
-行容器直接读 `components/messagelist/cell/MessageBaseCell.swift` 的 `configure`、`rebuildLayout`、`layoutLeft/layoutRight`、`applyBubbleBackground/applyCustomBubbleAppearance`；内容复用走 `installContentViewIfNeeded`，清理在 `prepareForReuse`。动态高度从该内容view回到列表布局，再回查 `components/messagelist/config/MessageListConfig.swift` 与 `MessageListConfig+Internal.swift` 的默认/解析。外框、avatar/nickname、内容insets分别验证，不把全部间距叠加到内容view。
+行容器直接读 `components/messagelist/cell/MessageBaseCell.swift` 的 `configure`、`rebuildLayout`、`layoutLeft/layoutRight`、`applyBubbleBackground/applyCustomBubbleAppearance`；内容复用走 `installContentViewIfNeeded`，清理在 `prepareForReuse`。动态高度从该内容view回到列表布局，再回查 `components/messagelist/config/MessageListConfig+Default.swift` 的 `_xxx` 默认/解析。外框、avatar/nickname、内容insets分别验证，不把全部间距叠加到内容view。
 
-默认气泡按当前alignment选own/incoming或固定left/right，再与default字段合并。改getter默认前检查 `page/ChatPage.swift` 对右头像的特殊默认。新选项走 [配置配方](../workflow.md)，只增加user字段不算完成。
+默认气泡按当前alignment选own/incoming或固定left/right，再与default字段合并。改getter默认前检查 `page/ChatPage.swift` 对右头像的特殊默认。新选项走 [配置配方](../workflow.md)，只增加公开存储属性不算完成。
 
 ### 复用、异步尺寸和列表刷新
 

@@ -86,25 +86,37 @@ def validate(root, acceptance_file=None):
         "references/source/tasks.json", "scripts/locate_source.py",
         "references/examples/ChatIntegration.swift", "references/examples/CustomMessage.swift", "references/examples/DebugSignature.swift",
         "references/shared/credentials.md", "references/shared/versions.md",
+        "references/shared/kit-selection.md",
     }
     modules = ("messages", "input", "conversations", "contacts", "settings", "theme", "navigation")
     required.update(f"references/source/modules/{module}.md" for module in modules)
+    required.update({
+        "references/swiftui/index.md", "references/swiftui/integration.md",
+        "references/swiftui/customization.md", "references/swiftui/api-map.md",
+        "references/swiftui/source/index.md", "references/swiftui/source/architecture.md",
+        "references/swiftui/source/workflow.md", "references/swiftui/source/lessons.md",
+        "references/swiftui/source/tasks.json",
+        "references/swiftui/examples/ChatIntegration.swift", "references/swiftui/examples/CustomMessage.swift",
+    })
+    required.update(f"references/swiftui/source/modules/{module}.md" for module in modules)
     actual = {str(path.relative_to(root)) for path in files}
     errors.extend(f"Missing resource: {item}" for item in sorted(required - actual))
-    for name in modules:
-        guide = root / f"references/source/modules/{name}.md"
-        if guide.is_file():
-            body = guide.read_text(encoding="utf-8")
-            for heading in ("何时读取", "首读", "调用链", "修改配方", "不变量", "最小回归"):
-                if heading not in body:
-                    errors.append(f"Missing module recipe section: {name}: {heading}")
-            if len(body) > 6000:
-                errors.append(f"Module guide exceeds 6000 characters: {name}")
+    for prefix in ("references/source/modules", "references/swiftui/source/modules"):
+        for name in modules:
+            guide = root / f"{prefix}/{name}.md"
+            if guide.is_file():
+                body = guide.read_text(encoding="utf-8")
+                for heading in ("何时读取", "首读", "调用链", "修改配方", "不变量", "最小回归"):
+                    if heading not in body:
+                        errors.append(f"Missing module recipe section: {prefix}/{name}: {heading}")
+                if len(body) > 6000:
+                    errors.append(f"Module guide exceeds 6000 characters: {prefix}/{name}")
 
     task_names = set()
     try:
         from locate_source import load_manifest
         task_names = set(load_manifest(root / "references/source/tasks.json")["tasks"])
+        task_names |= set(load_manifest(root / "references/swiftui/source/tasks.json")["tasks"])
     except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
         errors.append(f"Invalid source index: {exc}")
 
@@ -133,8 +145,8 @@ def validate(root, acceptance_file=None):
     forbidden = (
         "ConversationListView(", "ContactListView(", "MessageInputView(",
         "MessageListView(conversationID:", "MessageCellRegistry.",
-        "MessageActionIDs.", "ConversationActionIDs.", "TUILogin.",
-        "context.config", "context.messageListStore", "ThemeStore.",
+        "MessageActionIDs.", "ConversationActionIDs.", "TUILogin.", "ThemeStore.",
+        "MessageListView.registerCustom", "MessageInputActionIDs.",
     )
     for path in (root / "references/examples").glob("*.swift"):
         content = path.read_text(encoding="utf-8")
@@ -150,6 +162,19 @@ def validate(root, acceptance_file=None):
                 errors.append("Debug signature must be excluded from Release")
         elif "showsNavigationBar:" in content:
             errors.append(f"Version-dependent navigation parameter in common template: {path.name}")
+    swiftui_forbidden = (
+        "import TUIChatKit\n", "MessageContentView", "MessageContentContext", "TUIChatKitTheme",
+        "MessageCellRegistry.", "CustomMessageSummaryRegistry.", "ConversationActionIDs.",
+        "MenuButtonConfig", "TUILogin.", "ThemeStore.", "ContactsPage(", "C2CChatSettingViewController",
+    )
+    for path in (root / "references/swiftui/examples").glob("*.swift"):
+        content = path.read_text(encoding="utf-8")
+        for token in swiftui_forbidden:
+            if token in content:
+                errors.append(f"Non-public, version-dependent or wrong-kit API in swiftui/{path.name}: {token.strip()}")
+        for module in ("AtomicXCore", "SwiftUI", "TUIChatKit_Swift"):
+            if f"import {module}\n" not in content:
+                errors.append(f"Missing import {module} in swiftui/{path.name}")
     return errors
 
 
@@ -163,7 +188,7 @@ def main():
         for error in errors:
             print("FAIL:", error)
         return 1
-    print("PASS: metadata, local references, resource layout and Python syntax"
+    print("PASS: metadata, local references, resource layout (imperative + declarative) and Python syntax"
           + ("; acceptance schema" if args.acceptance_file is not None else ""))
     print("NOTE: Swift compilation, model task execution and live IM/UI behavior are separate checks")
     return 0

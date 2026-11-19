@@ -6,12 +6,12 @@
 
 以消息输入或消息列表为例，按真实链逐层检查；不存在的转换层不要强造：
 
-1. 在具体公开 Config 定义增加可选覆盖存储（一般 `userXxx`）；保留值/引用类型与现有命名风格。
+1. 在具体公开 Config 定义增加存储：消息列表/输入/会话/联系人四个主配置用无前缀公开可选属性 `public var xxx: T? = nil`；设置页配置沿用 `userXxx` + 公开计算属性。保留值/引用类型与现有命名风格。
 2. 在公开 init 增加带默认值参数并赋值；优先末尾增参，避免破坏现有 Swift 参数顺序/调用源码兼容。
-3. 在 Defaults/配置扩展增加 getter/setter和缺省值；查缺省来自常量还是 AppBuilder，不只改一份初始化值。
-4. 检查 internal config protocol/conformance/解析是否需要新增成员；结构体原生就符合协议时不再加冗余适配层。
+3. 在 `+Default(s).swift` 增加 internal 只读 `_xxx`（`xxx ?? 缺省`）供 SDK 内部使用；查缺省来自常量还是 AppBuilder，不只改一份初始化值。消费者只读 `_xxx`，不直接读可选存储。
+4. 9.1.7825 已去掉消息列表/输入的 internal 配置协议与 `+Internal.swift` 转换层；设置页仍有 `impl/ChatSettingConfig+Internal.swift`，按实际存在的层补齐，不强造已删除的协议。
 5. 在真正构建/刷新 UI 的消费者使用它：按钮、菜单、约束、cell bind/高度计算可能分布在不同文件。
-6. 查看 Page façade 是否传透，以及 PageImpl 是否会创建特殊配置或重写值。例：ChatPage隐式右头像为true，而显式空config为false。新增列表/输入协议成员还需核对 `components/chatbot/ChatbotMessageListConfig.swift` 和 `ChatbotMessageInputConfig.swift` 的base透传/特殊覆盖；协议有默认实现时，漏透传可能编译通过但行为丢失。
+6. 查看 Page façade 是否传透，以及 PageImpl 是否会创建特殊配置或重写值。例：ChatPage隐式右头像为true，而显式空config为false。新增列表/输入项还需核对 `components/chatbot/ChatbotMessageListConfig.swift` 和 `ChatbotMessageInputConfig.swift` 的 `applyingChatbotRestrictions()`：机器人会话在复制的配置上强制关闭部分能力，新项是否也要在机器人会话中关闭需显式决定。
 7. 如果要求 `appConfig.json`，另接 JSON decode → AppBuilder属性 → getter缺省 → UI消费者；仅增加JSON键不算功能完成。
 8. 用同一配置验证未传参数、传true、传false、页面复建/复用、单群聊/机器人等特殊配置；兼容旧构造调用。
 9. 修改 public API 后做 App侧普通 `import TUIChatKit` typecheck，不使用 `@testable` 掩盖访问级别。只给编译器看的测试 façade 不能冒充真实依赖验证。

@@ -2,7 +2,7 @@
 
 ## 当前交付
 
-目录名与 frontmatter 为 `trtc-chat-ios`，显示名为 iOS TUIChatKit，Skill 版本保留 `1.2.0`，独立于 npm 集合版本。集合安装由官方 CLI 分发到四个 IDE，与相邻 Root 共用隐私与上报运行时；仍兼容不带 Root 的独立使用。
+目录名与 frontmatter 为 `trtc-chat-ios`，显示名为 iOS TUIChatKit，Skill 版本为 `1.4.0`，独立于 npm 集合版本。集合安装由官方 CLI 分发到四个 IDE，与相邻 Root 共用隐私与上报运行时；仍兼容不带 Root 的独立使用。
 
 可将整个目录复制到宿主支持的 Skill 目录，例如工程级 `.codebuddy/skills/trtc-chat-ios`；这里只说明安装方式，不自动写入用户目录。保留 `references/`、`scripts/` 的相对路径；Swift代码示例位于 `references/examples/`，无需单独的 `assets/` 目录。单独使用不要求相邻 Android 或根 Skill。
 
@@ -10,9 +10,11 @@
 
 版本 1.1.0 保留原有接入功能，改为按用途分层：`references/app` 放应用接入/公开定制/测试数据；`references/source` 放任务索引、架构、变更配方、经验和七个模块指南；`references/shared` 放公开API字典/边界/通用约束/故障分流；`references/maintenance` 只放安装发布维护。维护者测试集中在开发仓库顶层的 `tests/trtc-chat-ios/`，不随 npm 包或 Skill 安装分发。原 `assets` 中的三份Swift模板现统一归入 `references/examples`，供AI按需参考与适配，不自动加入宿主工程；源码内容保持不变。
 
+版本 1.3.0 新增声明式分支 `references/swiftui`：入口路由、接入、定制、API 地图、两份 SwiftUI 示例，以及 `source/` 下的任务索引、架构、变更配方、经验、七个模块指南与独立 `tasks.json`。凭据、签名模板、公共约束、测试数据、能力边界两套共用；命令式与声明式的 API、模块指南、示例互不复用。定位器以 `--kit swiftui` 切换索引。
+
 主入口只做路由。新增文件必须挂到相应入口或模块指南，避免孤立文档；同一事实只在主负责指南详细讲解，其他文件用短链接，不把所有指南聚合进SKILL.md。平台差异：
 
-- Android View/Compose 改为命令式 UIKit 基线，不混入独立 SwiftUI API。
+- Android View/Compose 分别对应命令式 UIKit 与声明式 SwiftUI 两条独立基线，同一任务不混用两套 API。
 - Activity/Insets 改为 UIViewController containment、导航、安全区和键盘。
 - renderer/receiver DSL 改为 MessageContentView、静态注册和 CustomEditor 参数闭包。
 - 默认强制 Call 改为按实际 iOS 工程需求接入，避免重复事件 subscriber。
@@ -22,11 +24,11 @@
 ## 集合发布接入
 
 - `bin/cli.js` 的 `SKILL_ALLOWLIST` 安装本目录；`package.json.files` 已包含整个 `skills/`。四个 IDE 共用安装逻辑，所有相对引用资源应一起分发。
-- `skills/trtc/SKILL.md` 处理首次路由、SDKAppID 收集后的续接以及 active / paused / completed 恢复；iOS 判断优先于通用 Web Chat 回退。纯 IM 文档咨询保持 docs 路径。
+- `skills/trtc/SKILL.md` 处理首次路由、SDKAppID 收集后的续接以及 active / paused / completed 恢复；iOS 判断优先于通用 Web Chat 回退；iOS 下命令式与声明式都路由到本 Skill，由本 Skill 入口按 Pod/模块名分流，不要在根入口把声明式误判为不支持或直接套命令式 API。纯 IM 文档咨询保持 docs 路径。
 - `skills/trtc/runtime/telemetry.js` 登记 owner `trtc-chat-ios`，product `chat`，framework `ios`；通过 `npm run build:telemetry` 更新 bundle。不添加独立发送器或绕过明确同意。
 - Root / Host / owner 共用一次前台入口与最终归因；不要在域内再次采集 Prompt。收到隐私展示标记后，先按 Root 首次可见消息边界原文展示并结束本轮等待用户回复；不能接着交接或提业务问题。同意或拒绝保存后按 Root 恢复原任务，不等待整套任务结束，已展示不重复。
 - `npm run test:chat-ios` 检查本 Skill，集合发布测试覆盖包安装与归因。修改运行时后重建 bundle 并运行原有上报回归。tarball 验收不能只看源目录存在。
-- `scripts/update-version.js` 只更新集合统一版本，本 Skill 的 `1.2.0` 不加入其 TARGETS。版本更新后仍需重建 bundle；发布动作按维护者授权执行。
+- `scripts/update-version.js` 只更新集合统一版本，本 Skill 的版本不加入其 TARGETS。版本更新后仍需重建 bundle；发布动作按维护者授权执行。
 
 ## 共享会话
 
@@ -51,7 +53,7 @@ create 之后也要先 read 再写；CAS 冲突重读并重试一次，仍失败
 
 维护者在集合开发仓库根目录执行 `npm run test:chat-ios`；命令会显式传入 `tests/trtc-chat-ios/acceptance.json` 并运行该目录的 Python 测试。显式指定的验收文件缺失会失败；发布安装后的资源检查不依赖它。均不联网、不读取App凭据、不启动模拟器。
 
-更新代码基线时，针对 `tasks.json` 的UI任务在真实UI根运行 `locate_source.py --task <任务> --root <已确认目录> --check-symbols`；`tab-badge`改传明确的Demo Sources根，`config`预期只返回select-module。缺失文件/符号必须更新或记录不适用，不把索引命中当作API兼容证明。脚本默认只返回当前任务切片，别要求用户先读完整JSON。
+更新代码基线时，针对 `tasks.json` 的UI任务在真实UI根运行 `locate_source.py --task <任务> --root <已确认目录> --check-symbols`；`tab-badge`改传明确的Demo Sources根，`config`预期只返回select-module。声明式基线同样运行 `locate_source.py --kit swiftui ...`，并用依赖当前 `TUIChatKit_Swift` 的 App target 对 `references/swiftui/examples` 做类型检查。缺失文件/符号必须更新或记录不适用，不把索引命中当作API兼容证明。脚本默认只返回当前任务切片，别要求用户先读完整JSON。
 
 Swift 模板分别放入依赖当前 TUIChatKit/AtomicXCore 的 App target 类型检查或完整构建。单独 `swiftc -parse` 只能证明语法；已有旧 framework 不能替代当前源码 API 验证。模板中的类型为宿主自有示例，不是 kit 内置类。
 
@@ -70,6 +72,10 @@ Swift 模板分别放入依赖当前 TUIChatKit/AtomicXCore 的 App target 类�
 客户建议不是全部照搬：60010不作为签名通过证据，6032不限定唯一原因；实际源码主题键是mode而非themeMode；颜色按背景而非isSelf选；UISegmentedControl和Simulator超时处理均保留取证与局部操作，不默认替换全部控件/关闭所有设备。31个模型验收场景仍待端到端执行，不能以单元测试代替UI或云端行为验证。
 
 本次集合接入补齐 20 项定位器测试、5 项 Swift/Python 离线签名交叉验证，并提供 22 个待执行模型验收场景（`status=not_run`）；历史记录中的其他测试数不代表这些场景已执行。
+
+1.4.0（2026-11-18）：新增 [套件选择](../shared/kit-selection.md)（空工程默认命令式，已有工程分析技术栈，不确定且倾向声明式时先确认）；两套内容改以已发布版本为基线。命令式 9.1.7825 与内部主干一致，更新配置命名（四个主配置去掉 `user` 前缀）、`MessageListHelper` 注册入口、`MessageInputDefaultActionIDs`、`MessageContentContext` 新公开字段、文件重命名与 `tasks.json`；声明式改以 9.1.7821 为准（`ChatContactListConfig` 与 `AZOrderedListItem` 回调、init 顺序、未发布修复标为已知问题）。验证：用空工程分别只依赖 `TUIChatKit 9.1.7825`、`TUIChatKit_Swift 9.1.7821`，把各自全部示例及定制文档代码片段放入 App target 完整编译通过（Xcode 16.0，arm64 iOS 15 Simulator，普通 import，无 stub）；声明式工程首次并发构建时 Kingfisher 目标偶发缺少 .o，降低并发后通过，与示例代码无关。定位器在两个发布源码包上全部任务命中。未运行 App 或真实登录。
+
+1.3.0声明式补充（2026-11-18）：基于内部开发源码 `ios_swiftui/chat/uikit`（podspec 9.1.7822）编写，并下载已发布 `TUIChatKit_Swift 9.1.7821` 源码包逐文件比对公开签名差异（联系人配置与回调、消息列表配置 init 顺序、视频录制实现与 Masonry 依赖）。验证：用 Mini Demo 当前源码构建出的 `TUIChatKit_Swift` / `AtomicXCore` 模块对两份声明式示例与定制文档全部代码片段做普通 import 外部类型检查通过（Xcode 16.0、Swift 5、arm64 iOS 15 Simulator，无 stub/@testable）；定位器 `--kit swiftui` 对开发源码九个 UI 任务 `--check-symbols` 全部命中，对 9.1.7821 源码包 `contacts` 任务按预期报 partial。未对发布 Pod 完整编译示例、未运行 App、未做真实登录收发；当时 GitHub 默认分支未找到声明式源码。
 
 评估弱模型时至少记录：正确选中的主指南、实际读取源码路径、无关读取/扩大搜索次数、缺省和联动是否遗漏、任务完成正确性。只减少文件数不是成功标准。入口和模块的字符预算有自动检查，但字符数不等于token数；未绑定模型分词器或实测前，不宣称降低了固定百分比token/耗时。
 

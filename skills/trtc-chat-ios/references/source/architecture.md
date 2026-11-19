@@ -2,11 +2,11 @@
 
 ## 代码的三条链
 
-下图为重构开发源码基线；发布Pod可能是平铺ChatPage并直接持有组件，没有PageImpl。先按 [版本能力](../shared/versions.md) 匹配实际布局，不照图创建不存在的类。
+下图对应当前发布版9.1.7825（重构布局）；更早的发布Pod可能是平铺ChatPage并直接持有组件，没有PageImpl。先按 [版本能力](../shared/versions.md) 匹配实际布局，不照图创建不存在的类。
 
 1. **页面装配**：宿主导航 → `page/ChatPage.swift` / `ConversationsPage.swift` / `ContactsPage.swift` → `page/impl/*PageImpl.swift` → 对应组件。
 2. **行为/数据**：组件 UI 事件 → ViewModel/Coordinator → `AtomicXCore.*Store` 动作 → 状态发布 → UI sink/bind/render。部分设置页直接调用 Store，不强制套一层不存在的 ViewModel。
-3. **配置**：公开具体 Config 中 `userXxx` → 公开 init 与缺省 getter → internal protocol/解析器（若存在）→ 页面/视图消费。颜色/资源/JSON 各有独立链，定义一个属性并不保证任何消费者使用它。
+3. **配置**：消息列表/输入/会话/联系人四个配置为公开可选属性 `xxx: T? = nil`（nil 表示缺省），`+Default(s).swift` 中的 internal `_xxx` 解析缺省（部分读 AppBuilder），设置页配置仍是 `userXxx` + 公开计算属性 → 页面/视图消费。颜色/资源/JSON 各有独立链，定义一个属性并不保证任何消费者使用它。
 
 `page/*.swift` 是公开 façade，转发生命周期给 private impl；不要只在 façade 加一个字段却忘记给 impl 传入。页面多为 final 影响 App 扩展，但源码维护者可在模块内部修改其实现，不必把所有成员公开。
 

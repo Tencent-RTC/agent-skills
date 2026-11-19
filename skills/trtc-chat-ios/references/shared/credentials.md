@@ -4,9 +4,9 @@
 
 ## 签名来源
 
-1. 生产推荐由客户业务服务端在鉴权后签发用户自己的UserSig。
-2. 客户明确选择参考Chat Demo在客户端使用SecretKey调试时，可以按其选择实施：在方案、写入授权前和最终交付时分别说明客户端密钥可被提取，不能把该方式描述为安全的生产方案，并继续推荐服务端签发。登录参数来源的判断与实施步骤见 [应用接入·登录](../app/integration.md#登录)。
-3. 客户端调试签名用 [DebugSignature.swift](../examples/DebugSignature.swift)。此模板没有真实密钥、只在DEBUG编译；仅HMAC-SHA256 TLS v2.0，不支持旧ECDSA或带userbuf的特殊签名。SecretKey由客户填入目标文件，不要求客户发到对话里；不要为了调试自动读取现有密钥文件。
+1. 客户未明确指定登录鉴权方式、仅要求集成时，默认在客户端用 SDKAppID、SecretKey 和登录 userID 生成 UserSig，不先询问签名来源；配置、签名生成逻辑及调试调用全部放在 `#if DEBUG` 内。客户明确指定服务端、提供 UserSig 或要求复用已有登录流程时按其选择，生产仍推荐业务服务端鉴权后签发用户自己的 UserSig。
+2. 默认调试集成与客户明确选择客户端 SecretKey 调试均可实施：在方案、写入前和最终交付时分别说明客户端密钥可被提取，不能把该方式描述为安全的生产方案，并继续推荐服务端签发。登录参数来源、实施步骤及醒目交付指引见 [应用接入·登录](../app/integration.md#登录)。
+3. 客户端调试签名用 [DebugSignature.swift](../examples/DebugSignature.swift)。此模板没有真实密钥、只在 DEBUG 编译；仅 HMAC-SHA256 TLS v2.0，不支持旧 ECDSA 或带 userbuf 的特殊签名。尽量只让客户在一处源码填写 SDKAppID 和 SecretKey：未提供时分别留 `0` 和空字符串，userID 优先复用宿主账号，否则按应用自动生成并本地持久化，UserSig、签发时间和有效期自动处理，不增加手填项。最终回复以一级标题“必须完成：请在源码填入 SDKAppID 和 SecretKey”开头，用加粗引用、实际文件/字段/行号及两行占位代码提示，说明二者须来自同一应用；已配置字段按事实标注，App 缺配置也须显眼提示。不要要求客户把密钥发到对话里，不为调试自动读取现有密钥文件。
 4. 验证某个UserSig是否正确时，可用 [IM控制台UserSig生成校验](https://console.cloud.tencent.com/im/tool-usersig) 或官方GenerateTestUserSig对照，不自行猜编码。
 5. REST API创建测试账号和消息时使用管理员UserSig；客户端登录使用目标用户自己的UserSig，两者不能混用。
 

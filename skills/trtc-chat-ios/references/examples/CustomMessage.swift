@@ -41,7 +41,7 @@ enum OrderMessageRegistration {
         precondition(maximumContentWidth.isFinite && maximumContentWidth > 32)
         guard !didRegister else { return }
         didRegister = true
-        MessageListView.registerCustomMessageCell(
+        MessageListHelper.registerCustomMessageCell(
             businessID: OrderCard.identifier,
             summaryProvider: { payload in
                 OrderCard.decode(payload.customData)?.title

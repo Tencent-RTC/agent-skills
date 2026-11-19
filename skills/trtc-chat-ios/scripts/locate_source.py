@@ -9,6 +9,10 @@ from pathlib import Path, PurePosixPath
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = SKILL_ROOT / "references/source/tasks.json"
+MANIFESTS = {
+    "uikit": MANIFEST,
+    "swiftui": SKILL_ROOT / "references/swiftui/source/tasks.json",
+}
 MAX_PRIMARY_FILES = 4
 MAX_FILE_BYTES = 2 * 1024 * 1024
 
@@ -120,7 +124,7 @@ def load_manifest(path=MANIFEST):
 
 def chat_page_bodies(code):
     bodies = []
-    for match in re.finditer(r"\b(?:class|extension)\s+ChatPage\b[^{}]*\{", code):
+    for match in re.finditer(r"\b(?:class|struct|extension)\s+ChatPage\b[^{}]*\{", code):
         depth = 1
         index = match.end()
         while index < len(code) and depth:
@@ -220,13 +224,58 @@ def resolve_ui_root(supplied):
     return inspect_ui_root(supplied)["root"]
 
 
-def locate(supplied, task_name, check_symbols=False, manifest=None):
-    manifest = load_manifest() if manifest is None else manifest
+def inspect_swiftui_root(supplied):
+    supplied = Path(supplied).expanduser().resolve()
+    if not supplied.is_dir():
+        raise LocatorError("Supplied root is not a directory")
+    candidates = [supplied, supplied / "ios_swiftui/chat/uikit", supplied / "TUIChatKit_Swift",
+                  supplied / "Pods/TUIChatKit_Swift/TUIChatKit_Swift"]
+    matches = {}
+    for candidate in candidates:
+        if not candidate.is_dir():
+            continue
+        candidate = candidate.resolve()
+        try:
+            candidate.relative_to(supplied)
+        except ValueError:
+            continue
+        page = safe_path(candidate, "page/ChatPage.swift")
+        if not page.is_file():
+            continue
+        code = swift_code(read_bounded(page))
+        if not re.search(r"\bstruct\s+ChatPage\s*:\s*View\b", code) or not re.search(r"\bimport\s+SwiftUI\b", code):
+            continue
+        spec = safe_path(candidate, "TUIChatKit_Swift.podspec")
+        has_spec = spec.is_file() and bool(re.search(
+            r"^\s*s\.name\s*=\s*['\"]TUIChatKit_Swift['\"]", read_bounded(spec), re.M
+        ))
+        initializers = [value for body in chat_page_bodies(code) for value in public_initializers(body)]
+        conditional = bool(re.search(r"^\s*#(?:if|elseif|else|endif)\b", code, re.M))
+        matches[candidate] = {
+            "root": candidate, "layout": "declarative", "chat_page": "page/ChatPage.swift",
+            "has_podspec": has_spec,
+            "supports_shows_navigation_bar": None if conditional else any(
+                "showsNavigationBar" in parameter_names(value) for value in initializers),
+            "has_conditional_compilation": conditional,
+            "initializer_parameters": [parameter_names(value) for value in initializers],
+        }
+    if len(matches) != 1:
+        raise LocatorError(
+            "Expected one declarative SwiftUI root; found " + str(len(matches))
+            + ". Supply the exact UI directory; no recursive discovery is performed."
+        )
+    return next(iter(matches.values()))
+
+
+def locate(supplied, task_name, check_symbols=False, manifest=None, kit="uikit"):
+    if kit not in MANIFESTS:
+        raise LocatorError("Unknown kit: " + str(kit))
+    manifest = load_manifest(MANIFESTS[kit]) if manifest is None else manifest
     if task_name not in manifest["tasks"]:
         raise LocatorError("Unknown task: " + task_name)
     task = manifest["tasks"][task_name]
     if task.get("choose_modules"):
-        return {"status": "select-module", "task": task_name, "guide": task["guide"],
+        return {"status": "select-module", "task": task_name, "kit": kit, "guide": task["guide"],
                 "files": [], "choices": task["choose_modules"], "next": task["next"]}
     profile = None
     if task.get("scope") == "host":
@@ -236,17 +285,20 @@ def locate(supplied, task_name, check_symbols=False, manifest=None):
             r"\bclass\s+HomeTabBarController\s*:\s*UITabBarController\b", swift_code(read_bounded(marker))
         ):
             raise LocatorError("Expected an explicitly supplied Demo Sources root; for another host follow the navigation guide.")
+    elif kit == "swiftui":
+        profile = inspect_swiftui_root(supplied)
+        root = profile["root"]
     else:
         profile = inspect_ui_root(supplied)
         root = profile["root"]
     entries = task["primary"]
-    if profile and profile["layout"] == "flat" and task_name == "navigation":
+    if kit == "uikit" and profile and profile["layout"] == "flat" and task_name == "navigation":
         entries = [{"path": profile["chat_page"], "symbols": ["ChatPage"],
                     "reason": "平铺版本页面自身承担导航/布局；先核对当前构造器与生命周期，不寻找不存在的PageImpl"}]
     files = []
     for entry in entries:
         relative = entry["path"]
-        if profile and profile["layout"] == "flat" and relative.startswith("page/") and not relative.startswith("page/impl/"):
+        if kit == "uikit" and profile and profile["layout"] == "flat" and relative.startswith("page/") and not relative.startswith("page/impl/"):
             relative = PurePosixPath(relative).name
         path = safe_path(root, relative)
         item = {
@@ -262,10 +314,10 @@ def locate(supplied, task_name, check_symbols=False, manifest=None):
         files.append(item)
     partial = any(item["status"] in ("missing", "symbol-missing") for item in files)
     return {
-        "status": "partial" if partial else "ok", "root": str(root), "task": task_name,
+        "status": "partial" if partial else "ok", "root": str(root), "task": task_name, "kit": kit,
         "guide": task["guide"], "files": files,
         "source_profile": {key: value for key, value in profile.items() if key != "root"} if profile else None,
-        "compatibility_guide": "references/shared/versions.md" if profile else None,
+        "compatibility_guide": ("references/swiftui/integration.md" if kit == "swiftui" else "references/shared/versions.md") if profile else None,
         "next": task.get("next", "Read the selected guide before expanding the search."),
         "note": "Paths and symbol hints are navigation evidence, not API compatibility or behavior verification.",
     }
@@ -275,17 +327,19 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="Existing UI root or repository root; no clone or recursive scan")
     parser.add_argument("--task", help="Exact task identifier from --list")
+    parser.add_argument("--kit", choices=sorted(MANIFESTS), default="uikit",
+                        help="uikit = imperative TUIChatKit (default); swiftui = declarative TUIChatKit_Swift")
     parser.add_argument("--check-symbols", action="store_true", help="Read only primary files for literal symbol hints")
     parser.add_argument("--list", action="store_true", help="List task names without reading customer source")
     args = parser.parse_args(argv)
     try:
-        manifest = load_manifest()
+        manifest = load_manifest(MANIFESTS[args.kit])
         if args.list:
-            print(json.dumps({"tasks": {key: value["guide"] for key, value in manifest["tasks"].items()}}, ensure_ascii=False, indent=2))
+            print(json.dumps({"kit": args.kit, "tasks": {key: value["guide"] for key, value in manifest["tasks"].items()}}, ensure_ascii=False, indent=2))
             return 0
         if not args.root or not args.task:
             parser.error("--root and --task are required unless using --list")
-        result = locate(args.root, args.task, args.check_symbols, manifest)
+        result = locate(args.root, args.task, args.check_symbols, manifest, args.kit)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if result["status"] == "partial" else 0
     except (LocatorError, OSError, ValueError, KeyError, TypeError) as exc:

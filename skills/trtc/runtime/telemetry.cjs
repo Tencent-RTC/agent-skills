@@ -7422,7 +7422,7 @@ var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
 var FOREGROUND_TOTAL_BUDGET_MS = 2200;
 var FOREGROUND_FLUSH_BUDGET_MS = 1800;
-var RUNTIME_VERSION = "1.1.5";
+var RUNTIME_VERSION = "1.1.6";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
   // Docs is an answer-layer owner rather than a product.  Keep it in the
