@@ -2,9 +2,9 @@
 
 ## 直接支持
 
-直接支持命令式 UIKit 版 `TUIChatKit` 的应用接入，也支持其组件源码修改：页面/布局/交互修复、新增配置及公开API、消息/输入/会话/联系人/设置/主题/导航实现调整。源码任务从 [任务索引](../source/index.md) 定点进入；不要求先完整遍历源码，也不局限于外部扩展点。Core/IM SDK 实现修改仍取决于实际源码引用和用户范围。
+直接支持命令式 UIKit 版 `TUIChatKit` 与声明式 SwiftUI 版 `TUIChatKit_Swift` 的应用接入及组件源码修改：页面/布局/交互修复、新增配置及公开API、消息/输入/会话/联系人/设置/主题/导航实现调整。命令式源码任务从 [任务索引](../source/index.md) 定点进入，声明式从 [声明式入口](../swiftui/index.md) 进入；不要求先完整遍历源码，也不局限于外部扩展点。Core/IM SDK 实现修改仍取决于实际源码引用和用户范围。
 
-区分宿主技术栈与所选套件：SwiftUI 宿主可承载完整 UIKit 控制器；但独立 `ios_swiftui` Chat 套件是另一套 API。旧 TUIKit 的 `TUIChatViewController`、`TUILogin` 与新 `ChatPage` / `LoginStore` 不能混用。Objective-C 宿主通过 App 自有 Swift wrapper 暴露 Foundation/UIKit 可表示的类型，不把 Swift struct/enum 全部直接写成 Objective-C 调用。
+区分宿主技术栈与所选套件：SwiftUI 宿主可承载完整 UIKit 控制器（仍属命令式）；声明式 `TUIChatKit_Swift` 是另一套 API，两套的页面、配置、扩展点与资源包不能混用。旧 TUIKit 的 `TUIChatViewController`、`TUILogin` 与新 `ChatPage` / `LoginStore` 不能混用。Objective-C 宿主通过 App 自有 Swift wrapper 暴露 Foundation/UIKit 可表示的类型，不把 Swift struct/enum 全部直接写成 Objective-C 调用。
 
 ## 三层职责
 

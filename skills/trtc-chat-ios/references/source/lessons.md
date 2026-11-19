@@ -7,7 +7,7 @@
 | 经验 | 当前证据入口（相对 U） | 如何应用 |
 | --- | --- | --- |
 | 类型公开但构造器/成员可能internal | `components/messagelist/MessageListView.swift`、`page/ChatPage.swift` | App示例必须普通import类型检查；源码维护可改internal，不批量公开 |
-| Page特殊默认不等于空Config默认 | `page/ChatPage.swift`、`components/messagelist/config/MessageListConfig.swift` | 改配置同时比较未传配置、空配置、显式覆盖；右头像是现成回归用例 |
+| Page特殊默认不等于空Config默认 | `page/ChatPage.swift`、`components/messagelist/config/MessageListConfig+Default.swift` | 改配置同时比较未传配置、空配置、显式覆盖；右头像是现成回归用例 |
 | JSON键存在不等于UI消费 | `components/basecomponent/utils/AppBuilderHelper.swift`与各PageImpl | 从解析追到getter和可见UI；hideSearch只解析而缺消费者时不能称支持 |
 | 设置项显隐不等于实际免打扰 | `components/chatsetting/impl/GroupChatSettingViewControllerImpl.swift` | 读Store结果与receiveOption，不用UI开关值覆盖服务端状态 |
 | 原始View嵌入不等于页面生命周期 | `page/ChatPage.swift`、`page/impl/ChatPageImpl.swift` | child VC containment关联可见性、已读、录音停止；导航修复连同这些回归 |
@@ -25,7 +25,7 @@
 
 另按标题核查过 `.workbuddy/memory/` 的三份10月记录，主要为cmark拆分、模块名及发布经验，不是页面/角标实现的权威说明；`.codebuddy/alignment/TRACKER.md` 的旧轮次“已验证”仅对应当时版本和截图。上述记忆路径是维护来源，不是要求使用者必须持有或加载的Skill依赖。
 
-这些记录是查找入口，不是本Skill对另一套SwiftUI实现的支持承诺；不执行记录中的构建/清理命令。
+这些记录是查找入口；声明式套件的经验另见 [声明式经验](../swiftui/source/lessons.md)，不要把两边的补丁互相照搬。不执行记录中的构建/清理命令。
 
 ### Tab未读角标
 

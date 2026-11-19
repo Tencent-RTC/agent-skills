@@ -33,7 +33,7 @@ ChatPageImpl传入ChatMessageInputConfig → 输入门面/内部UI创建按钮�
 
 ### 新输入配置/发送策略
 
-先改MessageInputConfig存储、public init/getter，再检查同目录internal protocol/conformance及真正消费者；新增JSON缺省才另读AppBuilderHelper。用户显式配置优先级和旧缺省不得被意外覆盖。
+先改 `MessageInputConfig.swift` 的公开可选存储与 `config/MessageInputConfig+Defaults.swift` 的 init、internal `_xxx` 缺省，再检查机器人收窄 `components/chatbot/ChatbotMessageInputConfig.swift` 及真正消费者（9.1.7825 已无 `MessageInputConfig+Internal.swift`）；新增JSON缺省才另读AppBuilderHelper。用户显式配置优先级和旧缺省不得被意外覆盖。
 
 普通发送链查payload、conversationID、SendMessageOption和completion；自定义发送的needReadReceipt需要沿用配置，不能忘记复制选项。@对象、引用目标、文本草稿、发送按钮使能是一组状态，不能只改最后调用sendMessage的一行。
 

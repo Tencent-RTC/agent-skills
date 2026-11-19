@@ -1,5 +1,7 @@
 # 命令式 iOS 集成
 
+新接入且客户未指明套件时，先按 [套件选择](../shared/kit-selection.md) 确认应接入命令式（空工程默认命令式）。
+
 ## 目录与版本
 
 区分 UI 源码、状态层和 SDK：
@@ -12,13 +14,14 @@
 
 公开源码仓库为 [Tencent-RTC/TUIKit_iOS](https://github.com/Tencent-RTC/TUIKit_iOS)，常见公开路径 `chat/uikit`、`chat/demo`、`chat/demo_mini`；本 Skill 的内部基线路径为 `ios/chat/uikit`。两者不是可直接互换的 Demo：公开 Demo 可能去掉内部登录、客服和 Push。
 
-先读 [版本与能力检查](../shared/versions.md)，按客户实际Podfile.lock和ChatPage源码决定调用，不能把源码开发分支当发布Pod。以下仅为2026-10-28开发工作区静态核验记录：
+先读 [版本与能力检查](../shared/versions.md)，按客户实际Podfile.lock和ChatPage源码决定调用。**本 Skill 以已发布版本为准**，以下为 2026-11-18 对发布版的核验记录：
 
-- `TUIChatKit.podspec`：版本 `9.1.7821`，声明 iOS 14.0、Swift 语言模式 5.0、静态 framework。
-- UI 依赖 `Kingfisher`、`SnapKit`、`AlbumPicker ~> 1.0.0`、`tui-cmark-gfm 0.29.0.15`、`TXLiteAVSDK_VoiceAI_iOS 13.6.0.255`、`AtomicXCore >= 3.0.0, < 5.0`。
-- Demo 使用 iOS 15.0，并收窄 Core 为 `>= 4.3.10, < 5.0`；已有锁文件解析 Core 4.3.11、IM SDK 9.1.7822。
-- CocoaPods 1.16.2 是锁文件生成版本，不是已确认的最低要求；Swift 语言模式 5.0 也不表示任意 Swift 5 编译器能读取当前二进制。
-- podspec 的 source/tag 声明不证明该版本已发布到 CocoaPods。使用远程 Pod 前查实际可用版本；保持已锁定的兼容组合，不直接更新到“最新”。
+- CocoaPods Trunk 最新为 `TUIChatKit 9.1.7825`（此前有 9.1.7819/7822/7824）。Trunk 规格的 source 是官方 zip 源码包，安装后源码在 `Pods/TUIChatKit/TUIChatKit/`；GitHub 默认分支 `chat/uikit/TUIChatKit.podspec` 同为 9.1.7825，两者源码与内部开发主干一致。
+- 声明 iOS 14.0、Swift 语言模式 5.0、静态 framework；依赖 `Kingfisher`、`SnapKit`、`AlbumPicker ~> 1.0`、`tui-cmark-gfm 0.29.17`、`TXLiteAVSDK_VoiceAI_iOS 13.6.0.255`、`AtomicXCore >= 3.0.0, < 5.0`；资源包 `TUIChatKitBundle`。
+- 用空工程只装 `pod 'TUIChatKit', '9.1.7825'` 实测解析：Core 4.3.11、IM SDK 9.1.7834、`TXLiteAVSDK_Professional` 13.6，Kingfisher 8.x。本地 trunk 索引过旧时报“找不到版本”，需 `pod install --repo-update`。
+- 9.1.7825 为重构目录（`page/ChatPage.swift` + `page/impl/`），`ChatPage` 有 `showsNavigationBar`；公开配置属性改为无 `user` 前缀的可选值，自定义消息注册移到 `MessageListHelper`，更多面板 ID 为 `MessageInputDefaultActionIDs`。旧版本差异见 [版本](../shared/versions.md)。
+- Demo 使用 iOS 15.0，并收窄 Core 为 `>= 4.3.10, < 5.0`。CocoaPods 1.16.2 是锁文件生成版本，不是已确认的最低要求；Swift 语言模式 5.0 也不表示任意 Swift 5 编译器能读取当前二进制。
+- 保持客户已锁定的兼容组合，不直接更新到“最新”。
 
 需要上游版本比较时只读查询默认分支，不能把宿主 App 仓库 HEAD 当作 TUIKit 版本，不能擅自 fetch/pull/reset。无法联网时记录无法核对，不阻断基于现有版本的明确任务。
 
@@ -84,30 +87,97 @@ end
 
 ### 登录参数来源
 
-先从工程只读确认 `sdkAppID`、`userID`、`userSig` 分别从哪里来，源码能回答的不问客户：
+**客户未明确指定登录鉴权方式、仅要求集成时，默认参考 Chat Demo，在客户端使用 SDKAppID、SecretKey 和登录 userID 生成 UserSig，并将调试配置、签名生成逻辑及调用入口放在 `#if DEBUG` 内。不要先询问客户选择服务端还是客户端，也不要默认新增业务鉴权服务。**
 
-1. 工程已有账号体系或 UserSig 接口：沿用现有流程取得登录参数，再调用 `LoginStore`。
-2. 集合安装时根 Skill 已收集 SDKAppID：直接使用，不重复索要。SecretKey 不让客户发到对话里，到需要时告诉客户填写的文件和位置。
-3. 工程里没有任何登录参数来源：一次只问一个问题，让客户选择：
-   - 由业务服务端签发 UserSig（生产推荐）：方案中只写 App 端请求和接收 UserSig 的接线，服务端签发实现不属于本 Skill。
-   - 参考 Chat Demo，在客户端用 SecretKey 生成 UserSig（仅调试）：按下一节实施。
+1. 客户明确指定业务服务端签发、直接提供 UserSig 或要求沿用已有账号流程时，按其选择接线；已有流程能回答的参数来源不重复询问。服务端方案只负责 App 端请求和接收 UserSig，服务端签发实现不属于本 Skill。
+2. 客户未指定来源时直接按下一节实现客户端调试签名，不以工程没有登录参数或没有服务端接口为由阻断集成；不替换客户原有业务认证链，调试入口仅用于本次 Chat 接入。
+3. 集合安装时根 Skill 已收集 SDKAppID：复用已确认值，不重复索要，但在交付中仍明确其配置位置。SecretKey 不让客户发到对话里，不为调试自动读取已有密钥文件；未提供的 SDKAppID 和 SecretKey 留占位，集成后明显指引客户自己填写。
 
-无论哪种来源，失败都完整保留 `ErrorInfo.code` 和 `message`；`userID` 必须是签名中的用户，`sdkAppID` 必须与签发 UserSig 的应用一致。
+无论哪种来源，失败都完整保留 `ErrorInfo.code` 和 `message`；`userID` 必须是签名中的用户，`sdkAppID` 必须与签发 UserSig 的应用一致。生产仍推荐业务服务端鉴权后签发 UserSig，不能把默认调试方式描述为生产推荐。
+
+### 最少手动输入：默认只填写两个参数
+
+**默认调试集成尽量只让客户在一个源码配置文件中填写 SDKAppID 和 SecretKey。不要把 userID、UserSig、签名有效期、服务端 URL、测试好友或群 ID 列成额外必填项，也不要要求客户在多个文件或 App 登录表单中重复输入这两个参数。**
+
+- `userID`：优先从宿主现有账号获取真实原始 ID，不另加手动输入；没有可用账号时，为当前安装自动生成 `debug_` 加 UUID 的调试 ID，按 SDKAppID 分开保存在本地并复用。不要每次启动、重新签名或进入页面都换 ID，也不要让所有客户和设备共用固定 `demo_user`。用户明确指定账号时遵从其选择。
+- `UserSig`：使用同一 userID 和这两个配置值自动生成；有效期沿用签名模板默认值，签发时间取运行时当前时间，客户不需要手工输入签名、时间或有效期。
+- 工程路径、target、scheme、源码依赖路径等能由当前工程查得的参数自行确定；功能开关采用符合本次需求的默认值，不逐项追问。
+- 对方 userID / 群 ID：优先使用会话列表和联系人回调的真实数据，不把新建测试对象作为集成前置条件。没有真实会话时如实展示空态，不靠假数据或未经授权创建好友、群、消息来凑体验。
+- 仅在客户明确要求的功能确实依赖无法推导的外部信息时，说明原因并最少量询问；例如 Push 的客户证书不能凭空自动配置。“仅填两项”针对默认 Debug 登录接入，不保证额外服务、真实收发测试或生产上线无需其他前提。
 
 ### 客户端 SecretKey 调试
 
-客户明确选择参考 Chat Demo 在客户端使用 SecretKey 调试时，可以实施，不以风险提示阻断：
+客户未指定鉴权方式的默认集成，以及客户明确选择参考 Chat Demo 调试时，均按此流程实施；保留风险提示，不额外要求客户确认鉴权方式：
 
-1. 方案阶段说明客户端密钥可被提取，推荐生产由服务端签发 UserSig。
-2. 请求写入授权前再次提示同一风险。
-3. 最终交付时第三次提示风险与生产建议。
+1. 方案阶段说明将默认采用仅 Debug 的客户端签名，客户端密钥可被提取，推荐生产由服务端签发 UserSig。
+2. 写入前再次提示同一风险，按宿主规则取得目标代码的写入授权；已有同范围授权时不重复询问。
+3. 最终交付时第三次提示风险与生产建议，并按下一节醒目列出客户必须完成的参数配置。
 
 不得把这种方式描述为安全的生产方案。实施方式：
 
-- 在客户工程新增一个调试配置文件（如 `ChatDebugConfig.swift`），放 `sdkAppID`、`secretKey` 占位，用 [DebugSignature.swift](../examples/DebugSignature.swift) 按登录 `userID` 生成 UserSig 后传给 `LoginStore`。该文件默认包在 `#if DEBUG` 内；客户需要在 Release / TestFlight 包中使用时，按其选择调整并再次提示风险。
-- 告诉客户 SecretKey 填在哪个文件的哪一行，由客户自己填写。客户明确要求代为写入时，可以写入这个目标文件，但不在方案、日志摘要或最终回复中复述完整 SecretKey 或 UserSig。
-- 提醒客户不要把填了真实 SecretKey 的文件提交到版本库。
+- 在客户工程新增调试配置文件（如 `ChatDebugConfig.swift`），集中放 `sdkAppID`、`secretKey`。未提供时分别使用 `0` 和空字符串占位，不写入虚构可用凭据。示例：
+
+```swift
+#if DEBUG
+import Foundation
+
+enum ChatDebugConfig {
+    static let sdkAppID: Int32 = 0
+    static let secretKey: String = ""
+
+    static var userID: String {
+        let key = "trtc.chat.debug.userID.\(sdkAppID)"
+        if let stored = UserDefaults.standard.string(forKey: key), !stored.isEmpty {
+            return stored
+        }
+        let generated = "debug_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        UserDefaults.standard.set(generated, forKey: key)
+        return generated
+    }
+}
+#endif
+```
+
+- 示例 `ChatDebugConfig.userID` 只在没有宿主账号时使用，且在确认 SDKAppID 已填写后读取；有账号时直接使用宿主 ID。清除 App 数据或重装可能改变调试 ID，届时不承诺原会话仍可见；不要自动读取设备硬件标识、手机号或其他个人数据来生成身份。
+- 用 [DebugSignature.swift](../examples/DebugSignature.swift) 的 `generate(sdkAppID:userID:secretKey:expireSeconds:issuedAt:)` 为实际登录 userID 生成 UserSig，再传给 `LoginStore`；配置、签名模板以及引用它们的调试登录调用都必须处于 `#if DEBUG` 内。非 DEBUG 分支不得引用这些调试符号，不自动移除保护或内置 SecretKey；正式登录按客户明确指定的参数来源接线。
+- 生成签名前检查 `sdkAppID > 0`、`secretKey` 非空、`userID` 非空；SDKAppID 或 SecretKey 占位未填写时，在 Debug 登录入口呈现显眼的阻断提示（宿主已有错误页或主线程 `UIAlertController`），标题为“请先填写 SDKAppID 和 SecretKey”，正文指出配置文件和缺失字段。不要仅打印到控制台、静默返回或展示无说明的空白页；不请求 SDK 登录、不导航、不打印密钥或签名。userID 应由上述流程准备，不把未准备账号转成客户的第三个必填项。构建成功不代表占位配置可以登录。
+- 默认由客户自己填写 SDKAppID 和 SecretKey，不要求客户先把真实凭据发到对话里。客户明确要求代为写入时，只写入其授权的目标文件，不在方案、日志摘要或最终回复中复述完整 SecretKey 或 UserSig。
+- 提醒客户不要把填了真实 SecretKey 的文件提交到版本库。`#if DEBUG` 仅隔离编译，不保证 Debug 包中的密钥安全；上线前移除客户端密钥与签名逻辑，改用服务端签发。
 - 管理员 UserSig 只用于服务端 REST；客户端登录使用目标用户自己的 UserSig，两者不能混用。
+
+### 交付时的必填参数指引
+
+**客户端调试集成完成后，最终回复必须以一级标题“必须完成：请在源码填入 SDKAppID 和 SecretKey”开头，紧跟加粗引用提示及两项填写清单，再报告构建结果和其他信息。不要把必填提示放在回复末尾、折叠区、代码注释或普通风险段落中；无需依赖颜色或表情才能注意到。**
+
+该段必须按实际交付文件给出：
+
+1. 用加粗引用明确“当前尚未配置，填入这两项后才能 Debug 登录”；已配置的字段按事实标注，全部已配置时改为“已配置，请核对位置”，不能误报缺失。
+2. 给出配置文件的准确可点击路径（宿主支持时）、`sdkAppID` 和 `secretKey` 各自的字段名及实际行号，明确由客户自己填写。长路径独立列出，不塞入宽表格；已复用 SDKAppID 时标明已配置及需确认的位置，不复述 SecretKey。
+3. 用短代码块展示需要修改的两行占位：`static let sdkAppID: Int32 = 0` 与 `static let secretKey: String = ""`，注明分别替换为客户真实值；不要在最终回复中展示实际密钥，也不要把 userID 或 UserSig 列为必填。
+4. 指引客户在其腾讯云 Chat / IM 应用控制台找到该应用的 SDKAppID 和 SecretKey，并确认二者属于同一应用；不要猜测未核实的菜单名称。
+5. 说明其他登录参数已自动接好：userID 复用宿主账号或本地生成并保存，UserSig 自动生成，不需要客户手填；使用 Debug 配置运行。参数未填时登录与收发尚未验证，不把“集成代码完成 / 构建通过”写成“真实登录成功”。再次强调禁止提交真实密钥，生产改为服务端签发。
+
+未填写时的回复结构示意（必须替换成实际文件位置和行号，不原样交付占位路径）：
+
+````markdown
+# 必须完成：请在源码填入 SDKAppID 和 SecretKey
+
+> **当前尚未配置：请在下方源码位置填入这两项，才能进行 Debug 登录。**
+
+配置文件：实际文件路径
+- 第 N 行 `sdkAppID`：填写该应用的 SDKAppID。
+- 第 M 行 `secretKey`：填写同一应用的 SecretKey。
+
+```swift
+static let sdkAppID: Int32 = 0
+static let secretKey: String = ""
+```
+
+userID 与 UserSig 已自动处理，无需手工填写。请使用 Debug 配置运行；勿提交真实密钥，生产改用服务端签发。
+
+## 集成与验证结果
+说明实际完成项和未验证项。
+````
 
 ### 登录调用
 
@@ -148,7 +218,7 @@ LoginStore.shared.login(
 
 聊天页内部已有消息加载、输入和可见性驱动的已读逻辑；不要同时在宿主新建一套消息列表订阅去驱动同一页面。安全区和键盘处理应有唯一负责人，不能在宿主和组件叠加键盘 inset。
 
-SwiftUI 宿主只需 UIKit 互操作容器时使用 `UIViewControllerRepresentable` 承载完整 VC；保留稳定实例和导航回调，不在每次 `updateUIViewController` 中登录/重建页面。独立 SwiftUI TUIChatKit 是另一套源码，不属于本文的 API 基线。
+SwiftUI 宿主只需 UIKit 互操作容器时使用 `UIViewControllerRepresentable` 承载完整 VC；保留稳定实例和导航回调，不在每次 `updateUIViewController` 中登录/重建页面。声明式 `TUIChatKit_Swift` 是另一套源码，接入见 [声明式接入](../swiftui/integration.md)，不使用本文的 API 基线。
 
 ## 可选 TUICallKit
 

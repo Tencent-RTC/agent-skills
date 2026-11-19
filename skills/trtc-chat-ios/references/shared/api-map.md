@@ -2,7 +2,7 @@
 
 ## 如何使用
 
-本页是公开API查表，不是源码任务的必读大纲。修改内部实现先读 [源码任务索引](../source/index.md)，仅在访问级别、构造器或公开调用不明确时查本页相应节。
+本页是公开API查表，不是源码任务的必读大纲。修改内部实现先读 [源码任务索引](../source/index.md)，仅在访问级别、构造器或公开调用不明确时查本页相应节。本页只覆盖命令式 `TUIChatKit`；声明式见 [声明式 API 地图](../swiftui/api-map.md)，两者同名类型（如 `ChatPage`、`MessageListView`）的签名与可访问性不同。
 
 所有路径以下述真实源码根为相对基准：公开仓库 `chat/uikit`，内部基线 `ios/chat/uikit`。不要在分发 Skill 中写维护者机器的绝对路径。Demo 路径以相邻 `chat/demo/ChatDemo/Sources` 为基准，内部 Demo 只能作为查证样本，不能复制内部服务、私钥或测试环境。
 
@@ -12,13 +12,15 @@
 
 | 符号 | 公开入口 | 源码 |
 | --- | --- | --- |
-| ChatPage | 通用模板使用 `init(conversation:locateMessage:messageListConfig:messageInputConfig:isShowMoreButton:onBack:...)`；完整签名查实际源码。`showsNavigationBar` 仅部分重构源码支持，不作为通用参数 | 重构版 `page/ChatPage.swift`；平铺Pod `ChatPage.swift` |
+| ChatPage | 9.1.7825：`init(conversation:locateMessage:messageListConfig:messageInputConfig:isShowMoreButton:showsNavigationBar:onBack:onUserClick:onMoreClick:)`；旧平铺版无 `showsNavigationBar`，通用模板不传 | `page/ChatPage.swift`；旧平铺Pod `ChatPage.swift` |
 | ConversationsPage | `init(config: ConversationActionConfig? = nil, onConversationClick: ((NavigationInfo) -> Void)? = nil)` | `page/ConversationsPage.swift` |
 | NavigationInfo | `conversation: ConversationInfo`、`locateMessage: MessageInfo?` | `page/ConversationsPage.swift` |
 | ContactsPage | `init(config: ContactListConfig? = nil, onContactClick: ((ContactInfo) -> Void)? = nil, onGroupClick: ((GroupInfo) -> Void)? = nil)` | `page/ContactsPage.swift` |
 | C2CChatSettingViewController | `init(userID:config:onSendMessageClick:onContactDelete:)` | `components/chatsetting/C2CChatSettingViewController.swift` |
 | GroupChatSettingViewController | `init(groupID:config:onSendMessageClick:onGroupDelete:onGroupMemberClick:)` | `components/chatsetting/GroupChatSettingViewController.swift` |
 | SearchBarView | `init(onTapItem: @escaping (Any) -> Void)` | `components/search/SearchBarView.swift` |
+| AIAssistantPageViewController | `init(config: AIAssistantPageConfig?)` 后 `setup(agentLoader:)`；配套 `AIAssistantAgent`、`AIAssistantAgentLoader` | `page/AIAssistantPage.swift` |
+| UserProfileRouter | `open(userID:from:onSendMessageClick:onContactDelete:)`、`openChat(userID:from:animated:onOpenChat:)` | `components/chatsetting/UserProfileRouter.swift` |
 
 `ChatPage` 的 conversation 必传，其余默认值查源码；`locateMessage` 可用于搜索定位；`topBannerView: UIView?` 为公开业务属性。没有公开的 `messageListView`、`messageInputView`、`sendText` 或任意 `cellBuilder`。
 
@@ -28,12 +30,12 @@
 
 | 配置 | 定义/默认值 | 关键消费者或限制 |
 | --- | --- | --- |
-| ChatMessageListConfig | `components/messagelist/MessageConfig.swift`、`config/MessageListConfig.swift`、`config/MessageActionConfig.swift` | `page/ChatPage.swift` 特殊默认右头像；`config/MessageListConfig+Internal.swift` 解析气泡 |
-| ChatMessageInputConfig | `components/messageinput/MessageInputConfig.swift`、`config/MessageInputConfig+Defaults.swift` | 录音/拍照/更多/表情/通话默认 true；录音 60000 ms；实际服务开通另核对 |
-| ConversationActionConfig | `components/conversationlist/config/ConversationActionConfig+Defaults.swift` | 会话侧滑/更多动作，非 cell builder |
-| ContactListConfig | `components/contactlist/config/ContactListConfig+Defaults.swift` | 顶部入口与搜索，非联系人行 renderer |
+| ChatMessageListConfig | 存储 `components/messagelist/MessageListConfig.swift`；init 与 `_xxx` 缺省 `config/MessageListConfig+Default.swift`；动作缺省 `config/MessageActionConfig.swift` | `page/ChatPage.swift` 未传时用 `ChatMessageListConfig(isShowRightAvatar: true)`；机器人会话经 `components/chatbot/ChatbotMessageListConfig.swift` 的 `applyingChatbotRestrictions` 收窄 |
+| ChatMessageInputConfig | `components/messageinput/MessageInputConfig.swift`、`config/MessageInputConfig+Defaults.swift` | 录音/拍照/更多/表情/通话默认 true；录音 60000 ms；另有实时转写、原录音发送、声纹降噪与 `album*` 相册项；实际服务开通另核对 |
+| ConversationActionConfig | `components/conversationlist/ConversationActionConfig.swift`、`config/ConversationActionConfig+Defaults.swift` | 会话侧滑/更多动作（更多为底部选项面板），非 cell builder |
+| ContactListConfig | `components/contactlist/ContactListConfig.swift`、`config/ContactListConfig+Defaults.swift` | 顶部入口与搜索，非联系人行 renderer |
 | C2CChatSettingConfig / GroupChatSettingConfig | `components/chatsetting/ChatSettingConfig.swift`、`impl/ChatSettingConfig+Defaults.swift` | 引用类型；初始化建议提供至少一个命名参数，避免 internal 无参 init 歧义 |
-| MessageBubbleAppearance | `components/messagelist/config/MessageBubbleAppearance.swift` | 公开 init 支持 background/cornerRadius/stroke/contentInsets/minimumSize |
+| MessageBubbleAppearance | 类型在 `components/messagelist/MessageListConfig.swift`，init 在 `config/MessageBubbleAppearance.swift` | 公开 init 支持 background/cornerRadius/stroke/contentInsets/minimumSize |
 
 消息配置常用字段：isShowLeftAvatar/isShowRightAvatar/isShowTimeMessage/isSupportCopy/isSupportDelete/isSupportRecall/isSupportForward/isSupportQuote/isSupportMultiSelect/isSupportConvertToText/isSupportTranslate/isSupportReaction/enableTyping；全部精确拼写、参数顺序以构造器为准。
 
@@ -43,11 +45,12 @@
 
 | 目标 | 实际 API | 来源 |
 | --- | --- | --- |
-| 自定义内容 | `MessageListView.registerCustomMessageCell(businessID:summaryProvider:makeContentView:)` | `components/messagelist/MessageListView.swift` |
-| 摘要 | `MessageListView.registerCustomMessageSummary(matcher:)` | 同上 |
-| 内容协议 | `MessageContentView: UIView`，`bind(message: MessageInfo, context: MessageContentContext)` | 同上 |
+| 自定义内容 | `MessageListHelper.registerCustomMessageCell(businessID:summaryProvider:makeContentView:)` | `components/messagelist/MessageListHelper.swift` |
+| 摘要 | `MessageListHelper.registerCustomMessageSummary(matcher:)` | 同上 |
+| 占位消息 | `MessageListHelper.addPlaceholder(conversationID:info:)` / `removePlaceholder` + `MessagePlaceholderInfo` | 同上 |
+| 内容协议 | `MessageContentView: UIView`，`bind(message: MessageInfo, context: MessageContentContext)` | `components/messagelist/MessageListView.swift` |
 | 消息动作 | MessageActionCustomizer / MessageActionMenuAction | 同上 |
-| 更多面板 | MessageInputActionCustomizer / MessageInputMenuAction / MessageInputActionIDs | `components/messageinput/MessageInputActions.swift` |
+| 更多面板 | MessageInputMenuAction / MessageInputDefaultActionIDs；customizer 为 `(CustomEditor<MessageInputMenuAction>) -> Void` | `components/messageinput/MessageInputActions.swift` |
 | 会话动作 | ConversationActionCustomizer / ConversationCustomAction | `components/conversationlist/ConversationListView.swift` |
 | 联系人入口 | ContactListItemCustomizer / ContactCustomItem | `components/contactlist/ContactListView.swift` |
 | 通用列表编辑 | CustomEditor / CustomItem | `components/common/uicustom/CustomEditor.swift` |
@@ -85,7 +88,8 @@
 
 - `ConversationListView`、`ContactListView`、`MessageInputView` 的业务实例化。
 - `MessageListView(conversationID:...)`，其业务 init 为 internal。
-- `ChatPage.implementation` / `ChatPageImpl`、internal config protocols、`MessageCellRegistry`、`CustomMessageSummaryRegistry`。
+- `ChatPage.implementation` / `ChatPageImpl`、配置的 internal `_xxx` 解析属性、`MessageCellRegistry`、`CustomMessageSummaryRegistry`、`MessageDisplayHelper`。
+- 已不存在的旧名：`MessageListView.registerCustomMessageCell`、`MessageInputActionIDs`、四个主配置的 `userXxx` 属性。
 - `MessageActionIDs`、`ConversationActionIDs`、`FontScheme`、`RadiusScheme`、`SpacingScheme`、`AppLanguageChangedNotification`。
 - 子类化非 open 的 `CustomNavigationBarViewController` 或调用其 internal 导航方法。
 - Android 的 `MessageContentRenderer`、`ChatPageView.setup`、`ChatSettingCustomItem`、`ThemeStore`。

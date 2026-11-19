@@ -1,6 +1,6 @@
 # 实际依赖优先：目录、签名与能力核对
 
-首次接入或文件/参数与指南不一致时读本页；不是每个局部源码任务重复读所有版本信息。
+首次接入或文件/参数与指南不一致时读本页；不是每个局部源码任务重复读所有版本信息。本页针对命令式 `TUIChatKit`；声明式 `TUIChatKit_Swift` 的版本与发布差异见 [声明式接入·版本](../swiftui/integration.md#目录与版本)。
 
 ## 不按版本号猜API
 
@@ -12,12 +12,19 @@
 
 | 形态 | 页面定位 | 修改/接入规则 |
 | --- | --- | --- |
-| 重构源码布局 | `page/ChatPage.swift` + `page/impl/ChatPageImpl.swift` | 公开wrapper传参和生命周期转发给Impl；该形态的本地基线存在showsNavigationBar |
-| 发布Pod平铺页面 | 以实际Pod源码根定位 `ChatPage.swift`，常见上层目录为 `Pods/TUIChatKit/TUIChatKit` | 不假定存在page/impl；公开构造器是否有导航开关直接查文件，没有就不能传 |
+| 重构布局（当前发布版 9.1.7825） | `page/ChatPage.swift` + `page/impl/ChatPageImpl.swift`；Pod 源码根 `Pods/TUIChatKit/TUIChatKit` | 公开wrapper传参和生命周期转发给Impl；`ChatPage` 有 `showsNavigationBar` |
+| 旧发布Pod平铺页面（如 9.1.7822） | 以实际Pod源码根定位 `ChatPage.swift` | 不假定存在page/impl；公开构造器是否有导航开关直接查文件，没有就不能传 |
 
-本轮实际核验的客户发布TUIChatKit9.1.7822没有 `showsNavigationBar`，ChatPage在Pod的 `TUIChatKit/ChatPage.swift`。“平铺”只指页面入口，组件仍按 `components/**` 分层。构造器接收非optional的消息/输入配置协议，省略参数会采用默认配置，但不能显式传 `messageListConfig: nil` 或 `messageInputConfig: nil`；页面自身持有导航栏；原开发分支接具体可选Config并分离Impl。它们不能混成统一API，内部protocol的访问级别也需分版本核对。不能把导航开关写成所有版本都不存在，也不能坚持开发分支签名适用于发布Pod。
+**以已发布版本为准。** 2026-11-18 核对：CocoaPods 与 GitHub 的 9.1.7825 与内部开发主干源码一致。与此前各版本相比，9.1.7825 的公开 API 有以下变化，旧工程升级或按旧记忆写调用时要逐项核对：
 
-另一个实际编译发现：发布版 `ChatMessageInputConfig.actionCustomizer` 为get-only，定义和init在 `components/messageinput/MessageInputView.swift`，开发分支在独立Config文件且可写。通用示例用init的 `actionCustomizer:` 参数，两种版本均验证；不把所有Config的字段和setter能力假定一致。
+- 消息列表、输入、会话动作、联系人四个配置（`ChatMessageListConfig`、`ChatMessageInputConfig`、`ConversationActionConfig`、`ContactListConfig`）的公开属性改为无 `user` 前缀的可选存储属性，如 `config.isShowVideoCall = false`；`nil` 表示缺省，缺省解析在 internal `_xxx`。单聊/群设置配置仍为 `userXxx` 存储加同名公开计算属性。
+- 自定义消息注册与占位从 `MessageListView` 移到 `MessageListHelper`：`registerCustomMessageCell(businessID:summaryProvider:makeContentView:)`、`registerCustomMessageSummary(matcher:)`、`addPlaceholder` / `removePlaceholder`。
+- 更多面板内置动作 ID 为 `MessageInputDefaultActionIDs`（旧名 `MessageInputActionIDs` 已不存在）。
+- `MessageContentContext` 公开了 `config`、`messageListStore`（weak）、`onMediaTap`、`onMergedMessageTap`、`showsReadReceipt`、`detailTimeText`。
+- `ChatMessageInputConfig.actionCustomizer` 为可写存储属性。
+- 源码文件重命名：`components/messagelist/MessageConfig.swift` → `MessageListConfig.swift`，`config/MessageListConfig.swift` → `config/MessageListConfig+Default.swift`，原 `components/common/MessageListHelper.swift` → `MessageDisplayHelper.swift`（新的 `components/messagelist/MessageListHelper.swift` 是公开注册入口），删除 `MessageListConfig+Internal.swift`、`MessageInputConfig+Internal.swift`。
+
+历史记录：客户此前的 9.1.7822 为平铺 `ChatPage`，没有 `showsNavigationBar`，构造器接收非 optional 的配置协议，`actionCustomizer` 为 get-only 且定义在 `MessageInputView.swift`。客户仍在旧版本时按其实际文件写调用，不把 9.1.7825 签名套到旧版。
 
 本Skill通用ChatIntegration模板不传该可选参数：保留ChatPage自己的导航条，隐藏宿主系统UINavigationBar，onBack由宿主处理。需要去掉组件导航条时，只有当前公开构造器确实支持该参数才用；不支持时选择保留组件导航或经授权修改UI源码，不用反射/遍历私有subview隐藏它。
 
@@ -33,9 +40,14 @@
 
 本轮实测组合（2026-10-30）：客户lock为TUIChatKit9.1.7822、Core4.3.11、TXIMSDK_Plus_iOS_XCFramework9.1.7824；使用已安装依赖，Xcode16.0/iOS18 Simulator SDK构建TUIChatKit Pod目标成功，修订后的三份模板普通import外部typecheck通过（Swift5、arm64 iOS15 Simulator）。仅为此目标/模板的编译证据，未运行客户App、真实IM登录或iOS26 runtime。更新依赖前重新核编译器和切片，不仅修改SWIFT_VERSION。
 
+发布版实测（2026-11-18）：空工程只依赖 `TUIChatKit 9.1.7825`（解析 Core 4.3.11、IM 9.1.7834），Xcode 16.0/iOS 18 Simulator SDK 完整编译通过，App target 中包含 `ChatIntegration.swift`、`CustomMessage.swift`、`DebugSignature.swift` 三份模板（Swift5、arm64 iOS15 Simulator，普通 import，无 stub）。未运行 App 或真实登录。
+
 ## 快速决策
 
 - `Extra argument showsNavigationBar`：查当前ChatPage init，移除不存在参数，保留一个导航条负责人。
+- `Type 'MessageListView' has no member 'registerCustomMessageCell'`：9.1.7825 起改用 `MessageListHelper.registerCustomMessageCell`。
+- `Cannot find 'MessageInputActionIDs'`：改用 `MessageInputDefaultActionIDs`。
+- `Value has no member 'userIsShowXxx'`：四个主配置已去掉 `user` 前缀，直接用 `isShowXxx`。
 - 索引page路径不存在：先试确切Pod源码根中的ChatPage.swift，不默认重新clone。
 - UIKit内部文档提到Impl，但实际没有：按平铺页面本体读生命周期/布局，再查实际组件；别创建空的同名Impl。
 - 公共颜色/Config同名：同样需看版本取值和消费者；名字相同不等于行为一致。

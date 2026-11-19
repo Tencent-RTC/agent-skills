@@ -25,7 +25,7 @@ ConversationsPage → PageImpl装配内部ConversationListView → ViewModel的C
 
 ### cell布局或摘要
 
-先用ConversationCell的绑定数据确认是不是正确conversation，再改实际约束/样式；同时检查复用重置。摘要显示问题看formatter和common/MessageListHelper的摘要消费，自定义消息注册由messagelist维护。不要直接从消息JSON拼文本绕过全局摘要规则，导致引用与列表不一致。
+先用ConversationCell的绑定数据确认是不是正确conversation，再改实际约束/样式；同时检查复用重置。摘要显示问题看formatter和 `components/common/MessageDisplayHelper.swift` 的摘要消费，自定义消息注册由messagelist维护。不要直接从消息JSON拼文本绕过全局摘要规则，导致引用与列表不一致。
 
 ### 免打扰红点/数字/@标记
 
@@ -37,7 +37,7 @@ ConversationsPage → PageImpl装配内部ConversationListView → ViewModel的C
 
 ### 侧滑/更多动作
 
-找ViewImpl中的动作列表构建、内置ID和顺序，再查Config默认/customizer。添加操作同时接权限、确认、失败回滚。当前会话入口有侧滑/更多，不照Android说明承诺所有操作通过长按。
+找ViewImpl中的动作列表构建、内置ID和顺序，再查Config默认/customizer。添加操作同时接权限、确认、失败回滚。当前会话入口有侧滑/更多，不照Android说明承诺所有操作通过长按。9.1.7825 起“更多”改为公共底部选项面板 `components/common/BottomOptionSheetPanel.swift`（AI 助手页标题下拉也复用），改面板样式会同时影响两处。
 
 内部ConversationActionIDs可在模块源码修改；外部App不能引用internal ID常量。修改内置ID可能影响customizer顺序和已有集成，需兼容说明。
 

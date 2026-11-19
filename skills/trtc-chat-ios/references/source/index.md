@@ -1,8 +1,10 @@
 # 源码任务索引
 
+本页只适用于命令式 `TUIChatKit`。声明式 `TUIChatKit_Swift` 的源码任务转 [声明式源码索引](../swiftui/source/index.md)。
+
 ## 用法：从需求定位，而不是从目录遍历
 
-先确认实际命令式UI根U，按 [版本/能力检查](../shared/versions.md) 区分 `page/ChatPage.swift` 重构布局和发布Pod源码根中的 `ChatPage.swift` 平铺布局。定位器支持用户明确传入的这两种根及固定常见上层目录，不要求发布Pod必须带podspec。平铺页面不必存在PageImpl，以下模块路径来自重构基线，缺失时报partial并在对应模块查当前符号，不新建同名假Impl。相邻Demo记为D，未带Demo不假设存在。
+先确认实际命令式UI根U，按 [版本/能力检查](../shared/versions.md) 区分 `page/ChatPage.swift` 重构布局（当前发布版9.1.7825，Pod源码根为 `Pods/TUIChatKit/TUIChatKit`）和较早发布Pod中的 `ChatPage.swift` 平铺布局。定位器支持用户明确传入的这两种根及固定常见上层目录，不要求发布Pod必须带podspec。平铺页面不必存在PageImpl，以下模块路径来自重构基线，缺失时报partial并在对应模块查当前符号，不新建同名假Impl。相邻Demo记为D，未带Demo不假设存在。
 
 从下表选择一个主任务；只在“联动条件”命中时读取第二个模块。指南里的路径是相对 U 的定位线索，不是免读源码的权威事实，修改前检查符号和调用关系。没有对应任务时先读 [精简架构](architecture.md) 定位责任模块，不直接搜索所有平台。
 

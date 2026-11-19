@@ -15,7 +15,7 @@
 | Module compiled with Swift / SDK version | 实际编译器、二进制构建编译器、swiftinterface、所选 Xcode | 仅设置 SWIFT_VERSION 就声称解决二进制不兼容 |
 | Undefined symbols / duplicate symbols | Core、IM SDK、VoiceAI、RTC 和 Call 的最终依赖图及切片 | 同时链接两个 IM/RTC 变体或全局排除 arm64 |
 | cmark 模块找不到 | podspec 与当前依赖是否一致，tui-cmark-gfm module map | 拷贝旧 vendor cmark/opus 绕过依赖 |
-| 图标/语言丢失 | TUIChatKitBundle 是否生成/拷贝，资源 target membership | 清空全部 CocoaPods resource 脚本 |
+| 图标/语言丢失 | 命令式 TUIChatKitBundle、声明式 ChatUIKitBundle 是否生成/拷贝，资源 target membership | 清空全部 CocoaPods resource 脚本 |
 | Simulator 链接失败 | XCFramework 当前平台/架构切片 | 将设备 framework 当模拟器库 |
 | XcodeGen后No such module/Pods接线消失 | 检查生成是否覆盖xcodeproj；生成后按原锁文件重新pod install，再构建workspace | 每改Swift都重装或默认删锁 |
 | CocoaPods Unicode Normalization not appropriate for ASCII-8BIT | 检查locale与Ruby编码；系统存在UTF-8 locale时单条命令设LANG/LC_ALL，如 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod spec cat <实际Pod名>` | 改全局环境或直接判podspec坏了 |
@@ -71,6 +71,17 @@ exit "$status"
 - 未读清除是业务动作，不为布局修复顺手清空所有会话。
 - tab 角标放到根视图可能残留在聊天页；放入 tabBar 又可能受命中范围限制。根据真实 frame、坐标转换、hitTest 和导航转场取证，不在两种挂载点之间盲目切换。
 - iOS 26 新样式需实际验证；未复现的新布局不能当作确认原因。禁止依赖私有子视图类名的长期兼容承诺，保持图标锚点稳定且跟随 Tab 可见性，区分布局动画与业务清除动画。
+
+## 声明式 SwiftUI 特有
+
+先确认实际是 `TUIChatKit_Swift`，再查以下常见原因，修复细节进入 [声明式源码索引](../swiftui/source/index.md)：
+
+- 运行时 `No ObservableObject of type ThemeState found`：组件根（含 sheet、`fullScreenCover`、`UIHostingController`、窗口浮层）未注入 `ThemeState.shared`。
+- 会话页加号、联系人加好友、设置子页点击无反应：组件不在 `NavigationView` / 导航栈内；只放进 UIKit 导航控制器不够。
+- 双标题栏或设置页没有返回按钮：组件页隐藏系统栏，设置/资料页需显式显示系统栏。
+- 编译报 `ContactsPage` 参数类型不符、`ChatMessageListConfig` 参数顺序错误：发布 Pod 9.1.7821 与开发源码签名不同，按客户实际文件改调用。
+- `appConfig.json` 无效：声明式不自动加载，需在创建视图前 `AppBuilderHelper.setJsonPath`；主题键只在没有已保存主题时生效。
+- iOS 15 上 `NavigationLink` 连跳或自动返回：检查同页多个隐藏链接与 `isActive` 重置，见 [声明式导航](../swiftui/source/modules/navigation.md)。
 
 ## 配置与自定义消息
 

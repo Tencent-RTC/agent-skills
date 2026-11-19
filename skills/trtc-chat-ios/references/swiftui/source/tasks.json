@@ -1,0 +1,363 @@
+{
+  "schema_version": 1,
+  "baseline": "2026-11-18 declarative SwiftUI released TUIChatKit_Swift 9.1.7821; verify actual source before editing",
+  "tasks": {
+    "messages": {
+      "guide": "references/swiftui/source/modules/messages.md",
+      "primary": [
+        {
+          "path": "components/messagelist/MessageListView.swift",
+          "symbols": [
+            "MessageListView",
+            "registerCustomMessageCell"
+          ],
+          "reason": "消息组件公开门面、自定义注册与详情页工厂"
+        },
+        {
+          "path": "components/messagelist/impl/core/MessageListImpl.swift",
+          "symbols": [
+            "MessageListImpl",
+            "messageListContent"
+          ],
+          "reason": "列表状态、倒置滚动、通知接收与菜单管理器"
+        },
+        {
+          "path": "components/messagelist/impl/cells/MessageView.swift",
+          "symbols": [
+            "MessageView",
+            "messageContent",
+            "maxMessageBubbleWidth"
+          ],
+          "reason": "单条消息行布局、气泡宽度、回应容器与长按"
+        },
+        {
+          "path": "components/messagelist/config/ChatMessageListConfig+Defaults.swift",
+          "symbols": [
+            "ChatMessageListConfig",
+            "isShowRightAvatar"
+          ],
+          "reason": "公开 init 与各项缺省来源"
+        }
+      ],
+      "next": "按消息指南分支只读相关 cell/菜单/回应/加载扩展文件；大文件按符号读区间。"
+    },
+    "custom-message": {
+      "guide": "references/swiftui/source/modules/messages.md",
+      "primary": [
+        {
+          "path": "components/messagelist/MessageListView.swift",
+          "symbols": [
+            "registerCustomMessageCell",
+            "registerCustomMessageSummary"
+          ],
+          "reason": "公开注册入口"
+        },
+        {
+          "path": "components/messagelist/impl/cells/MessageCellRegistry.swift",
+          "symbols": [
+            "MessageCellRegistry",
+            "customContentView"
+          ],
+          "reason": "businessID 解析与内容视图工厂"
+        },
+        {
+          "path": "components/common/impl/CustomMessageSummaryRegistry.swift",
+          "symbols": [
+            "CustomMessageSummaryRegistry"
+          ],
+          "reason": "摘要登记与匹配"
+        },
+        {
+          "path": "components/messagelist/impl/core/MessageListHelper.swift",
+          "symbols": [
+            "getMessageAbstract"
+          ],
+          "reason": "会话预览、引用与转发读取的摘要消费者"
+        }
+      ],
+      "next": "内容渲染优先级再读 MessageView 的 .custom 分支；发送 payload 问题才读 input。"
+    },
+    "input": {
+      "guide": "references/swiftui/source/modules/input.md",
+      "primary": [
+        {
+          "path": "components/messageinput/impl/core/MessageInputContentView.swift",
+          "symbols": [
+            "MessageInputContentView",
+            "morePanelActions",
+            "visiblePanelHeight"
+          ],
+          "reason": "工具栏、更多面板构建、面板与键盘高度"
+        },
+        {
+          "path": "components/messageinput/impl/core/MessageInputContentView+Interactions.swift",
+          "symbols": [
+            "sendTextMessage",
+            "toggleMorePanel",
+            "postInputInteract"
+          ],
+          "reason": "发送、面板切换与交互通知"
+        },
+        {
+          "path": "components/messageinput/impl/core/MessageInputManager.swift",
+          "symbols": [
+            "MessageInputManager",
+            "createSendMessageOption"
+          ],
+          "reason": "payload 发送、回执与离线推送选项"
+        },
+        {
+          "path": "components/messageinput/config/ChatMessageInputConfig+Defaults.swift",
+          "symbols": [
+            "ChatMessageInputConfig",
+            "actionCustomizer"
+          ],
+          "reason": "开关缺省与公开 init"
+        }
+      ],
+      "next": "@/草稿读 +MentionsAndDraft；录音转 recording；键盘与列表联动读 navigation。"
+    },
+    "recording": {
+      "guide": "references/swiftui/source/modules/input.md",
+      "primary": [
+        {
+          "path": "components/messageinput/impl/core/MessageInputImpl.swift",
+          "symbols": [
+            "MessageInputImpl",
+            "VoiceInputRecordController"
+          ],
+          "reason": "录音/转写控制器创建与窗口浮层"
+        },
+        {
+          "path": "components/messageinput/impl/voice/VoiceInputRecordController.swift",
+          "symbols": [
+            "VoiceInputRecordController",
+            "beginRecording",
+            "forceCancel"
+          ],
+          "reason": "录音状态机、取消与结果"
+        },
+        {
+          "path": "components/messageinput/impl/voice/VoiceTranscriptionView.swift",
+          "symbols": [
+            "VoiceTranscriptionController",
+            "transcribe"
+          ],
+          "reason": "转写、翻译、朗读与取消"
+        },
+        {
+          "path": "components/audiorecorder/impl/AudioRecorderImpl.swift",
+          "symbols": [
+            "AudioRecorderImpl"
+          ],
+          "reason": "底层采集实现选择与回调"
+        }
+      ],
+      "next": "手势入口在 MessageInputContentView+Interactions；只有采集问题才读 AudioRecorderSystem/TXUGC。"
+    },
+    "conversations": {
+      "guide": "references/swiftui/source/modules/conversations.md",
+      "primary": [
+        {
+          "path": "components/conversationlist/impl/ConversationListImpl.swift",
+          "symbols": [
+            "ConversationListImpl",
+            "ConversationCell",
+            "configuredActions"
+          ],
+          "reason": "列表、行绘制、摘要与动作执行"
+        },
+        {
+          "path": "components/conversationlist/config/ChatConversationActionConfig+Defaults.swift",
+          "symbols": [
+            "ChatConversationActionConfig",
+            "isSupportDelete"
+          ],
+          "reason": "动作开关缺省与公开 init"
+        },
+        {
+          "path": "page/impl/ConversationsPageImpl.swift",
+          "symbols": [
+            "ConversationsPageImpl",
+            "handleSearchResult"
+          ],
+          "reason": "标题栏、加号、搜索与新建会话跳转"
+        },
+        {
+          "path": "components/messagelist/impl/core/MessageListHelper.swift",
+          "symbols": [
+            "getMessageAbstract"
+          ],
+          "reason": "会话摘要来源"
+        }
+      ],
+      "next": "免打扰设置联动 settings；总未读角标属于宿主。"
+    },
+    "contacts": {
+      "guide": "references/swiftui/source/modules/contacts.md",
+      "primary": [
+        {
+          "path": "page/impl/ContactsPageImpl.swift",
+          "symbols": [
+            "ContactsPageImpl"
+          ],
+          "reason": "联系人页面装配、加号菜单与宿主回调"
+        },
+        {
+          "path": "components/contactlist/impl/ContactListImpl.swift",
+          "symbols": [
+            "ContactListImpl",
+            "headerItems",
+            "ContactBadgeCounts"
+          ],
+          "reason": "AZ 列表、搜索、顶部入口与角标"
+        },
+        {
+          "path": "components/contactlist/config/ChatContactListConfig+Defaults.swift",
+          "symbols": [
+            "ChatContactListConfig",
+            "showSearchBar"
+          ],
+          "reason": "顶部入口与搜索开关"
+        },
+        {
+          "path": "components/contactlist/impl/AddContactViewImpl.swift",
+          "symbols": [
+            "AddFriendViewImpl",
+            "JoinGroupViewImpl"
+          ],
+          "reason": "加好友与加群流程"
+        }
+      ],
+      "next": "以发布版 9.1.7821 为准；开发源码配置文件为 ContactListConfig+Defaults.swift、回调类型为 ContactInfo/GroupInfo，按客户实际文件核对。"
+    },
+    "settings": {
+      "guide": "references/swiftui/source/modules/settings.md",
+      "primary": [
+        {
+          "path": "components/chatsetting/impl/GroupChatSettingImpl.swift",
+          "symbols": [
+            "GroupChatSettingImpl",
+            "canPerformAction",
+            "setReceiveMessageOpt"
+          ],
+          "reason": "群设置分区、权限判断与免打扰写入"
+        },
+        {
+          "path": "components/chatsetting/impl/C2CChatSettingImpl.swift",
+          "symbols": [
+            "C2CChatSettingImpl",
+            "customRows"
+          ],
+          "reason": "单聊设置、黑名单、删除好友与自定义行"
+        },
+        {
+          "path": "components/chatsetting/impl/GroupPermissionManagerImpl.swift",
+          "symbols": [
+            "GroupPermissionManagerImpl",
+            "hasPermission"
+          ],
+          "reason": "群类型与角色权限矩阵"
+        },
+        {
+          "path": "components/chatsetting/config/GroupChatSettingConfig+Defaults.swift",
+          "symbols": [
+            "GroupChatSettingConfig",
+            "isShowDoNotDisturb"
+          ],
+          "reason": "群设置显示开关缺省与公开 init"
+        }
+      ],
+      "next": "成员管理子视图在 GroupChatSettingImpl 同文件按符号读；细分接收模式联动 conversations。"
+    },
+    "navigation": {
+      "guide": "references/swiftui/source/modules/navigation.md",
+      "primary": [
+        {
+          "path": "page/impl/ChatPageImpl.swift",
+          "symbols": [
+            "ChatPageImpl",
+            "navigationBarView",
+            "ChatUIKitNavigation"
+          ],
+          "reason": "自绘标题栏、安全区补偿与详情跳转"
+        },
+        {
+          "path": "page/ChatPage.swift",
+          "symbols": [
+            "ChatPage",
+            "showsNavigationBar"
+          ],
+          "reason": "公开构造与参数透传"
+        },
+        {
+          "path": "components/basecomponent/impl/KeyboardHandlerImpl.swift",
+          "symbols": [
+            "KeyboardHandler",
+            "keyboardHeight"
+          ],
+          "reason": "键盘高度与动画来源"
+        },
+        {
+          "path": "components/common/HostViewControllerBeacon.swift",
+          "symbols": [
+            "HostViewControllerBeacon"
+          ],
+          "reason": "从 SwiftUI 获取宿主控制器"
+        }
+      ],
+      "next": "宿主容器与返回手势查 Demo 的 ChatNavPage/ChatDemoMiniApp；消息可见性与已读读 messages。"
+    },
+    "theme": {
+      "guide": "references/swiftui/source/modules/theme.md",
+      "primary": [
+        {
+          "path": "components/basecomponent/theme/ThemeState.swift",
+          "symbols": [
+            "ThemeState",
+            "setPrimaryColor",
+            "loadTheme"
+          ],
+          "reason": "主题状态、持久化与 JSON 缺省优先级"
+        },
+        {
+          "path": "components/basecomponent/utils/LanguageState.swift",
+          "symbols": [
+            "LanguageState",
+            "LanguageHelper"
+          ],
+          "reason": "语言保存与本地化查找"
+        },
+        {
+          "path": "components/basecomponent/utils/AppBuilderHelper.swift",
+          "symbols": [
+            "AppBuilderHelper",
+            "AppBuilderConfig"
+          ],
+          "reason": "JSON 解析与全局缺省"
+        },
+        {
+          "path": "components/basecomponent/impl/BundleHelperImpl.swift",
+          "symbols": [
+            "findLocalizableBundle"
+          ],
+          "reason": "资源包与本地化 bundle 定位"
+        }
+      ],
+      "next": "字段无消费者时回到具体页面；颜色新增需同步 Colors.swift 与自定义主色派生。"
+    },
+    "config": {
+      "guide": "references/swiftui/source/workflow.md",
+      "primary": [],
+      "choose_modules": [
+        "messages",
+        "input",
+        "conversations",
+        "contacts",
+        "settings",
+        "theme"
+      ],
+      "next": "先按需求确定真正消费该配置的模块，再运行对应 task。"
+    }
+  }
+}
