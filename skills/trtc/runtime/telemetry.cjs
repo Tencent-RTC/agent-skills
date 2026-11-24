@@ -7422,7 +7422,7 @@ var HOOK_IDENTITY_MAX_MS = 8;
 var HOOK_WRITE_HEADROOM_MS = 2;
 var FOREGROUND_TOTAL_BUDGET_MS = 2200;
 var FOREGROUND_FLUSH_BUDGET_MS = 1800;
-var RUNTIME_VERSION = "1.1.6";
+var RUNTIME_VERSION = "1.1.7";
 var SAFE_NAME_RE = /^[A-Za-z0-9._+-]{1,128}$/;
 var PRODUCT_BY_SKILL = Object.freeze({
   // Docs is an answer-layer owner rather than a product.  Keep it in the
@@ -10382,7 +10382,7 @@ async function handleInvoke(flags, ctx) {
       releaseCoordinationReservation(stageLock);
   }
   let flush = null;
-  if (outcome.status === "promoted" || outcome.status === "deduped") {
+  if ((outcome.status === "promoted" || outcome.status === "deduped") && flags["defer-send"] !== true) {
     const recoveredInstallPending = Boolean(recoveredInstall == null ? void 0 : recoveredInstall.eventId) && recoveredInstall.eventId !== event.event_id;
     const promptFlushOptions = {
       ...ctx.flushOptions,

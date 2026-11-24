@@ -1,7 +1,11 @@
 {
-  "name": "trtc-agent-skills",
+  "name": "trtc-ai-setup",
   "description": "TRTC AI Integration Assistant for Codex",
   "author": { "name": "Tencent TRTC Team" },
   "repository": "https://github.com/Tencent-RTC/agent-skills",
+  "version": "1.1.6",
+  "homepage": "https://github.com/Tencent-RTC/agent-skills",
+  "keywords": ["trtc", "rtc", "video", "agent-skills", "tencent"],
+  "license": "MIT",
   "skills": "./skills/"
 }
