@@ -73,6 +73,6 @@
     "@babel/types": "7.29.8",
     "@vue/compiler-dom": "3.5.41",
     "@vue/compiler-sfc": "3.5.41",
-    "esbuild": "0.18.20"
+    "esbuild": "0.28.2"
   }
 }
