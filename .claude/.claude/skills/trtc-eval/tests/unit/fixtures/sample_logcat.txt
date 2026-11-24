@@ -1,0 +1,6 @@
+02-15 14:01:23.456  1234  1234 I TRTCSDK : onLoginSuccess userId=testUser
+02-15 14:01:24.789  1234  1234 I TRTCSDK : onConnected
+02-15 14:01:25.012  1234  1234 I LiveCore: onLiveStarted liveId=room123
+02-15 14:01:30.123  1234  1234 I TRTCSDK : onUserVideoStateChanged userId=testUser hasVideo=true
+02-15 14:01:55.456  1234  1234 I LiveCore: onLiveEnded liveId=room123
+02-15 14:01:56.789  1234  1234 I TRTCSDK : onDisconnected

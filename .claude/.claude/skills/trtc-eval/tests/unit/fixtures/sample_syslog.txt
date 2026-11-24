@@ -1,0 +1,5 @@
+May  6 14:01:23 iPhone liteav[1234] <Notice>: [TRTC] onLoginSuccess userId=testUser
+May  6 14:01:24 iPhone liteav[1234] <Notice>: [TRTC] onConnected
+May  6 14:01:25 iPhone liteav[1234] <Notice>: [LiveCoreView] onLiveStarted liveId=room123
+May  6 14:01:30 iPhone liteav[1234] <Notice>: [TRTC] onUserVideoStateChanged userId=testUser
+May  6 14:01:55 iPhone liteav[1234] <Notice>: [LiveCoreView] onLiveEnded liveId=room123

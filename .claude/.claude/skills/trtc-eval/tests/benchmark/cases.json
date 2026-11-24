@@ -1,0 +1,1914 @@
+[
+  {
+    "test_id": "TC-LIVE-IOS-001",
+    "ability": "live/login-auth",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我正在用 Swift 开发一个 iOS 直播 App。帮我写一段完整的登录认证代码，需要初始化 SDK、设置 SDKAppID，并用 UserID 和 UserSig 完成登录。登录成功和失败都要有回调处理。",
+    "expected_slice_ids": [
+      "live/login-auth"
+    ],
+    "constraints": {
+      "must_include": [
+        "LoginStore.shared",
+        "login(",
+        "SDKAppID",
+        "UserSig"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "V2TIMManager",
+        "TUILogin"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onLoginSuccess",
+      "onConnected"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "login"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "auth"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-002",
+    "ability": "live/device-control",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在做 iOS 直播 App（Swift），需要实现一个设备控制面板：包括打开/关闭摄像头、切换前后摄像头、打开/关闭麦克风。请给我完整代码。",
+    "expected_slice_ids": [
+      "live/device-control"
+    ],
+    "constraints": {
+      "must_include": [
+        "DeviceStore.shared",
+        "openCamera",
+        "closeMicrophone",
+        "switchCamera"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "AVCaptureSession"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onCameraOpened",
+      "onMicrophoneOpened"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "device_toggle"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "device"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-003",
+    "ability": "live/error-codes",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在 iOS 直播 App 里遇到各种错误码，帮我写一个统一的错误处理工具类（Swift），能把 SDK 返回的错误码翻译成用户友好的中文提示，并根据错误类型决定是否需要重试。",
+    "expected_slice_ids": [
+      "live/error-codes"
+    ],
+    "constraints": {
+      "must_include": [
+        "errorCode",
+        "localizedDescription",
+        "switch"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.0,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.7,
+      "w_dynamic_in_final": 0.3
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "error"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-004",
+    "ability": "live/anchor-preview",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我正在做一个 iOS 直播 App（Swift），现在需要实现主播开播前的预览页面。要求能显示摄像头画面预览、设置直播间 ID。请给出完整的 ViewController 代码。",
+    "expected_slice_ids": [
+      "live/anchor-preview"
+    ],
+    "constraints": {
+      "must_include": [
+        "LiveCoreView",
+        "setLiveID",
+        "startCamera"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "TUILiveRoom"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onCameraOpened",
+      "onUserVideoStateChanged"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "anchor_preview"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "anchor"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-005",
+    "ability": "live/anchor-room-config",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在开发 iOS 直播 App（Swift），需要在开播前让主播设置房间名称和封面图。请帮我实现房间配置的逻辑代码，包括配置 MetaData 和参数校验。",
+    "expected_slice_ids": [
+      "live/anchor-room-config"
+    ],
+    "constraints": {
+      "must_include": [
+        "LiveListStore.shared",
+        "roomName",
+        "coverUrl",
+        "MetaData"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onRoomConfigured"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "room_config"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "anchor"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-006",
+    "ability": "live/anchor-lifecycle",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在做一个 iOS 直播 App，用 Swift。帮我写一个完整的主播开播页面，要求：支持开播、显示观众数、点击退出按钮结束直播。",
+    "expected_slice_ids": [
+      "live/anchor-lifecycle",
+      "live/anchor-preview"
+    ],
+    "constraints": {
+      "must_include": [
+        "LiveListStore.shared",
+        "createLive",
+        "endLive",
+        "LiveCoreView"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "TUILiveRoom",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onLiveStarted",
+      "onUserVideoStateChanged",
+      "onLiveEnded"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {
+      "AnchorView.swift": {
+        "target_file": "MyApplication/Generated/AnchorView.swift",
+        "replace_mode": "overwrite"
+      }
+    },
+    "auto_run_flow": [
+      "anchor_start_then_end"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "anchor"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-007",
+    "ability": "live/live-list",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在开发 iOS 直播 App（Swift），需要实现直播列表页面：能拉取当前所有在线直播间、支持分页加载、点击某个直播间可以进入观看。请给出完整代码。",
+    "expected_slice_ids": [
+      "live/live-list"
+    ],
+    "constraints": {
+      "must_include": [
+        "LiveListStore.shared",
+        "fetchLiveList",
+        "LiveInfo"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onLiveListFetched"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "fetch_live_list"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "audience"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-008",
+    "ability": "live/audience-watch",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在做 iOS 直播 App（Swift），需要实现观众进入直播间观看的功能。要求：能看到主播的视频画面、显示直播间信息、支持退出直播间。",
+    "expected_slice_ids": [
+      "live/audience-watch"
+    ],
+    "constraints": {
+      "must_include": [
+        "LiveCoreView",
+        "joinLive",
+        "leaveLive"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "TUILiveRoom"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onJoinedLive",
+      "onUserVideoStateChanged"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "audience_join_leave"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "audience"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-009",
+    "ability": "live/audience-list",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在 iOS 直播 App（Swift）里需要展示观众列表和在线人数。请帮我实现一个观众列表组件，要求能实时更新观众人数、展示观众头像列表。",
+    "expected_slice_ids": [
+      "live/audience-list"
+    ],
+    "constraints": {
+      "must_include": [
+        "LiveAudienceStore",
+        "audienceList",
+        "audienceCount"
+      ],
+      "must_not_include": [
+        "V2TIMManager",
+        "TRTCCloud.sharedInstance()"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onAudienceListUpdated"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "audience_list_display"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "audience"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-010",
+    "ability": "live/barrage",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在开发 iOS 直播 App（Swift），需要实现弹幕功能：观众能发送文字弹幕，直播间里所有人能看到滚动弹幕。请给出完整的弹幕发送和展示代码。",
+    "expected_slice_ids": [
+      "live/barrage"
+    ],
+    "constraints": {
+      "must_include": [
+        "BarrageStore",
+        "sendBarrage",
+        "onBarrageReceived"
+      ],
+      "must_not_include": [
+        "V2TIMManager.sharedInstance()",
+        "TUIBarrage"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onBarrageSent",
+      "onBarrageReceived"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "barrage_send"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "interactive"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-011",
+    "ability": "live/gift",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在做 iOS 直播 App（Swift），要实现送礼物功能：观众能选择礼物发送给主播，主播端能收到礼物通知并展示动画。请给出完整代码。",
+    "expected_slice_ids": [
+      "live/gift"
+    ],
+    "constraints": {
+      "must_include": [
+        "GiftStore",
+        "sendGift",
+        "onGiftReceived"
+      ],
+      "must_not_include": [
+        "V2TIMManager",
+        "TUIGift"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onGiftSent",
+      "onGiftReceived"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "gift_send"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "interactive"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-012",
+    "ability": "live/audience-manage",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在 iOS 直播 App（Swift）里需要实现主播管理观众的功能：踢出违规用户、设置管理员。请帮我写完整的观众管理代码。",
+    "expected_slice_ids": [
+      "live/audience-manage"
+    ],
+    "constraints": {
+      "must_include": [
+        "LiveAudienceStore",
+        "kickUser",
+        "setAdministrator"
+      ],
+      "must_not_include": [
+        "V2TIMManager",
+        "TRTCCloud.sharedInstance()"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onUserKicked",
+      "onAdministratorSet"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "audience_manage"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "manage"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-013",
+    "ability": "live/beauty",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在做 iOS 直播 App（Swift），需要给主播加上基础美颜功能：磨皮、美白、红润，用滑块控制强度。请帮我写完整代码。",
+    "expected_slice_ids": [
+      "live/beauty"
+    ],
+    "constraints": {
+      "must_include": [
+        "BaseBeautyStore",
+        "setSmoothLevel",
+        "setWhitenessLevel"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "TXBeautyManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onBeautyApplied"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "beauty_apply"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "beauty"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-014",
+    "ability": "live/audio",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在 iOS 直播 App（Swift）里想给主播加音效功能：能调节人声音量、开启耳返、切换变声效果和混响。请帮我实现。",
+    "expected_slice_ids": [
+      "live/audio"
+    ],
+    "constraints": {
+      "must_include": [
+        "AudioEffectStore",
+        "setVoiceVolume",
+        "enableEarMonitor",
+        "setVoiceChanger"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "TXAudioEffectManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onAudioEffectApplied"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "audio_effect"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "audio"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-LIVE-IOS-015",
+    "ability": "live/coguest-apply",
+    "product": "live",
+    "platform": "ios",
+    "scenario": null,
+    "user_prompt": "我在 iOS 直播 App（Swift）里需要实现观众申请连麦功能：观众点击申请上麦、主播审批通过后观众开始推流连麦、支持断开连麦。请给完整代码。",
+    "expected_slice_ids": [
+      "live/coguest-apply"
+    ],
+    "constraints": {
+      "must_include": [
+        "CoGuestStore",
+        "applyToConnect",
+        "onCoGuestApproved",
+        "disconnectCoGuest"
+      ],
+      "must_not_include": [
+        "TRTCCloud.sharedInstance()",
+        "TUILiveRoom"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "onCoGuestApplied",
+      "onCoGuestApproved",
+      "onCoGuestConnected"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "demo_injection_map": {},
+    "auto_run_flow": [
+      "coguest_apply"
+    ],
+    "tags": [
+      "live",
+      "ios",
+      "smoke",
+      "coguest"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-001",
+    "ability": "conference/login-auth",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "我在 Vue3 项目里接入 TRTC 会议 Web SDK（tuikit-atomicx-vue3）。请写一段完整的登录与鉴权代码：用 sdkAppId/userId/userSig 登录、登录成功后设置昵称和头像，并处理登录过期和被顶号下线两个事件。",
+    "expected_slice_ids": [
+      "conference/login-auth"
+    ],
+    "constraints": {
+      "must_include": [
+        "useLoginState",
+        "login(",
+        "setSelfInfo",
+        "sdkAppId",
+        "userSig",
+        "LoginEvent",
+        "subscribeEvent",
+        "onLoginExpired",
+        "onKickedOffline"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "V2TIMManager",
+        "trtc-js-sdk",
+        "tuiroom-engine-js"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[account_manager.cc:46] |Login|login",
+      "[account_manager.cc:77] onLoginSuccess"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "auth"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-002",
+    "ability": "conference/prejoin-check",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "我在做一个 Vue3 + tuikit-atomicx-vue3 的会议前自检页面。请实现一个会前设备检测组件：摄像头本地预览、麦克风音量检测、扬声器播放测试音频，以及离开页面时停止所有测试。",
+    "expected_slice_ids": [
+      "conference/prejoin-check"
+    ],
+    "constraints": {
+      "must_include": [
+        "useDeviceState",
+        "startCameraTest",
+        "startMicrophoneTest",
+        "startSpeakerTest",
+        "stopCameraTest"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "navigator.mediaDevices.getUserMedia",
+        "trtc-js-sdk"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "trtcCloud.startMicDeviceTest",
+      "trtcCloud.startCameraDeviceTest",
+      "startLocalVideo() success",
+      "updateLocalVideo() success",
+      "startLocalAudio() success"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "prejoin"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-003",
+    "ability": "conference/room-lifecycle",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议项目里，请实现房间主链路：提供「创建并加入会议」「加入已有会议」「离开会议」「房主结束会议」四个操作，并监听房间被解散和被踢出两个事件。",
+    "expected_slice_ids": [
+      "conference/room-lifecycle"
+    ],
+    "constraints": {
+      "must_include": [
+        "useRoomState",
+        "useRoomParticipantState",
+        "createAndJoinRoom",
+        "joinRoom",
+        "leaveRoom",
+        "endRoom",
+        "RoomEvent",
+        "RoomParticipantEvent",
+        "KickedOutOfRoomReason",
+        "subscribeEvent",
+        "onRoomEnded",
+        "onKickedFromRoom"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine",
+        "tuiroom-engine-js"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[room_pipeline.cc:205] createRoom",
+      "[room_pipeline.cc:231] enterRoom",
+      "[room_pipeline.cc:212] destroyRoom",
+      "[room_operation_handler.cc:685] |LeaveTRTCRoom|reason:LeaveRoom"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "room"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-004",
+    "ability": "conference/room-config",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "我在 Vue3 + tuikit-atomicx-vue3 里做「创建会议」弹窗。请实现一个房间配置表单：支持会议主题、密码、默认全员禁麦、默认全员禁摄，点击确定后调用 createAndJoinRoom 把这些选项一次性传入。",
+    "expected_slice_ids": [
+      "conference/room-config",
+      "conference/room-lifecycle"
+    ],
+    "constraints": {
+      "must_include": [
+        "useRoomState",
+        "createAndJoinRoom",
+        "roomName",
+        "password",
+        "isAllMicrophoneDisabled",
+        "isAllCameraDisabled"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[room_pipeline.cc:205] createRoom",
+      "[room_pipeline.cc:231] enterRoom"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "room-config"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-005",
+    "ability": "conference/video-layout",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "我在 Vue3 + tuikit-atomicx-vue3 会议页面里需要一个视频主区域。请直接使用 RoomView 渲染会议画面，并让布局模板随屏幕共享状态自动在 GridLayout 和 SidebarLayout 之间切换。",
+    "expected_slice_ids": [
+      "conference/video-layout"
+    ],
+    "constraints": {
+      "must_include": [
+        "RoomView",
+        "RoomLayoutTemplate",
+        "GridLayout",
+        "SidebarLayout",
+        "useRoomParticipantState",
+        "participantWithScreen"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "createLocalVideoTrack",
+        "trtc-js-sdk"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "layout"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-006",
+    "ability": "conference/room-schedule",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 里做预约会议功能。请实现：预约一个未来一小时后开始、持续 30 分钟的会议（含参会人）、分页拉取预约列表、以及取消某个预约会议。",
+    "expected_slice_ids": [
+      "conference/room-schedule"
+    ],
+    "constraints": {
+      "must_include": [
+        "useRoomState",
+        "scheduleRoom",
+        "getScheduledRoomList",
+        "cancelScheduledRoom",
+        "scheduleStartTime",
+        "scheduleEndTime",
+        "scheduleAttendees"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[conference_list_extension.cc:74] |ScheduleConference",
+      "ConferenceListManager.scheduleConference success "
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.6,
+      "w_dynamic_in_final": 0.4
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "schedule"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-007",
+    "ability": "conference/room-invite",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "我在 Vue3 + tuikit-atomicx-vue3 会议里要做会中补邀功能：房主在会中选中若干在线用户发起呼叫；被邀请方收到 onCallReceived 后可以接受或拒绝，接受后进入会议。",
+    "expected_slice_ids": [
+      "conference/room-invite"
+    ],
+    "constraints": {
+      "must_include": [
+        "useRoomState",
+        "callUserToRoom",
+        "acceptCall",
+        "rejectCall",
+        "joinRoom",
+        "RoomEvent",
+        "subscribeEvent",
+        "onCallReceived"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "V2TIMManager",
+        "TUIRoomEngine"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "invite"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-008",
+    "ability": "conference/participant-list",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议里实现参会人列表：首次加载通过游标拉第一页，有下一页时继续分页；展示参会人昵称、角色和是否正在发言。",
+    "expected_slice_ids": [
+      "conference/participant-list"
+    ],
+    "constraints": {
+      "must_include": [
+        "useRoomParticipantState",
+        "getParticipantList",
+        "participantList",
+        "participantListCursor",
+        "speakingUsers"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[user_manager.cc:99] |GetUserList"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "participant"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-009",
+    "ability": "conference/participant-management",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "我在 Vue3 + tuikit-atomicx-vue3 会议里做成员管理面板：房主可以设/撤管理员、转移房主、踢出成员；普通成员只读。请给完整实现。",
+    "expected_slice_ids": [
+      "conference/participant-management"
+    ],
+    "constraints": {
+      "must_include": [
+        "useRoomParticipantState",
+        "setAdmin",
+        "revokeAdmin",
+        "transferOwner",
+        "kickParticipant"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[room_pipeline.cc:552] changeUserRole:",
+      "[room_pipeline.cc:569] kickRemoteUserOutOfRoom"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "manage"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-010",
+    "ability": "conference/participant-management",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议里做主持会控面板：房主可全员禁麦/禁摄/禁共享、全员禁聊，也能单独关闭某位成员的摄像头或麦克风。",
+    "expected_slice_ids": [
+      "conference/participant-management"
+    ],
+    "constraints": {
+      "must_include": [
+        "useRoomParticipantState",
+        "disableAllDevices",
+        "disableAllMessages",
+        "closeParticipantDevice",
+        "DeviceType"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[room_pipeline.cc:610] disableDeviceForAllUserByAdmin"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "moderation"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-011",
+    "ability": "conference/room-chat",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "我在 Vue3 + tuikit-atomicx-vue3 会议里做会中聊天（无 UI 组件集成）：进入房间后将会话切换到当前房间的群聊，用一个原生 textarea 输入文本并调用底层 API 发送消息。",
+    "expected_slice_ids": [
+      "conference/room-chat"
+    ],
+    "constraints": {
+      "must_include": [
+        "useConversationListState",
+        "setActiveConversation",
+        "GROUP",
+        "useRoomState",
+        "currentRoom",
+        "useMessageInputState",
+        "updateRawValue",
+        "sendMessage"
+      ],
+      "must_not_include": [
+        "V2TIMManager",
+        "tim-js-sdk",
+        "TRTCCloud"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "chat"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-012",
+    "ability": "conference/device-control",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议里实现设备控制按钮：摄像头开关、切换摄像头、进房后先静音再建立麦克风采集，用户点击开/关麦克风分别调用 unmuteMicrophone / muteMicrophone。",
+    "expected_slice_ids": [
+      "conference/device-control"
+    ],
+    "constraints": {
+      "must_include": [
+        "useDeviceState",
+        "useRoomParticipantState",
+        "openLocalCamera",
+        "closeLocalCamera",
+        "setCurrentCamera",
+        "openLocalMicrophone",
+        "muteMicrophone",
+        "unmuteMicrophone"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "navigator.mediaDevices.getUserMedia",
+        "trtc-js-sdk"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[room_pipeline.cc:330] openLocalCamera",
+      "[room_pipeline.cc:338] closeLocalCamera",
+      "[room_pipeline.cc:384] openLocalMicrophone"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.4,
+      "w_dynamic_in_final": 0.6
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "device"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-013",
+    "ability": "conference/network-quality",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议页面顶部加一个网络状态指示：读取 useDeviceState().networkInfo，把 quality 映射成「优秀/良好/一般/较差」文案，并在较差时提示弱网。",
+    "expected_slice_ids": [
+      "conference/network-quality"
+    ],
+    "constraints": {
+      "must_include": [
+        "useDeviceState",
+        "networkInfo",
+        "NetworkQuality"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "trtc-js-sdk"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.0,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.7,
+      "w_dynamic_in_final": 0.3
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "network"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-014",
+    "ability": "conference/screen-share",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议里实现屏幕分享：支持开始/停止共享、带系统音频，监听当前共享者变化并在 UI 上同步，浏览器原生停止共享时收口状态。",
+    "expected_slice_ids": [
+      "conference/screen-share"
+    ],
+    "constraints": {
+      "must_include": [
+        "useDeviceState",
+        "useRoomParticipantState",
+        "startScreenShare",
+        "stopScreenShare",
+        "screenStatus",
+        "participantWithScreen"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "getDisplayMedia",
+        "trtc-js-sdk"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[room_pipeline.cc:414] startScreenSharing",
+      "[room_pipeline.cc:421] stopScreenSharing"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "screen-share"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-015",
+    "ability": "conference/beauty-effects",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议里加一个基础美颜面板：磨皮、美白、红润三个滑块实时预览，点击「确定」才保存生效，点击「取消」回退未保存的预览。",
+    "expected_slice_ids": [
+      "conference/beauty-effects"
+    ],
+    "constraints": {
+      "must_include": [
+        "useFreeBeautyState",
+        "setFreeBeauty",
+        "saveBeautySetting",
+        "beautyLevel",
+        "whitenessLevel",
+        "ruddinessLevel"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TXBeautyManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "enableTestBeautyStyle"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "beauty"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-016",
+    "ability": "conference/virtual-background",
+    "product": "conference",
+    "platform": "web",
+    "scenario": null,
+    "user_prompt": "在 Vue3 + tuikit-atomicx-vue3 会议里加虚拟背景功能：进入页面先检测浏览器是否支持，支持则初始化模型资源（assetsPath），支持背景虚化与替换，确认后保存生效。",
+    "expected_slice_ids": [
+      "conference/virtual-background"
+    ],
+    "constraints": {
+      "must_include": [
+        "useVirtualBackgroundState",
+        "isSupported",
+        "initVirtualBackground",
+        "setVirtualBackground",
+        "saveVirtualBackground",
+        "assetsPath"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TXBeautyManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "enableTestVirtualBackground"
+    ],
+    "acceptance": {
+      "static_score_min": 0.7,
+      "dynamic_score_min": 0.5,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.7,
+      "w_compile_bonus": 0.3,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "smoke",
+      "virtual-background"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-017",
+    "ability": "conference/standard-conference",
+    "product": "conference",
+    "platform": "web",
+    "scenario": "standard-conference",
+    "user_prompt": "我要用 Vue3 + tuikit-atomicx-vue3 做一个标准视频会议页面。请给一份端到端的最小可用实现：启动时完成登录与鉴权，点击按钮创建并加入会议，进入后用 RoomView 渲染视频区并支持宫格/共享联动布局，提供摄像头和麦克风开关，展示参会人列表和网络质量，离开时收口房间状态。",
+    "expected_slice_ids": [
+      "conference/login-auth",
+      "conference/room-lifecycle",
+      "conference/participant-list",
+      "conference/video-layout",
+      "conference/device-control",
+      "conference/network-quality"
+    ],
+    "constraints": {
+      "must_include": [
+        "useLoginState",
+        "login(",
+        "useRoomState",
+        "createAndJoinRoom",
+        "leaveRoom",
+        "RoomView",
+        "useDeviceState",
+        "openLocalCamera",
+        "muteMicrophone",
+        "useRoomParticipantState",
+        "getParticipantList",
+        "networkInfo",
+        "subscribeEvent",
+        "onLoginExpired",
+        "onKickedFromRoom"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine",
+        "trtc-js-sdk",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[account_manager.cc:46] |Login|login",
+      "[account_manager.cc:77] onLoginSuccess",
+      "[room_pipeline.cc:205] createRoom",
+      "[room_pipeline.cc:231] enterRoom",
+      "[room_operation_handler.cc:685] |LeaveTRTCRoom|reason:LeaveRoom",
+      "[room_pipeline.cc:330] openLocalCamera",
+      "[room_pipeline.cc:338] closeLocalCamera",
+      "[room_pipeline.cc:384] openLocalMicrophone",
+      "[user_manager.cc:99] |GetUserList"
+    ],
+    "acceptance": {
+      "static_score_min": 0.65,
+      "dynamic_score_min": 0.4,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.6,
+      "w_compile_bonus": 0.4,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "ui_interactions": [
+      {"action": "login", "keywords": ["登录", "Login", "login", "Sign in"], "element": "button"},
+      {"action": "create-room", "keywords": ["创建", "Create", "开始会议", "Start", "Join", "加入"], "element": "button"},
+      {"action": "toggle-camera", "keywords": ["摄像头", "Camera", "camera", "视频"], "element": "button"},
+      {"action": "toggle-mic", "keywords": ["麦克风", "Mic", "mic", "Mute", "mute", "静音"], "element": "button"},
+      {"action": "leave", "keywords": ["离开", "Leave", "退出", "leave", "End", "结束"], "element": "button"}
+    ],
+    "tags": [
+      "conference",
+      "web",
+      "scenario",
+      "standard-conference"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-018",
+    "ability": "conference/standard-conference",
+    "product": "conference",
+    "platform": "web",
+    "scenario": "standard-conference",
+    "user_prompt": "我要用 Vue3 + tuikit-atomicx-vue3 做一个主持型宣讲 / 培训会议页面。请给一份端到端最小可用实现:启动时完成登录,主持人创建会议时配置会议主题、密码,并默认开启全员禁麦与全员禁摄;进入会议后用 RoomView 渲染视频区,共享屏幕开始时自动从宫格切到侧边栏布局;主持人可以发起屏幕分享演示,会中支持单独关闭某成员的麦克风或摄像头、踢出违规成员、设置管理员、全员禁言;离开会议时收口房间状态。",
+    "expected_slice_ids": [
+      "conference/login-auth",
+      "conference/room-lifecycle",
+      "conference/room-config",
+      "conference/video-layout",
+      "conference/device-control",
+      "conference/participant-list",
+      "conference/participant-management",
+      "conference/screen-share"
+    ],
+    "constraints": {
+      "must_include": [
+        "useLoginState",
+        "login(",
+        "sdkAppId",
+        "userSig",
+        "subscribeEvent",
+        "onLoginExpired",
+        "useRoomState",
+        "createAndJoinRoom",
+        "leaveRoom",
+        "roomName",
+        "password",
+        "isAllMicrophoneDisabled",
+        "isAllCameraDisabled",
+        "RoomView",
+        "RoomLayoutTemplate",
+        "GridLayout",
+        "SidebarLayout",
+        "useDeviceState",
+        "openLocalCamera",
+        "muteMicrophone",
+        "unmuteMicrophone",
+        "startScreenShare",
+        "stopScreenShare",
+        "participantWithScreen",
+        "useRoomParticipantState",
+        "getParticipantList",
+        "setAdmin",
+        "kickParticipant",
+        "disableAllMessages",
+        "closeParticipantDevice",
+        "DeviceType"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine",
+        "trtc-js-sdk",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[account_manager.cc:46] |Login|login",
+      "[account_manager.cc:77] onLoginSuccess",
+      "[room_pipeline.cc:205] createRoom",
+      "[room_pipeline.cc:231] enterRoom",
+      "[room_operation_handler.cc:685] |LeaveTRTCRoom|reason:LeaveRoom",
+      "[room_pipeline.cc:330] openLocalCamera",
+      "[room_pipeline.cc:338] closeLocalCamera",
+      "[room_pipeline.cc:384] openLocalMicrophone",
+      "[user_manager.cc:99] |GetUserList",
+      "[room_pipeline.cc:552] changeUserRole:",
+      "[room_pipeline.cc:569] kickRemoteUserOutOfRoom",
+      "[room_pipeline.cc:610] disableDeviceForAllUserByAdmin",
+      "[room_pipeline.cc:414] startScreenSharing",
+      "[room_pipeline.cc:421] stopScreenSharing"
+    ],
+    "acceptance": {
+      "static_score_min": 0.65,
+      "dynamic_score_min": 0.4,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.6,
+      "w_compile_bonus": 0.4,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "scenario",
+      "standard-conference"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-019",
+    "ability": "conference/standard-conference",
+    "product": "conference",
+    "platform": "web",
+    "scenario": "standard-conference",
+    "user_prompt": "我要用 Vue3 + tuikit-atomicx-vue3 做一个预约式正式会议页面。请给一份端到端最小可用实现:登录后填写会议主题、密码、参会人,预约一个未来 1 小时后开始、持续 30 分钟的会议;首页分页拉取预约列表展示;用户点击某条预约记录时携带密码 joinRoom 进入会议,会议结束后调用 leaveRoom 收口;支持取消未来的预约会议。",
+    "expected_slice_ids": [
+      "conference/login-auth",
+      "conference/room-schedule",
+      "conference/room-config",
+      "conference/room-lifecycle"
+    ],
+    "constraints": {
+      "must_include": [
+        "useLoginState",
+        "login(",
+        "sdkAppId",
+        "userSig",
+        "subscribeEvent",
+        "onLoginExpired",
+        "useRoomState",
+        "scheduleRoom",
+        "getScheduledRoomList",
+        "cancelScheduledRoom",
+        "scheduleStartTime",
+        "scheduleEndTime",
+        "scheduleAttendees",
+        "roomName",
+        "password",
+        "joinRoom",
+        "leaveRoom",
+        "RoomEvent"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine",
+        "trtc-js-sdk",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[account_manager.cc:46] |Login|login",
+      "[account_manager.cc:77] onLoginSuccess",
+      "[conference_list_extension.cc:74] |ScheduleConference",
+      "ConferenceListManager.scheduleConference success ",
+      "[room_pipeline.cc:231] enterRoom",
+      "[room_operation_handler.cc:685] |LeaveTRTCRoom|reason:LeaveRoom"
+    ],
+    "acceptance": {
+      "static_score_min": 0.65,
+      "dynamic_score_min": 0.4,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.6,
+      "w_compile_bonus": 0.4,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "scenario",
+      "standard-conference"
+    ],
+    "status": "active"
+  },
+  {
+    "test_id": "TC-CONF-WEB-020",
+    "ability": "conference/standard-conference",
+    "product": "conference",
+    "platform": "web",
+    "scenario": "standard-conference",
+    "user_prompt": "我要用 Vue3 + tuikit-atomicx-vue3 做一个支持会中补邀的协作会议页面。请给一份端到端最小可用实现:房主登录并创建会议,RoomView 渲染会议画面,提供摄像头与麦克风开关;在参会人列表中选中若干在线用户,调用 callUserToRoom 发起会中呼叫,被邀请方常驻监听 onCallReceived 后选择 acceptCall 并继续 joinRoom 进入会议或 rejectCall 拒绝;新成员进房后房主可以把其设为管理员协助协作;离开会议时收口房间状态。",
+    "expected_slice_ids": [
+      "conference/login-auth",
+      "conference/room-lifecycle",
+      "conference/video-layout",
+      "conference/device-control",
+      "conference/participant-list",
+      "conference/participant-management",
+      "conference/room-invite"
+    ],
+    "constraints": {
+      "must_include": [
+        "useLoginState",
+        "login(",
+        "sdkAppId",
+        "userSig",
+        "subscribeEvent",
+        "onLoginExpired",
+        "useRoomState",
+        "createAndJoinRoom",
+        "joinRoom",
+        "leaveRoom",
+        "currentRoom",
+        "callUserToRoom",
+        "acceptCall",
+        "rejectCall",
+        "RoomEvent",
+        "onCallReceived",
+        "RoomView",
+        "RoomLayoutTemplate",
+        "GridLayout",
+        "useDeviceState",
+        "openLocalCamera",
+        "muteMicrophone",
+        "unmuteMicrophone",
+        "useRoomParticipantState",
+        "getParticipantList",
+        "setAdmin"
+      ],
+      "must_not_include": [
+        "TRTCCloud",
+        "TUIRoomEngine",
+        "trtc-js-sdk",
+        "V2TIMManager"
+      ],
+      "file_count_min": 1
+    },
+    "expected_events": [
+      "[account_manager.cc:46] |Login|login",
+      "[account_manager.cc:77] onLoginSuccess",
+      "[room_pipeline.cc:205] createRoom",
+      "[room_pipeline.cc:231] enterRoom",
+      "[room_operation_handler.cc:685] |LeaveTRTCRoom|reason:LeaveRoom",
+      "[room_pipeline.cc:330] openLocalCamera",
+      "[room_pipeline.cc:338] closeLocalCamera",
+      "[room_pipeline.cc:384] openLocalMicrophone",
+      "[user_manager.cc:99] |GetUserList",
+      "[room_pipeline.cc:552] changeUserRole:"
+    ],
+    "acceptance": {
+      "static_score_min": 0.65,
+      "dynamic_score_min": 0.4,
+      "must_compile": true
+    },
+    "weights": {
+      "w_must_include": 0.6,
+      "w_must_not": 0.4,
+      "w_events": 0.6,
+      "w_compile_bonus": 0.4,
+      "w_static_in_final": 0.5,
+      "w_dynamic_in_final": 0.5
+    },
+    "tags": [
+      "conference",
+      "web",
+      "scenario",
+      "standard-conference"
+    ],
+    "status": "active"
+  }
+]

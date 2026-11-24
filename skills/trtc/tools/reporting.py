@@ -235,8 +235,11 @@ def _resolve_runtime_binding(
         if not isinstance(identity, dict):
             return None, "runtime_binding_invalid"
         stat = real_node.stat()
+        # st_dev is intentionally excluded from identity checks: on macOS APFS
+        # it drifts across reboots/snapshots while the file itself is unchanged,
+        # which previously made every turn fail with runtime_binding_invalid.
+        # ino+size+mtime already identify a replaced node binary.
         for key, actual in {
-            "dev": int(getattr(stat, "st_dev", 0)),
             "ino": int(getattr(stat, "st_ino", 0)),
             "size": int(stat.st_size),
             "mtime_ms": float(stat.st_mtime_ns) / 1_000_000,
@@ -1330,16 +1333,24 @@ def main(argv: list[str] | None = None) -> int:
                         "status": "timeout", "phase": "send", "event_id": event_id,
                     }
                 else:
+                    send_args = [
+                        "--event-id", event_id,
+                        "--skillname", "unknown",
+                        "--product", "unknown",
+                        "--framework", "unknown",
+                        "--skip-install-recovery",
+                    ]
+                    if prompt_ide != "codex":
+                        # Non-Codex hosts attribute at the final owner invoke,
+                        # which runs after this foreground entry. Defer the
+                        # send so the event is still attributable then. Codex
+                        # freezes attribution once an event reaches Outbox, so
+                        # its foreground entry must keep the historical send.
+                        send_args.append("--defer-send")
+                    send_args.append("--input-stdin")
                     send_ok, send_result = _run_node(
                         "invoke",
-                        args=[
-                            "--event-id", event_id,
-                            "--skillname", "unknown",
-                            "--product", "unknown",
-                            "--framework", "unknown",
-                            "--skip-install-recovery",
-                            "--input-stdin",
-                        ],
+                        args=send_args,
                         payload=send_payload,
                         ide=prompt_ide,
                         debug=debug,
@@ -1378,16 +1389,19 @@ def main(argv: list[str] | None = None) -> int:
                         recovery_payload = dict(stage_payload)
                         _carry_emitted_notice(recovery_payload, emitted_notices)
                         recovery_payload["notice_attempt_id"] = secrets.token_hex(16)
+                        recovery_args = [
+                            "--event-id", recovered_id,
+                            "--skillname", "unknown",
+                            "--product", "unknown",
+                            "--framework", "unknown",
+                            "--skip-install-recovery",
+                        ]
+                        if prompt_ide != "codex":
+                            recovery_args.append("--defer-send")
+                        recovery_args.append("--input-stdin")
                         _recovery_ok, recovery_result = _run_node(
                             "invoke",
-                            args=[
-                                "--event-id", recovered_id,
-                                "--skillname", "unknown",
-                                "--product", "unknown",
-                                "--framework", "unknown",
-                                "--skip-install-recovery",
-                                "--input-stdin",
-                            ],
+                            args=recovery_args,
                             payload=recovery_payload,
                             ide=prompt_ide,
                             debug=debug,
@@ -1464,7 +1478,9 @@ def main(argv: list[str] | None = None) -> int:
             if not ok or (result.get("status") in _RUNTIME_FAILURE_STATUSES and not no_current_event):
                 if foreground_ide in {"cursor", "codex"}:
                     return _cursor_outcome("invoke", "deferred", reason=result.get("status", "runtime_failed"))
-                return _foreground_runtime_failure(result)
+                # A transport/process timeout here means "queued for retry":
+                # the durable event stays in Outbox and a later entry drains it.
+                return _foreground_runtime_failure(result, fail_open_timeout=True)
             # Runtime owns the CodeBuddy foreground presentation budget.
             # A created receipt is not permission to render: the attempt
             # counter may have failed to persist or already be exhausted.

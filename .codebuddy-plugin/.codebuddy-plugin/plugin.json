@@ -1,0 +1,7 @@
+{
+  "name": "trtc-ai-setup",
+  "description": "TRTC AI Integration Assistant for CodeBuddy",
+  "author": { "name": "Tencent TRTC Team" },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

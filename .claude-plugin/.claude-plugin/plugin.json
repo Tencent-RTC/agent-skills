@@ -1,0 +1,17 @@
+{
+  "name": "trtc-ai-setup",
+  "description": "TRTC AI Integration Assistant - helps developers integrate Tencent Real-Time Communication SDKs (Chat, Call, RTC Engine, Live, Conference) across Web, Android, iOS, Flutter, and Electron.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Tencent TRTC Team"
+  },
+  "homepage": "https://trtc.io",
+  "repository": "https://git.woa.com/jackyixue/trtc-ai-integration",
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "keywords": [
+    "trtc", "real-time-communication", "video-conference",
+    "live-streaming", "chat", "webrtc", "sdk-integration"
+  ]
+}

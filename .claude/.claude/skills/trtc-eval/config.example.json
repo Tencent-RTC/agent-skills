@@ -1,0 +1,7 @@
+{
+  "trtc_test_account": {
+    "sdk_app_id": 1400000000,
+    "user_id": "replace-me",
+    "user_sig": "replace-me-with-backend-signed-usersig"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "trtc-agent-skills",
+  "description": "TRTC AI Integration Assistant for Cursor",
+  "author": { "name": "Tencent TRTC Team" },
+  "repository": "https://github.com/Tencent-RTC/agent-skills",
+  "rules": ".cursor/rules/",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-cursor.json"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "trtc-marketplace",
+  "description": "TRTC AI Integration plugins",
+  "owner": { "name": "Tencent TRTC Team" },
+  "plugins": [
+    {
+      "name": "trtc-agent-skills",
+      "source": "./",
+      "description": "TRTC SDK integration assistant with knowledge base"
+    }
+  ]
+}

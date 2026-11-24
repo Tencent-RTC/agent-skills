@@ -1,0 +1,9 @@
+{
+  "name": "trtc-eval-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Eval-only Node dependencies (puppeteer) for scripts/log-bridge.mjs. Kept separate from templates/web-demo to avoid polluting demo deps.",
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}

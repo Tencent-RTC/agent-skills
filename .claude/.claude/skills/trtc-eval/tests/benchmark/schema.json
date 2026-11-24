@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TRTC Eval Cases",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "test_id", "ability", "product", "platform", "user_prompt",
+      "expected_slice_ids", "constraints", "expected_events",
+      "acceptance", "tags", "status"
+    ],
+    "properties": {
+      "test_id": { "type": "string", "pattern": "^TC-[A-Z]+-[A-Z]+-\\d{3}$" },
+      "ability": { "type": "string" },
+      "product": { "type": "string", "enum": ["chat", "call", "rtc-engine", "live", "room", "conference"] },
+      "platform": { "type": "string", "enum": ["ios", "android", "web", "flutter", "electron", "unity"] },
+      "scenario": { "type": ["string", "null"] },
+      "user_prompt": { "type": "string", "minLength": 20 },
+      "expected_slice_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+      "constraints": {
+        "type": "object",
+        "required": ["must_include", "must_not_include"],
+        "properties": {
+          "must_include": { "type": "array", "items": { "type": "string" } },
+          "must_not_include": { "type": "array", "items": { "type": "string" } },
+          "must_include_in_files": { "type": "object" },
+          "file_count_min": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "expected_events": { "type": "array", "items": { "type": "string" } },
+      "acceptance": {
+        "type": "object",
+        "properties": {
+          "static_score_min": { "type": "number" },
+          "dynamic_score_min": { "type": "number" },
+          "must_compile": { "type": "boolean" }
+        }
+      },
+      "weights": {
+        "type": "object",
+        "properties": {
+          "w_must_include": { "type": "number" },
+          "w_must_not": { "type": "number" },
+          "w_events": { "type": "number" },
+          "w_compile_bonus": { "type": "number" },
+          "w_static_in_final": { "type": "number" },
+          "w_dynamic_in_final": { "type": "number" }
+        }
+      },
+      "demo_injection_map": { "type": "object" },
+      "auto_run_flow": { "type": "array", "items": { "type": "string" } },
+      "tags": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+      "status": { "type": "string", "enum": ["active", "draft"] }
+    }
+  }
+}

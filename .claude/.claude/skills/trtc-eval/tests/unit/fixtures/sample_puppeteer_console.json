@@ -1,0 +1,4 @@
+[{"ts":"2026-05-06T14:01:23Z","type":"console","level":"info","text":"[TRTC] onLoginSuccess userId=testUser"}]
+[{"ts":"2026-05-06T14:01:25Z","type":"console","level":"info","text":"[LiveCoreView] onLiveStarted liveId=room123"}]
+[{"ts":"2026-05-06T14:01:30Z","type":"console","level":"info","text":"[TRTC] onUserVideoStateChanged userId=testUser"}]
+[{"ts":"2026-05-06T14:01:55Z","type":"console","level":"info","text":"[LiveCoreView] onLiveEnded liveId=room123"}]
