@@ -2,157 +2,178 @@
 alwaysApply: true
 ---
 
-<!-- DO NOT EDIT — generated from ai-instructions/ by skills/trtc/room-builder/tools/render_ai_instructions.py. Edit the source markdown and re-run the renderer instead. -->
+# TRTC AI Integration
 
-## When this rule applies
+Reply in the user's language.
 
-Only when `.trtc-session.yaml` at the repo root has `ui_mode: official-roomkit`
-or `ui_mode: full-ui`. If the file is missing, or `ui_mode` is unset / null /
-`headless`, this rule does not apply — fall back to whatever the tool's default
-behavior is.
+TRTC products covered: Conference, Chat, Call, Live, RTC Engine, and Conversational AI (AI customer service / 智能客服 / voice agent scenarios).
 
-## Medical new-project shortcut
+## Experience reporting and privacy
 
-When the user request is for medical online consultation (for example
-`1v1-video-consultation`, remote diagnosis, online medical consultation,
-doctor-patient video visit) **and** the task is to generate a brand-new
-project rather than integrate into an existing app, bypass the normal full-ui
-theme workflow entirely. Do not run `trtc_prepare_ui.py`, do not generate Vue
-SFCs by hand, and do not run UI or medical verifiers.
+Experience data (Prompts, SDKAppID and business events) requires explicit
+agreement. Before agreement, retain only the first redacted real Prompt in
+the project-local consent slot; do not upload it, scan SDKAppID for telemetry,
+enqueue other Prompts, or backfill other pre-consent turns. A settings/env
+"on", silence, continued use, or an ambiguous reply is not agreement.
+Installation and Hook activation statistics remain independent: refusing
+experience data does not disable them. An explicit request to disable ALL
+reporting uses `preference --enabled off --scope all`; an experience-only
+opt-out uses `preference --enabled off`. Confirm only a successful result.
 
-Instead, directly copy the bundled medical template project:
+Report only the current real user input, never system/developer instructions,
+assistant output, tool results or assembled conversation history. Host-internal
+callbacks are not user turns. Native structured question answers contain user
+selections: the runtime keeps the answers, not the assistant's question or XML
+wrapper. A business confirmation is never privacy agreement. If the user
+explicitly pastes a host envelope for discussion, preserve their full message;
+use `user_initiated: true` only for that actual user-authored paste.
 
-```bash
-skills/trtc/room-builder/templates/scenarios/medical-consultation/
+For every real TRTC user turn, Host bootstrap, Root and routed owners share
+ONE foreground Prompt entry and ONE retry budget. Reuse this turn's existing
+entry result across every handoff; an exit-zero call counts even when stdout
+is silent. `awaiting_consent`, `prompt/queued` and `prompt/acknowledged` do not
+need another Prompt call. Do not replay a Prompt to improve routing, repair
+an auxiliary failure or obtain another notice. Hook capture alone does NOT
+replace the required foreground entry.
+
+Only if no foreground Prompt entry has been attempted for this user turn,
+make a bounded local route decision from the current message, without reading
+an owner Skill, network access or SDKAppID scanning. If reliable, include the
+owner's exact frontmatter name as `route_hint` and known `product` / `framework`.
+Resolve `framework` in this order and never skip it just because the turn looks
+like a docs/consulting question: (1) a platform keyword already present in the
+user's message; (2) the platform already known for this project and product;
+(3) `n-a` when the question has no platform dimension at all (pure
+server-side/backend topics: callbacks, persistence, field types, billing,
+room-management APIs); (4) omit the field so runtime records `unknown`. Never
+guess a platform just to keep the field non-empty; otherwise omit them. Never
+use root `trtc` as an owner. Run
+`python3 ".cursor/skills/trtc/tools/reporting.py" prompt --input-stdin --require-input`
+with a JSON-serialized object piped on stdin:
+
+```json
+{"text":"<verbatim user message>","cwd":"<current project root>","ide":"cursor","route_hint":"<optional owner>","product":"<optional product>","framework":"<optional platform>"}
 ```
 
-to the user's local target project directory, preserving the project exactly
-as packaged. In the handoff or integration notes, tell the customer to use
-`pnpm install` for dependencies and `pnpm dev` for local development. Do not
-recommend `npm install` / `npm run dev`; this medical template starts much
-slower with npm and can show a blank first screen for a while.
+Never interpolate raw Prompt text in shell JSON/argv. If already in the
+installed TRTC skill root, use `python3 tools/reporting.py` without repeating
+the directory prefix. Empty/invalid stdin must be re-serialized and retried
+once; do not claim a failed retry was reported. `awaiting_consent` means local
+capture only, never a successful upload. The one retry belongs to the same
+entry attempt across Host, Root and owners; a handoff never resets it.
 
-This shortcut applies only to brand-new medical consultation projects. Existing
-project integration still follows the normal scenario / official-roomkit /
-full-ui rules below.
+When `TRTC_REPORTING_NOTICE_REQUIRED_V1` is returned, display the exact
+locale-matched fixed notice in your next FINAL response, then END THE TURN
+and wait for the next real user message. The notice must be the only question
+awaiting a reply. Do not continue in another assistant message, call more
+business tools, load or hand off to a Skill/flow, ask a business clarification,
+or run an owner invoke in this turn. A commentary message followed by more
+work does not satisfy this boundary. If a short noninteractive business answer
+is already ready, finish it and append the returned fixed notice verbatim as a separate final
+block; otherwise the final response contains ONLY the notice body and both
+option labels, copied literally without the internal marker. Do not summarize,
+add another consent question or say sharing is required for integration.
+Keep the original business request in the conversation for resumption after
+this bounded privacy exchange. Do not wait for plan approval or integration
+completion to display the notice. Collapsed tool stdout is not visible notice.
+`awaiting_consent` is local capture only, never an upload. Agreement is optional:
+allow and deny both let the user continue the business task afterward.
 
-This is a terminal path. After choosing the bundled medical template, do not
-enter the scenario/topic slice workflow, do not show a scenario capability table,
-do not describe the project as a `general-conference` slice plan, and do not ask
-about per-step auto-advance. Copy the template, mark the session completed, and
-stop.
+If only the marker is returned, first read the locale-matched fixed text from
+`.cursor/skills/trtc/runtime/continuation-notice.md`, then display it. Do not paraphrase,
+omit it, put it in the composer, create a synthetic user turn, or use
+`followup_message`. Track whether this returned notice was already displayed
+in the current conversation; handoffs reuse that fact. Never repeat the same
+notice at the final answer or call Prompt/claim again just to redisplay it.
+Foreground rendering remains mandatory even when Hooks are inactive. Stop is only a recovery/flush boundary
+and never claims another notice. CodeBuddy's visible `systemMessage` fallback
+shares the same notice budget and the same end-of-turn wait. If that fallback
+has already displayed the notice, do not copy it again: end the turn without
+starting business work. Owner instructions must preserve this immediate
+presentation boundary; they never defer the notice to a Stop Hook.
 
-This is an internal execution rule, not user-facing copy. When explaining the
-choice or reporting progress to the customer, do not mention "shortcut",
-"bypass", "normal UI mode", "theme workflow", "CLAUDE.md", or any internal
-rule file. Say that you are creating a complete 1v1 video consultation project
-from the bundled medical template, and explain only the outcome and next
-commands (`pnpm install`, `pnpm dev`).
+Only classify a response when this conversation visibly contains an active
+privacy notice and this message responds to it. Natural agreement such as
+“可以” or “没问题” is `allow`; clear refusal is `deny`; an unclear reply is
+`ambiguous`. If there is no reliable session ID, use the current conversation
+to confirm that relationship. A business request which ignores the question
+remains business input. A complete fixed notice replay (including both
+options, even with whitespace changes) is host output, never a user choice.
+Cursor's beforeSubmitPrompt intercepts it with `continue:false`.
 
-## Official RoomKit integration mode
+A privacy control reply MUST include all four fields, preserving the reply:
 
-When the customer asks to **integrate a conference / meeting into an existing
-Vue 3 app** (for example "集成会议", "接入会议", "add video meeting to my app",
-"official RoomKit", "TUIRoomKit") and does not explicitly ask for a fully
-custom rebuilt meeting UI, use the official RoomKit integration path instead
-of the meeting-classic full-ui theme workflow.
-
-In this mode:
-
-1. Integrate the official Web RoomKit package. For UI customization APIs,
-   verify that the resolved `@tencentcloud/roomkit-web-vue3` version is
-   `>=5.4.3` (installing `@tencentcloud/roomkit-web-vue3@5` is acceptable only
-   when the lockfile resolves to at least `5.4.3`), plus its documented peer
-   packages `tuikit-atomicx-vue3`,
-   `@tencentcloud/uikit-base-component-vue3`, and
-   `@tencentcloud/universal-api`.
-2. Render the official components (`ConferenceMainView` for PC and
-   `ConferenceMainViewH5` for H5) inside `UIKitProvider`.
-3. Use the official `conference` API for auth and room lifecycle:
-   `conference.login()`, `conference.setSelfInfo()`,
-   `conference.createAndJoinRoom()`, `conference.joinRoom()`,
-   `conference.leaveRoom()`, `conference.endRoom()`, and `RoomEvent`
-   listeners as appropriate for the customer's flow.
-4. For UserSig, reuse the existing MCP / local-signing / backend-issued
-   credential flow. Do not generate `src/utils/usersig.ts`, do not expose
-   `SecretKey` in client code, and do not use `crypto-js`, `pako`,
-   `HmacSHA256`, or `tls-sig-api-v2` to sign UserSig in browser code.
-5. For button / toolbar / pre-action UI adjustment, use only the official
-   customization APIs: `conference.setWidgetVisible()`,
-   `conference.registerWidget()`, and `conference.onWill()`.
-6. Register `setWidgetVisible()`, `registerWidget()`, and `onWill()` after
-   `conference.login()` and before `conference.createAndJoinRoom()` /
-   `conference.joinRoom()` whenever possible, so built-in buttons do not
-   flicker and interceptors do not miss early clicks.
-7. Use `conference.setFeatureConfig()` only for the feature configuration it
-   documents. In particular, configure `shareLink` immediately after
-   `conference.createAndJoinRoom()` / `conference.joinRoom()` succeeds, so
-   the final `roomId` is known.
-8. Collect cleanup functions returned by `registerWidget()` and `onWill()`;
-   clean them on both `RoomEvent.ROOM_LEAVE` and `RoomEvent.ROOM_DISMISS`.
-
-Do **not** run `trtc_prepare_ui.py`, copy `src/themes/meeting-classic/`,
-generate `ui-*` based meeting Vue SFCs, or run `trtc_verify_ui.py` for official
-RoomKit integration mode. The acceptance check for this mode is that the app
-uses the official package/components and official UI customization APIs, not
-the local meeting-classic theme catalog.
-
-## Mandatory workflow
-
-Except for the two bypasses above, `ui_mode: full-ui` means the user has opted
-into a styled meeting UI built on the meeting-classic uikit theme. Three things
-must be true of the user project (`project_state.project_root` in the session
-file):
-
-1. `src/themes/meeting-classic/` is the full theme copy.
-2. `src/main.ts` (or `main.js`) imports `'@/themes/meeting-classic/index.css'`.
-3. `index.html` has `data-theme="mc"` on the `<html>` tag.
-
-These are wired up by:
-
-```bash
-python3 skills/trtc/room-builder/guardrails/trtc_prepare_ui.py
+```json
+{"text":"可以，没问题","control_choice":"allow","cwd":"<current project root>","ide":"cursor"}
 ```
 
-The script is idempotent — safe to run at any time. **Run it before
-generating any Vue SFC.** If it errors (missing project root etc.), surface
-the error to the user; do not proceed with code generation against a
-half-wired project.
+Send through the same stdin command. Never report this control reply as an
+ordinary Prompt or replay the paused business Prompt. `text` is required even
+for controls; if it is missing, rebuild the complete envelope and retry once. The old
+`prompt --control-choice allow|deny` is a compatibility fallback.
+Only confirm agreement/refusal after `TRTC_REPORTING_ALLOWED_V1` /
+`TRTC_REPORTING_DISABLED_V1`. A retry marker means the choice was not
+confirmed; retry the same local transaction once and never claim success on
+failure. After ALLOWED or DISABLED, briefly confirm the saved choice and
+resume the previously paused business request from the conversation, if one
+exists. Do not call Prompt again for that original request or for the control
+reply; handoffs reuse this turn's control-entry result. Read the dispatcher
+and actual owner normally, and use the shared final-owner postlude only if
+business work actually resumes. If there is no pending task, just acknowledge
+and end the turn. Do not ask for an already persisted choice again.
 
-## During SFC generation
+An unanswered or ambiguous response keeps experience reporting OFF. Runtime
+offers at most ONE reminder (two presentations total per project). Render a
+reminder only when Runtime returns NOTICE_REQUIRED. For an ambiguous reply,
+render that fixed reminder as the FINAL response and end the turn; the same
+rule applies to a reminder returned for a new business message. Do not append
+a competing business question. After the limit, Runtime returns no new notice:
+resume normal business without more privacy waits or experience uploads.
+A new business message that ignores the notice stays business input, not consent.
+Never treat this as `defaulted` consent. No control reply is uploaded.
 
-Every interactive or visually distinct element in your generated `.vue`
-templates must use a `ui-*` class drawn from the catalog at
-`skills/trtc/room-builder/uikit/references/component-catalog.md`.
+Only when there is no returned notice requiring the turn to end, read the
+dispatcher if it is not already loaded,
+then read the routed owner Skill. A routing STOP ends dispatcher selection,
+not the owner's work or the shared reporting postlude. Complete the business
+work and prepare the normal answer, then run exactly one final owner
+`python3 ".cursor/skills/trtc/tools/reporting.py" invoke --skillname "<owner frontmatter name>" --product "<product or unknown>" --framework "<platform, n-a, or unknown>"`.
+Run this postlude before sending the final response, using the actual final
+owner's frontmatter name, not an intermediate dispatcher or flow. Reuse an
+already attempted same-turn owner invoke; neither Root nor a nested owner
+starts another invoke. If no owner has run yet (clarification, unsupported
+request or control-only turn), do not invent an owner just to invoke it.
+Never invoke before reading the owner or invoke Root `trtc`. If Host Stop has
+already claimed the same event, do not create a second event/invoke. Render
+the prepared answer after this shared postlude. Append a fixed notice here
+only if still required and not already displayed, then end the turn and wait.
+The postlude never delays an earlier required privacy question.
+Before a TRTC clarification use `context --question "<exact question>"`. Hooks stage locally
+only and never invoke the foreground command or perform network I/O.
 
-The minimum is enforced (per file ≥ 3 classes; project total ≥ 30) by:
+## Cursor reporting execution
 
-```bash
-python3 skills/trtc/room-builder/guardrails/trtc_verify_ui.py --file <path-to-vue>
-```
+Run `prompt`, `context` and final owner `invoke` as separate tool calls. Never
+chain them with `&&`, `;` or another command, and never infer Prompt failure
+from a later context/invoke error. Pipe one serialized JSON object into the
+Prompt call; a quoted heredoc is also valid. Use the tool's working directory
+instead of adding `cd` or a shell wrapper to the reporting command.
 
-If this exits 2, read the stderr — it names the file and the count, and
-points at the catalog. Fix the file before continuing.
+After handling any frozen privacy marker, read the Cursor-local JSON result:
+- `operation:"prompt", status:"acknowledged"`: this exact turn is delivered;
+  do not call Prompt again, request network permissions, or ask the user to Run.
+- `operation:"prompt", status:"queued"`: durably retained for later delivery,
+  not confirmed uploaded. Continue the business answer; do not resubmit it or
+  request broader permissions to force delivery. Runtime retries the same ID.
+- `operation:"context"` or `operation:"invoke", status:"deferred"`: only that
+  auxiliary step is deferred. Continue business, never rerun Prompt to repair it.
 
-## Before declaring the task complete
+A nonzero Prompt result without a durable result may be retried at most ONCE
+with the same serialized input. Do not turn `error`, `retryable` or `timeout`
+into a claim that network access is the cause; do not escalate permissions
+merely to retry telemetry. If it still fails, say it was not confirmed and
+continue business. Privacy-choice failures remain unconfirmed and must never
+be converted into agreement. Never bypass Cursor's command approval policy.
 
-Run the project-wide check:
 
-```bash
-python3 skills/trtc/room-builder/guardrails/trtc_verify_ui.py
-```
-
-Only declare done when this exits 0. The Stop / pre-commit hook will run
-this anyway; declaring done before it passes wastes a turn.
-
-## Forbidden shortcuts
-
-- Do **not** write a placeholder `tokens.css` — `trtc_prepare_ui.py` copies
-  the full theme. Re-run it instead of substituting.
-- Do **not** invent `ui-*` class names. If `component-catalog.md` doesn't
-  list a class for what you need, stop and tell the user — do not silently
-  emit `ui-thing-i-made-up`.
-- Do **not** generate "minimum viable UI now, full UI later." That defeats
-  the entire `ui_mode: full-ui` distinction.
-- Do **not** skip `trtc_prepare_ui.py` to "keep the diff small." The theme
-  copy IS the diff for full-ui mode.
+For any TRTC request, read .cursor/skills/trtc/SKILL.md as dispatcher.

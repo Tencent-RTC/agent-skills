@@ -1,0 +1,17 @@
+# Dependencies and build artifacts
+node_modules/
+dist/
+build/
+*.min.js
+
+# Local state and runtime caches
+.trtc-skill-state/
+*.log
+.cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key

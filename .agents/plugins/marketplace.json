@@ -7,8 +7,8 @@
     {
       "name": "trtc-agent-skills",
       "source": {
-        "source": "url",
-        "url": "https://github.com/Tencent-RTC/agent-skills.git"
+        "source": "local",
+        "path": "./skills/"
       },
       "policy": {
         "installation": "AVAILABLE",
