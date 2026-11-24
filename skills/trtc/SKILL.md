@@ -14,7 +14,7 @@ description: >
   trtc-push. SDK logs: /sdk-log、SDK 日志排障、客户端日志、日志分析、黑屏、无声、掉线;
   use manual log workflow.
 metadata:
-  version: 1.1.6
+  version: 1.1.7
 ---
 
 # TRTC Integration Assistant

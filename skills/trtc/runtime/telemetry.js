@@ -3591,7 +3591,7 @@ async function handleInvoke(flags, ctx) {
     } finally { stopProducerLease(producer); }
   } finally { if (stageLock) releaseCoordinationReservation(stageLock); }
   let flush = null;
-  if (outcome.status === 'promoted' || outcome.status === 'deduped') {
+  if ((outcome.status === 'promoted' || outcome.status === 'deduped') && flags['defer-send'] !== true) {
     // Keep the current authorized Prompt ahead of installation retries.
     const recoveredInstallPending = Boolean(recoveredInstall?.eventId)
       && recoveredInstall.eventId !== event.event_id;
